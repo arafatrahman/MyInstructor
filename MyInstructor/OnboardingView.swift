@@ -5,10 +5,11 @@ struct OnboardingView: View {
     let onComplete: () -> Void
     
     @State private var currentPage = 0
+    // Updated icon names to use custom assets: SeamlessScheduling, RealtimeTracking, ProgressPayments
     let slides = [
-        ("calendar.badge.plus", "Seamless Scheduling", "Effortlessly manage your lessons, appointments, and availability with an intuitive calendar. Stay organized and never miss a beat."),
-        ("location.magnifyingglass", "Real-time Tracking", "Connect with your instructor or student through live location sharing. Enhance safety and streamline pickups with precision."),
-        ("chart.line.uptrend.rectangle", "Progress & Payments", "Monitor your driving journey with detailed progress reports and easily track all payments. Achieve your goals with clear insights.")
+        ("SeamlessScheduling", "Seamless Scheduling", "Effortlessly manage your lessons, appointments, and availability with an intuitive calendar. Stay organized and never miss a beat.", Color.primaryBlue),
+        ("RealtimeTracking", "Real-time Tracking", "Connect with your instructor or student through live location sharing. Enhance safety and streamline pickups with precision.", Color.accentGreen),
+        ("ProgressPayments", "Progress & Payments", "Monitor your driving journey with detailed progress reports and easily track all payments. Achieve your goals with clear insights.", Color.orange)
     ]
     
     var body: some View {
@@ -18,7 +19,8 @@ struct OnboardingView: View {
                     OnboardingSlideRedesigned(
                         imageName: slides[index].0,
                         title: slides[index].1,
-                        description: slides[index].2
+                        description: slides[index].2,
+                        accentColor: slides[index].3 // Pass the specific accent color
                     )
                         .tag(index)
                 }
@@ -75,37 +77,36 @@ struct OnboardingSlideRedesigned: View {
     let imageName: String
     let title: String
     let description: String
+    let accentColor: Color
     
     var body: some View {
         VStack(spacing: 25) { // Increased spacing
-            Image(systemName: imageName)
+            Spacer() // ADDED: Top Spacer to center content vertically
+            
+            // Using Image(imageName) to load custom assets
+            Image(imageName)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 150, height: 150) // Larger icon
-                .foregroundColor(.primaryBlue)
-                .padding(30)
-                .background(
-                    Circle()
-                        .fill(Color.primaryBlue.opacity(0.1)) // Subtle blue circle background
-                        .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5) // Soft shadow
-                )
+                .frame(width: 120, height: 120) // Increased size
+                .foregroundColor(accentColor) // Icon color matches accent
+                // Background and extra padding removed
                 .padding(.bottom, 20) // Space after icon
             
             Text(title)
-                .font(.largeTitle) // More impactful title
-                .fontWeight(.heavy) // Bold weight
+                .font(.largeTitle)
+                .fontWeight(.heavy)
                 .foregroundColor(.textDark)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 20)
             
             Text(description)
-                .font(.body) // Clear body text
+                .font(.body)
                 .foregroundColor(.textLight)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 30)
-                .lineLimit(3) // Ensure description fits well
+                .lineLimit(3)
             
-            Spacer() // Pushes content upwards
+            Spacer() // Existing: Bottom Spacer (now balances the top Spacer)
         }
     }
 }

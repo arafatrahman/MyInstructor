@@ -1,0 +1,87 @@
+import SwiftUI
+
+// Flow Item 14: Notifications
+struct NotificationsView: View {
+    // Mock data grouped by type
+    let notifications: [NotificationGroup] = [
+        NotificationGroup(type: "Lessons", items: [
+            NotificationItem(message: "Lesson with **Emma** starts in 15 mins.", isRead: false),
+            NotificationItem(message: "Lesson 'Manoeuvres' was completed.", isRead: true)
+        ]),
+        NotificationGroup(type: "Payments", items: [
+            NotificationItem(message: "Payment from **Alex** pending.", isRead: false),
+            NotificationItem(message: "£45.00 received from **Chloe**.", isRead: true)
+        ]),
+        NotificationGroup(type: "Community", items: [
+            NotificationItem(message: "New comment on your post about roundabouts.", isRead: true),
+            NotificationItem(message: "Mr. Smith posted a new tip.", isRead: false)
+        ]),
+    ]
+    
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(notifications) { group in
+                    Section(header: Text(group.type).font(.headline).foregroundColor(.primaryBlue)) {
+                        ForEach(group.items) { item in
+                            NotificationRow(item: item)
+                                .listRowBackground(item.isRead ? Color(.systemBackground) : Color.primaryBlue.opacity(0.05))
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Notifications")
+            .listStyle(.insetGrouped)
+            .toolbar {
+                Button("Mark All Read") {
+                    // TODO: Implement Mark All Read logic
+                    print("Notifications marked as read.")
+                }
+                .foregroundColor(.primaryBlue)
+            }
+        }
+    }
+}
+
+struct NotificationGroup: Identifiable {
+    let id = UUID()
+    let type: String
+    let items: [NotificationItem]
+}
+
+struct NotificationItem: Identifiable {
+    let id = UUID()
+    let message: String
+    var isRead: Bool
+    
+    // Simple mock time:
+    var timeAgo: String {
+        let times = ["5m ago", "1h ago", "3d ago", "Yesterday"]
+        return times.randomElement()!
+    }
+}
+
+struct NotificationRow: View {
+    let item: NotificationItem
+    
+    var body: some View {
+        HStack(alignment: .top) {
+            Image(systemName: item.isRead ? "circle" : "circle.fill")
+                .font(.caption)
+                .foregroundColor(.primaryBlue)
+                .padding(.top, 4)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                // Use AttributedString for bolding names/keywords (like **Emma**)
+                Text(.init(item.message))
+                    .font(.body)
+                    .foregroundColor(item.isRead ? .textLight : .textDark)
+                Text(item.timeAgo)
+                    .font(.caption)
+                    .foregroundColor(.textLight)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 5)
+    }
+}

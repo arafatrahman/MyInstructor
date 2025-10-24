@@ -1,8 +1,48 @@
 import SwiftUI
 import FirebaseAuth
 
+// --- Helper View for Modern Role Selection Card ---
+struct RoleSelectionCard: View {
+    let role: UserRole
+    @Binding var selectedRole: UserRole
+    let title: String
+    let icon: String
+    let color: Color
+    
+    var isSelected: Bool {
+        selectedRole == role
+    }
+    
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.largeTitle)
+                .foregroundColor(isSelected ? .white : color)
+            
+            Text(title)
+                .font(.headline).bold()
+                .foregroundColor(isSelected ? .white : .textDark)
+        }
+        .padding(.vertical, 25)
+        .frame(maxWidth: .infinity)
+        .background(isSelected ? color : Color.secondaryGray) // Highlight selected card
+        .cornerRadius(10)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isSelected ? color : Color.clear, lineWidth: 3) // Bold border on selection
+        )
+        .shadow(color: isSelected ? color.opacity(0.4) : Color.textDark.opacity(0.05), radius: 5, x: 0, y: 3)
+        .onTapGesture {
+            selectedRole = role
+        }
+    }
+}
+// ---------------------------------------------
+
+
 struct RegisterForm: View {
     @EnvironmentObject var authManager: AuthManager
+    @Binding var selection: Int // Binding for switching tabs
     
     // Form fields
     @State private var name = ""
@@ -18,73 +58,63 @@ struct RegisterForm: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 30) {
-                // Header
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Create New Account")
-                        .font(.largeTitle).bold()
+                
+                // Icon removed as requested.
+
+                // Role Selection Cards
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Select your role")
+                        .font(.subheadline).bold()
                         .foregroundColor(.textDark)
-                    Text("Join us in making smart, safe drivers.")
-                        .font(.subheadline)
-                        .foregroundColor(.textLight)
+                        .padding(.leading, 5)
+
+                    HStack {
+                        RoleSelectionCard(role: .student, selectedRole: $selectedRole, title: "Student", icon: "car.fill", color: .primaryBlue)
+                        
+                        RoleSelectionCard(role: .instructor, selectedRole: $selectedRole, title: "Instructor", icon: "person.fill.viewfinder", color: .accentGreen)
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 20)
+                .padding(.horizontal, 30)
                 
                 // Form Fields
-                VStack(spacing: 15) { // FIXED: Changed VVStack to VStack
+                VStack(spacing: 15) {
                     Group {
                         TextField("Full Name", text: $name)
                             .textContentType(.name)
                         
-                        TextField("Email", text: $email)
+                        TextField("Email Address", text: $email)
                             .textContentType(.emailAddress)
                             .keyboardType(.emailAddress)
                             .autocapitalization(.none)
                         
+                        SecureField("Create Password (min 6 chars)", text: $password)
+                            .textContentType(.newPassword)
+
                         TextField("Phone (Optional)", text: $phone)
                             .textContentType(.telephoneNumber)
                             .keyboardType(.phonePad)
-                        
-                        SecureField("Password (min 6 characters)", text: $password)
-                            .textContentType(.newPassword)
+
+                        if selectedRole == .instructor {
+                             TextField("Driving School (Optional)", text: $drivingSchool)
+                                .transition(.opacity)
+                        }
                     }
                     .formTextFieldStyle()
-                    
-                    // Role Dropdown
-                    VStack(alignment: .leading) {
-                        Text("Account Role")
-                            .font(.caption).foregroundColor(.textLight)
-                        
-                        Picker("Role", selection: $selectedRole) {
-                            Label("Student", systemImage: "car.fill").tag(UserRole.student)
-                            Label("Instructor", systemImage: "person.fill.viewfinder").tag(UserRole.instructor)
-                        }
-                        .pickerStyle(.menu)
-                        .padding(.horizontal)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondaryGray)
-                        .cornerRadius(10)
-                    }
-                    
-                    // Driving School (Conditional for Instructor role)
-                    if selectedRole == .instructor {
-                        TextField("Driving School (Optional)", text: $drivingSchool)
-                            .formTextFieldStyle()
-                            .transition(.opacity)
-                    }
                 }
+                .padding(.horizontal, 30)
                 
                 // Error Message
                 if let error = errorMessage {
                     Text(error)
                         .foregroundColor(.warningRed)
                         .font(.caption)
+                        .padding(.horizontal, 30)
                 }
                 
                 // Create Account Button
                 Button {
                     registerAction()
-                } label: { // FIXED: Correct button syntax
+                } label: {
                     HStack {
                         if isLoading {
                             ProgressView().tint(.white)
@@ -96,9 +126,19 @@ struct RegisterForm: View {
                 }
                 .buttonStyle(.primaryDrivingApp)
                 .disabled(!isFormValid || isLoading)
+                .padding(.horizontal, 30)
+
+                // Modern Login link (switches the parent TabView selection)
+                Button("Already have an account? Sign In") {
+                    withAnimation {
+                        selection = 0 // Switch to Login tab
+                    }
+                }
+                .font(.subheadline).bold()
+                .foregroundColor(.textLight)
             }
+            .padding(.bottom, 40)
         }
-        .padding(.horizontal, 30)
     }
     
     // MARK: - Computed Properties and Actions
@@ -110,6 +150,7 @@ struct RegisterForm: View {
     private func registerAction() {
         isLoading = true
         errorMessage = nil
+        
         Task {
             do {
                 try await authManager.signUp(

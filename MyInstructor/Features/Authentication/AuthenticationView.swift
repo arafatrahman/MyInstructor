@@ -6,24 +6,27 @@ struct AuthenticationView: View {
     
     var body: some View {
         VStack {
-            // Tabs: Login | Sign Up (Modern Segmented Picker)
-            Picker("Auth Segment", selection: $selection) {
-                Text("Login").tag(0)
-                Text("Sign Up").tag(1)
+            
+            // Clean, simplified header
+            VStack(spacing: 5) {
+                Text(selection == 0 ? "Welcome Back" : "Join My Instructor")
+                    .font(.largeTitle).bold()
+                    .foregroundColor(.textDark)
+                Text(selection == 0 ? "Sign in to your account." : "Create your new account.")
+                    .font(.subheadline)
+                    .foregroundColor(.textLight)
             }
-            .pickerStyle(.segmented)
-            .padding(.top, 20)
+            .padding(.top, 40)
             .padding(.horizontal, 30)
             
-            // Tab Content
+            // Tab Content (Driven by swipe or internal button actions)
             TabView(selection: $selection) {
-                LoginForm()
+                LoginForm(selection: $selection) // Pass selection binding
                     .tag(0)
                 
-                RegisterForm()
+                RegisterForm(selection: $selection) // Pass selection binding
                     .tag(1)
             }
-            // Hides the default TabView indicator and allows swipe
             .tabViewStyle(.page(indexDisplayMode: .never))
             .animation(.easeInOut, value: selection)
             

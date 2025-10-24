@@ -3,6 +3,7 @@ import FirebaseAuth
 
 struct LoginForm: View {
     @EnvironmentObject var authManager: AuthManager
+    @Binding var selection: Int // Binding for switching tabs
     
     // Form fields
     @State private var email = ""
@@ -13,22 +14,17 @@ struct LoginForm: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 30) {
-                // Header
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Welcome Back")
-                        .font(.largeTitle).bold()
-                        .foregroundColor(.textDark)
-                    Text("Sign in to continue your driving journey.")
-                        .font(.subheadline)
-                        .foregroundColor(.textLight)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 20)
                 
+                // --- Modern Login Icon ---
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 80))
+                    .foregroundColor(.primaryBlue)
+                    .padding(.top, 20)
+
                 // Form Fields
                 VStack(spacing: 15) {
                     // Email Input
-                    TextField("Email", text: $email)
+                    TextField("Email Address", text: $email)
                         .textContentType(.emailAddress)
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
@@ -39,7 +35,7 @@ struct LoginForm: View {
                         .textContentType(.password)
                         .formTextFieldStyle()
                     
-                    // Forgot Password link
+                    // Forgot Password link (Aligned with new design)
                     HStack {
                         Spacer()
                         Button("Forgot Password?") {
@@ -50,32 +46,44 @@ struct LoginForm: View {
                         .foregroundColor(.primaryBlue)
                     }
                 }
-                
+                .padding(.horizontal, 30)
+
                 // Error Message
                 if let error = errorMessage {
                     Text(error)
                         .foregroundColor(.warningRed)
                         .font(.caption)
+                        .padding(.horizontal, 30)
                 }
                 
                 // Login Button
                 Button {
                     loginAction()
-                } label: { // FIXED: Correct button syntax
+                } label: {
                     HStack {
                         if isLoading {
                             ProgressView().tint(.white)
                         } else {
-                            Text("Login")
+                            Text("Sign In")
                         }
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.primaryDrivingApp)
                 .disabled(email.isEmpty || password.isEmpty || isLoading)
+                .padding(.horizontal, 30)
+
+                // Modern Register link (switches the parent TabView selection)
+                Button("Don't have an account? Sign Up") {
+                    withAnimation {
+                        selection = 1 // Switch to Register tab
+                    }
+                }
+                .font(.subheadline).bold()
+                .foregroundColor(.textLight)
             }
+            .padding(.bottom, 40)
         }
-        .padding(.horizontal, 30)
     }
     
     // MARK: - Actions

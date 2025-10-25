@@ -11,7 +11,7 @@ struct RootView: View {
     var body: some View {
         Group {
             if showSplash {
-                SplashScreenView(onFinish: { // Error resolved: Definition now included below
+                SplashScreenView(onFinish: {
                     withAnimation {
                         self.showSplash = false
                     }
@@ -25,10 +25,9 @@ struct RootView: View {
                 })
             } else if !authManager.isAuthenticated {
                 AuthenticationView()
-            } else if authManager.role == .unselected {
-                RoleSelectionView() // Error resolved: Definition now included below
             } else {
-                MainTabView() // Error resolved: Definition now included below
+                // Skips RoleSelectionView and goes directly to the main content
+                MainTabView()
             }
         }
         // Use NotificationCenter to watch for external UserDefaults changes, ensuring resilience
@@ -83,86 +82,6 @@ struct SplashScreenView: View {
     }
 }
 
-// MARK: - Role Selection View (Flow 3)
-struct RoleSelectionView: View {
-    @EnvironmentObject var authManager: AuthManager
-    @State private var selectedRole: UserRole? = nil
-    @State private var isSaving: Bool = false
-    
-    var body: some View {
-        VStack(spacing: 30) {
-            Spacer()
-            
-            Text("Who are you?")
-                .font(.largeTitle).bold()
-                .padding(.bottom, 20)
-            
-            // Instructor Card
-            RoleCard(role: .instructor, selectedRole: $selectedRole, title: "Instructor", icon: "person.fill.viewfinder")
-                .accentColor(.primaryBlue)
-
-            // Student Card
-            RoleCard(role: .student, selectedRole: $selectedRole, title: "Student", icon: "car.fill")
-                .accentColor(.accentGreen)
-
-            Spacer()
-            
-            Button {
-                guard let role = selectedRole else { return }
-                isSaving = true
-                Task {
-                    try? await authManager.updateRole(to: role)
-                    isSaving = false
-                }
-            } label: {
-                Text(isSaving ? "Saving..." : "Continue")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.primaryDrivingApp)
-            .disabled(selectedRole == nil || isSaving)
-        }
-        .padding(.horizontal, 30)
-    }
-}
-
-// Helper view for RoleSelectionView
-struct RoleCard: View {
-    let role: UserRole
-    @Binding var selectedRole: UserRole?
-    let title: String
-    let icon: String
-
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 40, height: 40)
-                .foregroundColor(role == .instructor ? .primaryBlue : .accentGreen)
-            
-            Text(title)
-                .font(.title2).bold()
-            
-            Spacer()
-            
-            Image(systemName: selectedRole == role ? "checkmark.circle.fill" : "circle")
-                .font(.title2)
-                .foregroundColor(selectedRole == role ? .primaryBlue : .textLight)
-        }
-        .padding(20)
-        .background(Color(.systemBackground))
-        .cornerRadius(15)
-        .shadow(color: Color.textLight.opacity(0.1), radius: 10, x: 0, y: 5)
-        .overlay(
-            RoundedRectangle(cornerRadius: 15)
-                .stroke(selectedRole == role ? (role == .instructor ? .primaryBlue : .accentGreen) : Color.clear, lineWidth: 3)
-        )
-        .onTapGesture {
-            selectedRole = role
-        }
-    }
-}
-
 // MARK: - Main Tab View (Container for Dashboards)
 struct MainTabView: View {
     @EnvironmentObject var authManager: AuthManager
@@ -211,6 +130,7 @@ struct MainTabView: View {
                 SettingsView()
                     .tabItem { Label("Settings", systemImage: "gearshape.fill") }
             } else {
+                // Fallback for .unselected role, which should be rare now.
                 Text("Error: Unknown Role").onAppear { try? authManager.logout() }
             }
         }

@@ -37,18 +37,29 @@ class AuthManager: ObservableObject {
         db.collection(usersCollection).document(id).getDocument { [weak self] (document, error) in
             guard let self = self else { return }
 
-            if let document = document, document.exists, let appUser = try? document.data(as: AppUser.self) {
+            if let document = document, document.exists, var appUser = try? document.data(as: AppUser.self) {
                 // User profile found
+                
+                // LOGIC: Check for legacy/unselected role and fix it immediately to enter MainTabView
+                if appUser.role == .unselected {
+                    appUser.role = .student
+                    // Update Firestore in the background
+                    Task { try? await self.updateRole(to: .student) }
+                }
+
                 self.user = appUser
                 self.role = appUser.role
             } else {
-                // New user: Create a basic profile in Firestore
-                let newUser = AppUser(id: id, email: email ?? "unknown@email.com")
+                // New user (e.g., from external sign-in) or a user without a profile:
+                // Create a basic profile in Firestore with a default role
+                let defaultRole: UserRole = .student
+                var newUser = AppUser(id: id, email: email ?? "unknown@email.com", role: defaultRole)
+                
                 self.user = newUser
                 self.role = newUser.role
                 
                 do {
-                    // Save the basic user profile
+                    // Save the basic user profile with the default role
                     try self.db.collection(self.usersCollection).document(id).setData(from: newUser)
                 } catch {
                     print("Error creating new user document: \(error.localizedDescription)")
@@ -91,8 +102,10 @@ class AuthManager: ObservableObject {
         try await db.collection(usersCollection).document(currentUserID).updateData(["role": newRole.rawValue])
         
         // 2. Update local state
-        self.user?.role = newRole
-        self.role = newRole
+        if self.user?.id == currentUserID {
+            self.user?.role = newRole
+            self.role = newRole
+        }
     }
 
     func logout() throws {

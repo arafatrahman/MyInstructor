@@ -98,6 +98,13 @@ class AuthManager: ObservableObject {
     func logout() throws {
         try Auth.auth().signOut()
     }
+    
+    // MARK: - Password Reset Functionality
+    
+    func sendPasswordReset(email: String) async throws {
+        // Firebase Auth method to send a password reset email
+        try await Auth.auth().sendPasswordReset(withEmail: email)
+    }
 
     deinit {
         if let handle = authHandle {

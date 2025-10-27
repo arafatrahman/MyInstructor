@@ -4,9 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var authManager: AuthManager
     
-    // Profile settings state (Initialized with mock/default data for demo)
-    @State private var name: String = "John Doe"
-    @State private var hourlyRate: String = "45.00" // Instructor only
+    // REMOVED: Profile state variables (name, hourlyRate)
     
     // Privacy and toggles
     @State private var isLocationSharingEnabled = true
@@ -19,40 +17,12 @@ struct SettingsView: View {
         authManager.role == .instructor
     }
     
-    var userEmail: String {
-        authManager.user?.email ?? "email@notfound.com"
-    }
+    // REMOVED: userEmail computed property
 
     var body: some View {
         NavigationView {
             Form {
-                // MARK: - Profile Section
-                Section("Profile & Rates") {
-                    TextField("Name", text: $name)
-                    HStack {
-                        Text("Email")
-                        Spacer()
-                        Text(userEmail)
-                            .foregroundColor(.textLight)
-                    }
-                    .disabled(true)
-                    
-                    if isInstructor {
-                        HStack {
-                            Text("Hourly Rate (£)")
-                            Spacer()
-                            TextField("Rate", text: $hourlyRate)
-                                .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                        }
-                    }
-                    
-                    Button("Save Profile Changes") {
-                        // TODO: Update user profile in AuthManager/Firestore
-                        print("Profile updated with Name: \(name), Rate: \(hourlyRate)")
-                    }
-                    .foregroundColor(.primaryBlue)
-                }
+                // REMOVED: Profile & Rates Section
                 
                 // MARK: - Location & Privacy (Flow 16)
                 Section("Location & Sharing") {
@@ -107,6 +77,7 @@ struct SettingsView: View {
 }
 
 // Flow Item 16: Privacy & Consent Popup
+// (This struct remains unchanged)
 struct PrivacyConsentPopup: View {
     @Environment(\.dismiss) var dismiss
     @Binding var isLocationSharingEnabled: Bool

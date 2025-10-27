@@ -37,7 +37,8 @@ struct DashboardHeader: View {
             }
             
             // Profile Avatar/Settings (Flow 15)
-            NavigationLink(destination: SettingsView()) {
+            // UPDATED: Destination changed to ProfileView()
+            NavigationLink(destination: ProfileView()) {
                 Image(systemName: "person.crop.circle.fill")
                     .resizable()
                     .frame(width: 35, height: 35)

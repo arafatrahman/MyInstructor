@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseAuth
+import PhotosUI // Import for PhotosPicker
 
 // --- Helper View for Modern Role Selection Card ---
 struct RoleSelectionCard: View {
@@ -33,7 +34,9 @@ struct RoleSelectionCard: View {
         )
         .shadow(color: isSelected ? color.opacity(0.4) : Color.textDark.opacity(0.05), radius: 5, x: 0, y: 3)
         .onTapGesture {
-            selectedRole = role
+            withAnimation { // <-- Add animation
+                selectedRole = role
+            }
         }
     }
 }
@@ -52,14 +55,56 @@ struct RegisterForm: View {
     @State private var selectedRole: UserRole = .student
     @State private var drivingSchool = ""
     
+    // --- ADDED/MODIFIED STATE ---
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var selectedPhotoData: Data?
+    @State private var selectedAddress: String?
+    @State private var isShowingAddressSearch = false
+    @State private var hourlyRate: String = "45.00"
+    // ------------------------------------
+    
     @State private var isLoading = false
     @State private var errorMessage: String?
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 30) {
+            VStack(spacing: 25) { // Increased spacing
                 
-                // Icon removed as requested.
+                // --- ADDED PHOTO PICKER ---
+                VStack {
+                    PhotosPicker(
+                        selection: $selectedPhotoItem,
+                        matching: .images,
+                        photoLibrary: .shared()
+                    ) {
+                        if let photoData = selectedPhotoData, let uiImage = UIImage(data: photoData) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 100, height: 100)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 2))
+                        } else {
+                            Image(systemName: "person.circle.fill")
+                                .resizable()
+                                .frame(width: 100, height: 100)
+                                .foregroundColor(.secondaryGray)
+                        }
+                    }
+                    .onChange(of: selectedPhotoItem) { newItem in
+                        Task {
+                            if let data = try? await newItem?.loadTransferable(type: Data.self) {
+                                selectedPhotoData = data
+                            }
+                        }
+                    }
+                    
+                    Text("Tap to add a profile photo")
+                        .font(.caption)
+                        .foregroundColor(.textLight)
+                }
+                .padding(.top, 10)
+                // --------------------------
 
                 // Role Selection Cards
                 VStack(alignment: .leading, spacing: 10) {
@@ -76,32 +121,76 @@ struct RegisterForm: View {
                 }
                 .padding(.horizontal, 30)
                 
-                // Form Fields
+                // --- FORM FIELDS (RESTRUCTURED) ---
                 VStack(spacing: 15) {
-                    Group {
-                        TextField("Full Name", text: $name)
-                            .textContentType(.name)
-                        
-                        TextField("Email Address", text: $email)
-                            .textContentType(.emailAddress)
-                            .keyboardType(.emailAddress)
-                            .autocapitalization(.none)
-                        
-                        SecureField("Create Password (min 6 chars)", text: $password)
-                            .textContentType(.newPassword)
+                    
+                    // --- Fields for ALL users ---
+                    TextField("Full Name", text: $name)
+                        .textContentType(.name)
+                        .formTextFieldStyle()
+                    
+                    TextField("Email Address", text: $email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                        .formTextFieldStyle()
+                    
+                    SecureField("Create Password (min 6 chars)", text: $password)
+                        .textContentType(.newPassword)
+                        .formTextFieldStyle()
 
-                        TextField("Phone (Optional)", text: $phone)
-                            .textContentType(.telephoneNumber)
-                            .keyboardType(.phonePad)
-
-                        if selectedRole == .instructor {
-                             TextField("Driving School (Optional)", text: $drivingSchool)
-                                .transition(.opacity)
+                    TextField("Phone (Optional)", text: $phone)
+                        .textContentType(.telephoneNumber)
+                        .keyboardType(.phonePad)
+                        .formTextFieldStyle()
+                    
+                    // --- Address Selection Button ---
+                    Button {
+                        isShowingAddressSearch = true
+                    } label: {
+                        HStack {
+                            if let address = selectedAddress, !address.isEmpty {
+                                Text(address)
+                                    .foregroundColor(.textDark)
+                                    .lineLimit(1)
+                            } else {
+                                Text("Select Address (Optional)")
+                                    .foregroundColor(Color(.placeholderText)) // Use placeholder color
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.textLight)
                         }
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondaryGray)
+                        .cornerRadius(10)
                     }
-                    .formTextFieldStyle()
                 }
                 .padding(.horizontal, 30)
+                
+                // --- Fields for INSTRUCTOR only ---
+                // This VStack is now *separate* and will appear/disappear
+                if selectedRole == .instructor {
+                    VStack(spacing: 15) {
+                         TextField("Driving School (Optional)", text: $drivingSchool)
+                            .formTextFieldStyle()
+                        
+                        HStack {
+                            Text("Hourly Rate (£)")
+                            Spacer()
+                            TextField("Rate", text: $hourlyRate)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        .padding()
+                        .background(Color.secondaryGray)
+                        .cornerRadius(10)
+                    }
+                    .padding(.horizontal, 30)
+                    .transition(.opacity) // Add transition
+                }
+                // --- END OF RESTRUCTURED FORM ---
                 
                 // Error Message
                 if let error = errorMessage {
@@ -128,7 +217,7 @@ struct RegisterForm: View {
                 .disabled(!isFormValid || isLoading)
                 .padding(.horizontal, 30)
 
-                // Modern Login link (switches the parent TabView selection)
+                // Modern Login link
                 Button("Already have an account? Sign In") {
                     withAnimation {
                         selection = 0 // Switch to Login tab
@@ -138,6 +227,12 @@ struct RegisterForm: View {
                 .foregroundColor(.textLight)
             }
             .padding(.bottom, 40)
+            .animation(.easeInOut(duration: 0.3), value: selectedRole) // Animate changes
+            .sheet(isPresented: $isShowingAddressSearch) {
+                AddressSearchView { selectedAddressString in
+                    self.selectedAddress = selectedAddressString
+                }
+            }
         }
     }
     
@@ -153,14 +248,19 @@ struct RegisterForm: View {
         
         Task {
             do {
+                // --- UPDATED SIGNUP CALL ---
                 try await authManager.signUp(
                     name: name,
                     email: email,
                     phone: phone,
                     password: password,
                     role: selectedRole,
-                    drivingSchool: selectedRole == .instructor ? drivingSchool : nil
+                    drivingSchool: selectedRole == .instructor ? drivingSchool : nil,
+                    address: selectedAddress,
+                    photoData: selectedPhotoData,
+                    hourlyRate: selectedRole == .instructor ? (Double(hourlyRate) ?? 0.0) : nil
                 )
+                // --------------------------
             } catch {
                 if let errorCode = AuthErrorCode(rawValue: (error as NSError).code) {
                     switch errorCode {

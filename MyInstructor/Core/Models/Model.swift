@@ -17,6 +17,12 @@ struct AppUser: Identifiable, Codable {
     var phone: String?
     var drivingSchool: String? // For instructor
     
+    // --- ADDED/MODIFIED FIELDS ---
+    var photoURL: String?
+    var address: String?
+    var hourlyRate: Double? // For instructor
+    // ---------------------------
+
     // Initializer for new Firebase Auth users
     init(id: String, email: String, name: String? = nil, role: UserRole = .unselected) {
         self.id = id

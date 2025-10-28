@@ -26,11 +26,11 @@ struct RoleSelectionCard: View {
         }
         .padding(.vertical, 25)
         .frame(maxWidth: .infinity)
-        .background(isSelected ? color : Color.secondaryGray) // Highlight selected card
+        .background(isSelected ? color : Color.secondaryGray)
         .cornerRadius(10)
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? color : Color.clear, lineWidth: 3) // Bold border on selection
+                .stroke(isSelected ? color : Color.clear, lineWidth: 3)
         )
         .shadow(color: isSelected ? color.opacity(0.4) : Color.textDark.opacity(0.05), radius: 5, x: 0, y: 3)
         .onTapGesture {
@@ -45,7 +45,7 @@ struct RoleSelectionCard: View {
 
 struct RegisterForm: View {
     @EnvironmentObject var authManager: AuthManager
-    @Binding var selection: Int // Binding for switching tabs
+    @Binding var selection: Int
     
     // Form fields
     @State private var name = ""
@@ -55,22 +55,20 @@ struct RegisterForm: View {
     @State private var selectedRole: UserRole = .student
     @State private var drivingSchool = ""
     
-    // --- ADDED/MODIFIED STATE ---
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var selectedPhotoData: Data?
     @State private var selectedAddress: String?
     @State private var isShowingAddressSearch = false
     @State private var hourlyRate: String = "45.00"
-    // ------------------------------------
     
     @State private var isLoading = false
     @State private var errorMessage: String?
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 25) { // Increased spacing
+            VStack(spacing: 25) {
                 
-                // --- ADDED PHOTO PICKER ---
+                // --- PHOTO PICKER ---
                 VStack {
                     PhotosPicker(
                         selection: $selectedPhotoItem,
@@ -104,9 +102,8 @@ struct RegisterForm: View {
                         .foregroundColor(.textLight)
                 }
                 .padding(.top, 10)
-                // --------------------------
 
-                // Role Selection Cards
+                // --- ROLE SELECTION ---
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Select your role")
                         .font(.subheadline).bold()
@@ -121,10 +118,8 @@ struct RegisterForm: View {
                 }
                 .padding(.horizontal, 30)
                 
-                // --- FORM FIELDS (RESTRUCTURED) ---
+                // --- COMMON FORM FIELDS ---
                 VStack(spacing: 15) {
-                    
-                    // --- Fields for ALL users ---
                     TextField("Full Name", text: $name)
                         .textContentType(.name)
                         .formTextFieldStyle()
@@ -144,7 +139,6 @@ struct RegisterForm: View {
                         .keyboardType(.phonePad)
                         .formTextFieldStyle()
                     
-                    // --- Address Selection Button ---
                     Button {
                         isShowingAddressSearch = true
                     } label: {
@@ -155,7 +149,7 @@ struct RegisterForm: View {
                                     .lineLimit(1)
                             } else {
                                 Text("Select Address (Optional)")
-                                    .foregroundColor(Color(.placeholderText)) // Use placeholder color
+                                    .foregroundColor(Color(.placeholderText))
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
@@ -169,8 +163,7 @@ struct RegisterForm: View {
                 }
                 .padding(.horizontal, 30)
                 
-                // --- Fields for INSTRUCTOR only ---
-                // This VStack is now *separate* and will appear/disappear
+                // --- INSTRUCTOR-ONLY FIELDS (THIS IS THE FIX) ---
                 if selectedRole == .instructor {
                     VStack(spacing: 15) {
                          TextField("Driving School (Optional)", text: $drivingSchool)
@@ -188,9 +181,8 @@ struct RegisterForm: View {
                         .cornerRadius(10)
                     }
                     .padding(.horizontal, 30)
-                    .transition(.opacity) // Add transition
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
-                // --- END OF RESTRUCTURED FORM ---
                 
                 // Error Message
                 if let error = errorMessage {
@@ -217,7 +209,7 @@ struct RegisterForm: View {
                 .disabled(!isFormValid || isLoading)
                 .padding(.horizontal, 30)
 
-                // Modern Login link
+                // Login link
                 Button("Already have an account? Sign In") {
                     withAnimation {
                         selection = 0 // Switch to Login tab
@@ -227,7 +219,7 @@ struct RegisterForm: View {
                 .foregroundColor(.textLight)
             }
             .padding(.bottom, 40)
-            .animation(.easeInOut(duration: 0.3), value: selectedRole) // Animate changes
+            .animation(.easeInOut(duration: 0.3), value: selectedRole)
             .sheet(isPresented: $isShowingAddressSearch) {
                 AddressSearchView { selectedAddressString in
                     self.selectedAddress = selectedAddressString
@@ -248,7 +240,6 @@ struct RegisterForm: View {
         
         Task {
             do {
-                // --- UPDATED SIGNUP CALL ---
                 try await authManager.signUp(
                     name: name,
                     email: email,
@@ -260,22 +251,15 @@ struct RegisterForm: View {
                     photoData: selectedPhotoData,
                     hourlyRate: selectedRole == .instructor ? (Double(hourlyRate) ?? 0.0) : nil
                 )
-                // --------------------------
+                // On success, the AuthManager's listener will handle the navigation
+                
             } catch {
-                if let errorCode = AuthErrorCode(rawValue: (error as NSError).code) {
-                    switch errorCode {
-                    case .emailAlreadyInUse:
-                        errorMessage = "Registration failed. This email is already in use."
-                    case .weakPassword:
-                        errorMessage = "Password is too weak. Please use 6 or more characters."
-                    default:
-                        errorMessage = "An unexpected error occurred during registration."
-                    }
-                } else {
-                    errorMessage = error.localizedDescription
-                }
+                // If signUp throws an error, show it
+                print("!!! SignUp FAILED: \(error.localizedDescription)")
+                errorMessage = error.localizedDescription
+                isLoading = false
             }
-            isLoading = false
+            // Don't set isLoading = false here, as success is handled by the listener
         }
     }
 }

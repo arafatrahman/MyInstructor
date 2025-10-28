@@ -50,7 +50,8 @@ struct DashboardHeader: View {
             .padding(.trailing, 10) // Add some spacing
 
             // --- Profile Avatar/Settings (Flow 15 - Updated) ---
-            NavigationLink(destination: ProfileView()) { // Link still goes to ProfileView
+            // THIS IS THE MODIFIED LINE:
+            NavigationLink(destination: UserProfileView()) {
                 // Use AsyncImage if URL exists, otherwise fallback
                 if let url = profileImageURL {
                     AsyncImage(url: url) { phase in

@@ -5,11 +5,10 @@ struct StudentDashboardView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var dataService: DataService
     
-    // Mock student ID, should be derived from authManager.user?.id
-    private let studentID = "student_abc" 
-
+    // Removed mock student ID
+    
     @State private var upcomingLesson: Lesson?
-    @State private var progress: Double = 0.65
+    @State private var progress: Double = 0.0 // Default to 0
     @State private var latestFeedback: String = ""
     @State private var paymentDue: Bool = false
     @State private var isLoading = true
@@ -65,8 +64,13 @@ struct StudentDashboardView: View {
     }
     
     func fetchData() async {
+        guard let studentID = authManager.user?.id else {
+            print("StudentDashboard: Error - No student ID found.")
+            isLoading = false
+            return
+        }
+        
         isLoading = true
-        // NOTE: Use the actual studentID here: authManager.user?.id ?? studentID
         do {
             let data = try await dataService.fetchStudentDashboardData(for: studentID)
             self.upcomingLesson = data.upcomingLesson
@@ -98,9 +102,12 @@ struct StudentUpcomingLessonContent: View {
                 .font(.callout)
                 .foregroundColor(.textLight)
                 
+                // Removed hardcoded instructor name.
+                // This data (instructor name) needs to be fetched
+                // separately using the lesson.instructorID.
                 HStack {
                     Image(systemName: "person.circle.fill")
-                    Text("Instructor: Mr. Smith") // Placeholder
+                    Text("Instructor ID: \(lesson.instructorID.prefix(5))...") // Placeholder
                 }
                 .font(.callout)
                 .foregroundColor(.textLight)
@@ -139,14 +146,18 @@ struct StudentFeedbackContent: View {
     let feedback: String
     var body: some View {
         VStack(alignment: .leading) {
-            Text(feedback)
+            Text(feedback.isEmpty ? "No feedback from your last lesson." : feedback)
                 .font(.body)
                 .lineLimit(3)
-            HStack {
-                Spacer()
-                Text("Read Latest Note →")
-                    .font(.caption).bold()
-                    .foregroundColor(.orange)
+                .foregroundColor(feedback.isEmpty ? .textLight : .primary)
+            
+            if !feedback.isEmpty {
+                HStack {
+                    Spacer()
+                    Text("Read Latest Note →")
+                        .font(.caption).bold()
+                        .foregroundColor(.orange)
+                }
             }
         }
     }
@@ -158,7 +169,7 @@ struct PaymentDueCard: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundColor(.warningRed)
             VStack(alignment: .leading) {
-                Text("£45.00 Payment Pending")
+                Text("£45.00 Payment Pending") // TODO: Hardcoded amount
                     .font(.headline).foregroundColor(.warningRed)
                 Text("Tap to review and pay now")
                     .font(.subheadline)

@@ -4,42 +4,59 @@ import FirebaseFirestore
 
 class CommunityManager: ObservableObject {
     private let db = Firestore.firestore()
-    private let postsCollection = "community_posts"
+    private var postsCollection: CollectionReference {
+        db.collection("community_posts")
+    }
+    private var usersCollection: CollectionReference {
+        db.collection("users")
+    }
 
-    // Fetches recent community posts based on filters (Mocked)
+    // Fetches recent community posts based on filters
     func fetchPosts(filter: String) async throws -> [Post] {
-        try await Task.sleep(nanoseconds: 500_000_000)
+        // TODO: Implement actual filter logic based on the 'filter' string.
+        // This example just fetches the 20 newest posts.
+        let snapshot = try await postsCollection
+            .order(by: "timestamp", descending: true)
+            .limit(to: 20)
+            .getDocuments()
         
-        let mockPost1 = Post(
-            authorID: "i_123", authorName: "Mr. Smith (Instructor)", authorRole: .instructor,
-            timestamp: Date().addingTimeInterval(-3600*2),
-            content: "Just had a great lesson on clutch control! Remember, slow and steady pressure on the bite point is key. Keep practicing, everyone! #DrivingTips",
-            postType: .text, reactionsCount: ["thumbsup": 5, "fire": 2], commentsCount: 1
-        )
-        
-        let mockPost2 = Post(
-            authorID: "s_456", authorName: "Emma Watson (Student)", authorRole: .student,
-            timestamp: Date().addingTimeInterval(-3600*10),
-            content: "Passed my theory test! Huge thanks to Mr. Smith for the motivation! Feeling ready for the practical. 🔥🔥",
-            postType: .text, reactionsCount: ["fire": 5, "thumbsup": 10], commentsCount: 3
-        )
-        
-        return [mockPost1, mockPost2].sorted(by: { $0.timestamp > $1.timestamp })
+        // Use compactMap to safely decode posts
+        let posts = snapshot.documents.compactMap { document in
+            try? document.data(as: Post.self)
+        }
+        return posts
     }
     
     func createPost(post: Post) async throws {
-        // In a real app: try db.collection(postsCollection).addDocument(from: post)
-        try await Task.sleep(nanoseconds: 300_000_000)
+        // Use `addDocument(from:)` to encode the Post object
+        try postsCollection.addDocument(from: post)
         print("Post created successfully by \(post.authorName)")
     }
 
+    // Fetches instructors from the 'users' collection
     func fetchInstructorDirectory(filters: [String: Any]) async throws -> [Student] {
-        try await Task.sleep(nanoseconds: 500_000_000)
-        
-        // Mock data for directory
-        return [
-            Student(id: "i_smith", userID: "i_smith", name: "Mr. Adam Smith", email: "smith@drive.com", averageProgress: 0.95),
-            Student(id: "i_jones", userID: "i_jones", name: "Ms. Sarah Jones", email: "jones@drive.com", averageProgress: 0.88)
-        ]
+        // TODO: Implement advanced filtering based on the 'filters' dictionary.
+        // This example just fetches all users marked as 'instructor'.
+        let snapshot = try await usersCollection
+            .whereField("role", isEqualTo: UserRole.instructor.rawValue)
+            .limit(to: 20)
+            .getDocuments()
+            
+        // We are mapping AppUser data to the Student model for the directory list.
+        // This is a bit of a mismatch but follows the original mock's structure.
+        let instructors = snapshot.documents.compactMap { document -> Student? in
+            guard let appUser = try? document.data(as: AppUser.self) else { return nil }
+            // Create a 'Student' object from the 'AppUser' data for the directory list
+            return Student(
+                id: appUser.id,
+                userID: appUser.id ?? "unknown_user_id",
+                name: appUser.name ?? "Instructor",
+                photoURL: appUser.photoURL,
+                email: appUser.email,
+                drivingSchool: appUser.drivingSchool
+                // Note: averageProgress is not on AppUser, so it defaults to 0.0
+            )
+        }
+        return instructors
     }
 }

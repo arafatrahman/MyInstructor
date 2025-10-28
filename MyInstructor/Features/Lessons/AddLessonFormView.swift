@@ -3,15 +3,16 @@ import SwiftUI
 struct AddLessonFormView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var lessonManager: LessonManager
-    @EnvironmentObject var dataService: DataService 
+    @EnvironmentObject var dataService: DataService
+    @EnvironmentObject var authManager: AuthManager // Add AuthManager
     
-    var onLessonAdded: () -> Void 
+    var onLessonAdded: () -> Void
     
     // Form State
     @State private var topic: String = ""
-    @State private var selectedStudent: Student? = nil 
-    @State private var startTime: Date = Date().addingTimeInterval(3600) 
-    @State private var durationHours: Double = 1.0 
+    @State private var selectedStudent: Student? = nil
+    @State private var startTime: Date = Date().addingTimeInterval(3600)
+    @State private var durationHours: Double = 1.0
     @State private var pickupLocation: String = ""
     @State private var fee: String = "45.00"
     
@@ -103,24 +104,31 @@ struct AddLessonFormView: View {
     }
     
     private func fetchStudents() async {
+        guard let instructorID = authManager.user?.id else {
+            errorMessage = "Could not find instructor ID."
+            return
+        }
+        
         do {
-            // NOTE: Mocking instructor ID
-            availableStudents = try await dataService.fetchStudents(for: "i_auth_id")
-            selectedStudent = availableStudents.first 
+            availableStudents = try await dataService.fetchStudents(for: instructorID)
+            selectedStudent = availableStudents.first
         } catch {
             errorMessage = "Failed to load students."
         }
     }
     
     private func addLessonAction() {
-        guard let student = selectedStudent, let instructorID = "i_auth_id" as? String else { return } 
+        guard let student = selectedStudent, let instructorID = authManager.user?.id else {
+            errorMessage = "Instructor ID or Student not selected."
+            return
+        }
         
         isLoading = true
         errorMessage = nil
         
         let newLesson = Lesson(
             instructorID: instructorID,
-            studentID: student.id ?? "unknown",
+            studentID: student.id ?? "unknown", // Student model *must* have an ID
             topic: topic,
             startTime: startTime,
             duration: durationSeconds,

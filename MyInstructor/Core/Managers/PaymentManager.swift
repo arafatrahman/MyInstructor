@@ -1,40 +1,51 @@
 import Foundation
 import FirebaseFirestore
-import Combine // Added Combine for ObservableObject
+import Combine
 
 class PaymentManager: ObservableObject {
     private let db = Firestore.firestore()
-    private let paymentsCollection = "payments"
+    private var paymentsCollection: CollectionReference {
+        db.collection("payments")
+    }
     
-    // MADE PUBLIC to allow views like StudentProfileView to access mock data for filtering.
-    public var publicMockPayments: [Payment] = [
-        Payment(id: "pay1", studentID: "student_abc", amount: 45.0, date: Date().addingTimeInterval(-86400*2), isPaid: false),
-        Payment(id: "pay2", studentID: "student_xyz", amount: 40.0, date: Date().addingTimeInterval(-86400*5), isPaid: true),
-        Payment(id: "pay3", studentID: "student_abc", amount: 45.0, date: Date().addingTimeInterval(-86400*10), isPaid: true),
-        Payment(id: "pay4", studentID: "student_def", amount: 90.0, date: Date().addingTimeInterval(-86400*15), isPaid: false),
-    ]
+    // Note: The 'publicMockPayments' array has been removed.
 
     func recordPayment(newPayment: Payment) async throws {
-        // In a real app: try db.collection(paymentsCollection).addDocument(from: newPayment)
-        try await Task.sleep(nanoseconds: 300_000_000)
+        try paymentsCollection.addDocument(from: newPayment)
         print("Payment recorded successfully: \(newPayment.amount)")
-        
-        // Update the mock data source
-        publicMockPayments.append(newPayment)
     }
     
     func updatePaymentStatus(paymentID: String, isPaid: Bool) async throws {
-        // In a real app: try await db.collection(paymentsCollection).document(paymentID).updateData(["isPaid": isPaid])
-        try await Task.sleep(nanoseconds: 200_000_000)
-        if let index = publicMockPayments.firstIndex(where: { $0.id == paymentID }) {
-            publicMockPayments[index].isPaid = isPaid
-        }
+        try await paymentsCollection.document(paymentID).updateData(["isPaid": isPaid])
         print("Payment \(paymentID) status updated to \(isPaid)")
     }
     
     func fetchInstructorPayments(for instructorID: String) async throws -> [Payment] {
-        try await Task.sleep(nanoseconds: 500_000_000)
-        // Returns all mock payments for the demo
-        return publicMockPayments
+        // This query is difficult as the 'Payment' model only has 'studentID'.
+        // A real schema might require payments to also store 'instructorID',
+        // or we'd have to fetch all students for an instructor, then
+        // fetch all payments for *each* of those students.
+        
+        // For this exercise, I will assume payments *should* have an 'instructorID'.
+        // Since the model doesn't, this query will return payments for a *student*.
+        // This highlights a schema issue.
+        
+        // TODO: Adjust data model. Assuming 'studentID' is what we
+        // meant to query by (e.g., a student checking their own payments).
+        // If it's an instructor, the 'payments' collection needs 'instructorID'.
+        
+        // Returning empty as the query is ambiguous based on the model.
+        
+        // --- IF MODEL WAS CORRECT (Payment has instructorID): ---
+        // let snapshot = try await paymentsCollection
+        //     .whereField("instructorID", isEqualTo: instructorID)
+        //     .order(by: "date", descending: true)
+        //     .getDocuments()
+        //
+        // let payments = snapshot.documents.compactMap { try? $0.data(as: Payment.self) }
+        // return payments
+        
+        print("fetchInstructorPayments needs a schema update (Payment model requires instructorID)")
+        return []
     }
 }

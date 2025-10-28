@@ -2,30 +2,23 @@ import SwiftUI
 
 // Flow Item 14: Notifications
 struct NotificationsView: View {
-    // Mock data grouped by type
-    let notifications: [NotificationGroup] = [
-        NotificationGroup(type: "Lessons", items: [
-            NotificationItem(message: "Lesson with **Emma** starts in 15 mins.", isRead: false),
-            NotificationItem(message: "Lesson 'Manoeuvres' was completed.", isRead: true)
-        ]),
-        NotificationGroup(type: "Payments", items: [
-            NotificationItem(message: "Payment from **Alex** pending.", isRead: false),
-            NotificationItem(message: "£45.00 received from **Chloe**.", isRead: true)
-        ]),
-        NotificationGroup(type: "Community", items: [
-            NotificationItem(message: "New comment on your post about roundabouts.", isRead: true),
-            NotificationItem(message: "Mr. Smith posted a new tip.", isRead: false)
-        ]),
-    ]
+    // Removed mock data
+    @State private var notifications: [NotificationGroup] = []
     
     var body: some View {
         NavigationView {
             List {
-                ForEach(notifications) { group in
-                    Section(header: Text(group.type).font(.headline).foregroundColor(.primaryBlue)) {
-                        ForEach(group.items) { item in
-                            NotificationRow(item: item)
-                                .listRowBackground(item.isRead ? Color(.systemBackground) : Color.primaryBlue.opacity(0.05))
+                if notifications.isEmpty {
+                    Text("You're all caught up! No new notifications.")
+                        .foregroundColor(.textLight)
+                        .padding()
+                } else {
+                    ForEach(notifications) { group in
+                        Section(header: Text(group.type).font(.headline).foregroundColor(.primaryBlue)) {
+                            ForEach(group.items) { item in
+                                NotificationRow(item: item)
+                                    .listRowBackground(item.isRead ? Color(.systemBackground) : Color.primaryBlue.opacity(0.05))
+                            }
                         }
                     }
                 }
@@ -39,7 +32,15 @@ struct NotificationsView: View {
                 }
                 .foregroundColor(.primaryBlue)
             }
+            .task {
+                await fetchNotifications()
+            }
         }
+    }
+    
+    private func fetchNotifications() async {
+        // TODO: Call a manager to fetch real notifications
+        print("Fetching notifications...")
     }
 }
 
@@ -54,7 +55,7 @@ struct NotificationItem: Identifiable {
     let message: String
     var isRead: Bool
     
-    // Simple mock time:
+    // TODO: This should come from the data model
     var timeAgo: String {
         let times = ["5m ago", "1h ago", "3d ago", "Yesterday"]
         return times.randomElement()!

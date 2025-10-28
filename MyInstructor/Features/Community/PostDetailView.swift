@@ -7,11 +7,8 @@ struct PostDetailView: View {
     @State private var commentText: String = ""
     @State private var isReportFlowPresented = false
     
-    // Mock comments (Reusing the Comment model from Core/Models/CommunityModel.swift)
-    @State private var comments: [Comment] = [
-        Comment(postID: "p1", authorID: "a1", authorName: "Alex J.", timestamp: Date().addingTimeInterval(-3600), content: "Great tip! I always forget the mirror check."),
-        Comment(postID: "p1", authorID: "c1", authorName: "Chloe D.", timestamp: Date().addingTimeInterval(-1800), content: "The fire emoji is accurate!", repliesCount: 2)
-    ]
+    // Removed mock comments
+    @State private var comments: [Comment] = []
     
     var body: some View {
         VStack(spacing: 0) {
@@ -42,8 +39,14 @@ struct PostDetailView: View {
                         .padding(.horizontal)
                     
                     VStack(alignment: .leading, spacing: 20) {
-                        ForEach(comments) { comment in
-                            CommentRow(comment: comment)
+                        if comments.isEmpty {
+                            Text("No comments yet.")
+                                .foregroundColor(.textLight)
+                                .padding(.top, 10)
+                        } else {
+                            ForEach(comments) { comment in
+                                CommentRow(comment: comment)
+                            }
                         }
                     }
                     .padding(.horizontal)
@@ -60,6 +63,16 @@ struct PostDetailView: View {
         .sheet(isPresented: $isReportFlowPresented) {
             ReportFlowView() // Flow Item 25
         }
+        .task {
+            await fetchComments()
+        }
+    }
+    
+    private func fetchComments() async {
+        // TODO: Add call to a
+        // 'communityManager.fetchComments(for: post.id)'
+        // and update the 'comments' state.
+        print("Fetching comments for post \(post.id ?? "N/A")")
     }
 }
 

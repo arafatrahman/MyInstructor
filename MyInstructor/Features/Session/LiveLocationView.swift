@@ -8,17 +8,20 @@ struct LiveLocationView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var authManager: AuthManager
     
-    // Mock Coordinates
-    @State private var instructorLocation = CLLocationCoordinate2D(latitude: 51.5074, longitude: -0.1278)
-    @State private var studentLocation = CLLocationCoordinate2D(latitude: 51.5150, longitude: -0.1180)
+    // Removed Mock Coordinates. These should be @State variables updated
+    // by a LocationManager.
+    @State private var instructorLocation = CLLocationCoordinate2D(latitude: 0, longitude: 0)
+    @State private var studentLocation = CLLocationCoordinate2D(latitude: 0, longitude: 0)
     
+    // Default region
     @State private var region: MKCoordinateRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 51.5112, longitude: -0.1229),
         span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
     )
     
-    @State private var eta: Int = 8
-    @State private var distance: Double = 1.1
+    // Removed mock ETA and distance
+    @State private var eta: Int = 0
+    @State private var distance: Double = 0.0
     @State private var showStartLesson = false
 
     private var isInstructor: Bool {
@@ -33,13 +36,16 @@ struct LiveLocationView: View {
                 LocationPin(name: "Student", coordinate: studentLocation, type: .student)
             ]) { pin in
                 MapAnnotation(coordinate: pin.coordinate) {
-                    Image(systemName: pin.type == .instructor ? "car.fill" : "circle.fill")
-                        .font(.title2)
-                        .foregroundColor(pin.type == .instructor ? .primaryBlue : .accentGreen)
-                        .padding(5)
-                        .background(.white)
-                        .clipShape(Circle())
-                        .shadow(radius: 5)
+                    // Don't show pin if location is (0,0)
+                    if pin.coordinate.latitude != 0 && pin.coordinate.longitude != 0 {
+                        Image(systemName: pin.type == .instructor ? "car.fill" : "circle.fill")
+                            .font(.title2)
+                            .foregroundColor(pin.type == .instructor ? .primaryBlue : .accentGreen)
+                            .padding(5)
+                            .background(.white)
+                            .clipShape(Circle())
+                            .shadow(radius: 5)
+                    }
                 }
             }
             .ignoresSafeArea()
@@ -94,11 +100,18 @@ struct LiveLocationView: View {
             .frame(maxHeight: .infinity, alignment: .bottom)
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 1.5)) {
-                region = MKCoordinateRegion(
-                    center: CLLocationCoordinate2D(latitude: 51.5112, longitude: -0.1229),
-                    span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
-                )
+            // TODO: Start location manager to get real coordinates
+            // and calculate real ETA/distance.
+            
+            // Set region to pickup location
+            let geocoder = CLGeocoder()
+            geocoder.geocodeAddressString(lesson.pickupLocation) { placemarks, error in
+                if let coordinate = placemarks?.first?.location?.coordinate {
+                    withAnimation {
+                        region.center = coordinate
+                        region.span = MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
+                    }
+                }
             }
         }
         .fullScreenCover(isPresented: $showStartLesson) {
@@ -128,7 +141,7 @@ struct LiveMapBottomSheet: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("Lesson starts in \(eta) mins.")
+            Text(eta > 0 ? "Lesson starts in \(eta) mins." : "Calculating ETA...")
                 .font(.title2).bold()
                 .foregroundColor(.primaryBlue)
             
@@ -143,7 +156,7 @@ struct LiveMapBottomSheet: View {
                 Spacer()
                 
                 VStack(alignment: .trailing) {
-                    Text("\(distance, specifier: "%.1f") km")
+                    Text(distance > 0 ? "\(distance, specifier: "%.1f") km" : "-- km")
                         .font(.headline)
                     Text("Distance")
                         .font(.subheadline)

@@ -5,28 +5,38 @@ import Combine
 struct MessagingView: View {
     
     // Mock list of recent conversations
-    @State private var conversations: [Conversation] = [
-        Conversation(name: "Mr. Smith", lastMessage: "See you at 3PM tomorrow.", unreadCount: 1, isInstructor: true),
-        Conversation(name: "Emma Watson", lastMessage: "Yes, I confirmed the payment.", unreadCount: 0, isInstructor: false),
-        Conversation(name: "Alex Johnson", lastMessage: "Having trouble with roundabouts.", unreadCount: 2, isInstructor: false)
-    ]
+    @State private var conversations: [Conversation] = []
     
     var body: some View {
         NavigationView {
             List {
-                // List: Recent conversations
-                ForEach(conversations) { convo in
-                    NavigationLink {
-                        ChatView(conversation: convo)
-                    } label: {
-                        ConversationRow(conversation: convo)
+                if conversations.isEmpty {
+                    Text("No messages yet.")
+                        .foregroundColor(.textLight)
+                        .padding()
+                } else {
+                    // List: Recent conversations
+                    ForEach(conversations) { convo in
+                        NavigationLink {
+                            ChatView(conversation: convo)
+                        } label: {
+                            ConversationRow(conversation: convo)
+                        }
+                        .listRowSeparator(.hidden)
                     }
-                    .listRowSeparator(.hidden)
                 }
             }
             .listStyle(.plain)
             .navigationTitle("Messages")
+            .task {
+                await fetchConversations()
+            }
         }
+    }
+    
+    private func fetchConversations() async {
+        // TODO: Call a manager to fetch real conversations
+        print("Fetching conversations...")
     }
 }
 
@@ -77,21 +87,24 @@ struct ChatView: View {
     
     @State private var messageText: String = ""
     
-    // Mock chat bubbles
-    @State private var messages: [ChatMessage] = [
-        ChatMessage(text: "Are we still meeting at the library?", isFromUser: true),
-        ChatMessage(text: "Yes! And don't forget your learner's permit.", isFromUser: false),
-    ]
+    // Removed mock chat bubbles
+    @State private var messages: [ChatMessage] = []
     
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 List {
-                    ForEach(messages) { message in
-                        ChatBubble(message: message)
-                            .id(message.id)
+                    if messages.isEmpty {
+                        Text("This is the beginning of your conversation with \(conversation.name).")
+                            .foregroundColor(.textLight)
                             .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
+                    } else {
+                        ForEach(messages) { message in
+                            ChatBubble(message: message)
+                                .id(message.id)
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                        }
                     }
                 }
                 .listStyle(.plain)
@@ -99,6 +112,9 @@ struct ChatView: View {
                     if let last = messages.last {
                         proxy.scrollTo(last.id, anchor: .bottom)
                     }
+                }
+                .task {
+                    await fetchMessages()
                 }
             }
             
@@ -124,9 +140,7 @@ struct ChatView: View {
                     )
                 
                 Button {
-                    // Send message action
-                    messages.append(ChatMessage(text: messageText, isFromUser: true))
-                    messageText = ""
+                    sendMessage()
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.largeTitle)
@@ -137,6 +151,20 @@ struct ChatView: View {
             .padding([.horizontal, .bottom])
         }
         .navigationTitle(conversation.name)
+    }
+    
+    private func fetchMessages() async {
+        // TODO: Call a manager to fetch messages for this conversation
+        print("Fetching messages for \(conversation.id)")
+    }
+    
+    private func sendMessage() {
+        let newMessage = ChatMessage(text: messageText, isFromUser: true)
+        // TODO: Call a manager to send this message to the backend
+        
+        // Optimistically add to UI
+        messages.append(newMessage)
+        messageText = ""
     }
 }
 

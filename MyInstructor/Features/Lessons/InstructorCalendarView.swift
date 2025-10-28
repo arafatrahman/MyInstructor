@@ -4,6 +4,7 @@ import SwiftUI
 struct InstructorCalendarView: View {
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var dataService: DataService
+    @EnvironmentObject var authManager: AuthManager // Add AuthManager
     
     @State private var selectedDate: Date = Date()
     @State private var lessons: [Lesson] = []
@@ -59,12 +60,12 @@ struct InstructorCalendarView: View {
                 // Set initial date range to load lessons
                 Task { await fetchLessons() }
             }
-            .onChange(of: selectedDate) { _ in
+            .onChange(of: selectedDate) { _, _ in // Updated for iOS 17
                 // Reload lessons when week changes
                 Task { await fetchLessons() }
             }
             .sheet(isPresented: $isAddLessonSheetPresented) {
-                AddLessonFormView(onLessonAdded: { 
+                AddLessonFormView(onLessonAdded: {
                     Task { await fetchLessons() }
                 })
             }
@@ -72,13 +73,18 @@ struct InstructorCalendarView: View {
     }
     
     private func fetchLessons() async {
+        guard let instructorID = authManager.user?.id else {
+             print("Calendar: No instructor ID found.")
+             isLoading = false
+             return
+        }
+        
         isLoading = true
         let start = startOfWeek
         let end = Calendar.current.date(byAdding: .day, value: 7, to: start) ?? Date()
         
         do {
-            // NOTE: Using a mock instructor ID for this implementation
-            let fetchedLessons = try await lessonManager.fetchLessons(for: "i_auth_id", start: start, end: end)
+            let fetchedLessons = try await lessonManager.fetchLessons(for: instructorID, start: start, end: end)
             self.lessons = fetchedLessons.filter { $0.status == .scheduled }
         } catch {
             print("Error fetching lessons: \(error)")
@@ -137,7 +143,7 @@ struct LessonRow: View {
     
     var body: some View {
         // NavigationLink leads to Flow 8 (Lesson Details)
-        NavigationLink(destination: LessonDetailsView(lesson: lesson)) { 
+        NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
             HStack(alignment: .top, spacing: 15) {
                 // Time Indicator (Colorful)
                 VStack(alignment: .trailing) {

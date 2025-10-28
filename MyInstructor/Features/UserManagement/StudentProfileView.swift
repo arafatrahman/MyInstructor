@@ -10,23 +10,25 @@ struct StudentProfileView: View {
     
     @State private var selectedTab: ProfileTab = .progress
     
-    // Mock skills data
-    @State private var mockSkills: [String: Double] = [
-        "Clutch Control": 0.85,
-        "Roundabouts": 0.65,
-        "Parallel Parking": 0.40,
-        "Junctions": 0.90,
-        "Emergency Stops": 0.75
-    ]
+    // Removed mock skills data
+    @State private var skills: [String: Double] = [:]
     
-    // Computed property to access and filter mock lessons
-    var mockLessonHistory: [Lesson] {
-        lessonManager.publicMockLessons.filter { $0.studentID == student.id }
+    // Computed property to access and filter lessons
+    // This will now be empty unless the manager is populated with real data
+    var lessonHistory: [Lesson] {
+        // TODO: This relies on a public mock array.
+        // This view should *fetch* its own data.
+        // lessonManager.publicMockLessons.filter { $0.studentID == student.id }
+        
+        // For now, return empty until a proper fetch is implemented.
+        return []
     }
     
-    // Computed property to access and filter mock payments
-    var mockPayments: [Payment] {
-        paymentManager.publicMockPayments.filter { $0.studentID == student.id }
+    // Computed property to access and filter payments
+    // This will also be empty.
+    var payments: [Payment] {
+        // paymentManager.publicMockPayments.filter { $0.studentID == student.id }
+        return []
     }
 
     var body: some View {
@@ -51,13 +53,13 @@ struct StudentProfileView: View {
             
             // Tab Content
             TabView(selection: $selectedTab) {
-                ProgressTabView(skills: mockSkills, overallProgress: student.averageProgress)
+                ProgressTabView(skills: skills, overallProgress: student.averageProgress)
                     .tag(ProfileTab.progress)
                 
-                LessonsTabView(lessons: mockLessonHistory)
+                LessonsTabView(lessons: lessonHistory)
                     .tag(ProfileTab.lessons)
                 
-                PaymentsTabView(payments: mockPayments)
+                PaymentsTabView(payments: payments)
                     .tag(ProfileTab.payments)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -65,6 +67,18 @@ struct StudentProfileView: View {
         }
         .navigationTitle(student.name)
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await fetchData()
+        }
+    }
+    
+    func fetchData() async {
+        // TODO: Implement fetching for this student's
+        // skills, lessons, and payments
+        print("Fetching data for student \(student.id ?? "N/A")")
+        // e.g., self.skills = await progressManager.fetchSkills(for: student.id)
+        // e.g., self.lessonHistory = await lessonManager.fetchLessons(forStudent: student.id)
+        // e.g., self.payments = await paymentManager.fetchPayments(forStudent: student.id)
     }
 }
 
@@ -145,15 +159,21 @@ struct ProgressTabView: View {
                     .font(.title3).bold()
                     .padding(.horizontal)
                 
-                ForEach(skills.keys.sorted(), id: \.self) { skill in
-                    SkillProgressRow(skill: skill, progress: skills[skill]!)
+                if skills.isEmpty {
+                    Text("No skills tracked yet.")
+                        .foregroundColor(.textLight)
+                        .padding(.horizontal)
+                } else {
+                    ForEach(skills.keys.sorted(), id: \.self) { skill in
+                        SkillProgressRow(skill: skill, progress: skills[skill]!)
+                    }
                 }
                 
                 // Instructor notes section (Placeholder)
                 Text("Instructor Notes")
                     .font(.title3).bold()
                     .padding(.horizontal)
-                Text("Emma is performing well in quiet traffic but needs more practice with anticipation and dual carriageways. Scheduled roundabouts for next session.")
+                Text("No notes added yet.") // Placeholder text
                     .padding(.horizontal)
                     .foregroundColor(.textLight)
             }
@@ -195,17 +215,22 @@ struct LessonsTabView: View {
     var body: some View {
         List {
             Section("Lesson History") {
-                ForEach(lessons.sorted(by: { $0.startTime > $1.startTime })) { lesson in
-                    VStack(alignment: .leading) {
-                        Text(lesson.topic).bold()
-                        HStack {
-                            Text(lesson.startTime, style: .date)
-                            Spacer()
-                            Text(lesson.status.rawValue.capitalized)
-                                .foregroundColor(lesson.status == .completed ? .accentGreen : .primaryBlue)
-                        }
-                        .font(.caption)
+                if lessons.isEmpty {
+                    Text("No lesson history found.")
                         .foregroundColor(.textLight)
+                } else {
+                    ForEach(lessons.sorted(by: { $0.startTime > $1.startTime })) { lesson in
+                        VStack(alignment: .leading) {
+                            Text(lesson.topic).bold()
+                            HStack {
+                                Text(lesson.startTime, style: .date)
+                                Spacer()
+                                Text(lesson.status.rawValue.capitalized)
+                                    .foregroundColor(lesson.status == .completed ? .accentGreen : .primaryBlue)
+                            }
+                            .font(.caption)
+                            .foregroundColor(.textLight)
+                        }
                     }
                 }
             }
@@ -220,18 +245,23 @@ struct PaymentsTabView: View {
     var body: some View {
         List {
             Section("Payment History") {
-                ForEach(payments.sorted(by: { $0.date > $1.date })) { payment in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(payment.isPaid ? "Payment Received" : "Payment Pending")
-                                .font(.headline)
-                                .foregroundColor(payment.isPaid ? .accentGreen : .warningRed)
-                            Text(payment.date, style: .date)
-                                .font(.caption).foregroundColor(.textLight)
+                if payments.isEmpty {
+                    Text("No payment history found.")
+                        .foregroundColor(.textLight)
+                } else {
+                    ForEach(payments.sorted(by: { $0.date > $1.date })) { payment in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(payment.isPaid ? "Payment Received" : "Payment Pending")
+                                    .font(.headline)
+                                    .foregroundColor(payment.isPaid ? .accentGreen : .warningRed)
+                                Text(payment.date, style: .date)
+                                    .font(.caption).foregroundColor(.textLight)
+                            }
+                            Spacer()
+                            Text("£\(payment.amount, specifier: "%.2f")")
+                                .font(.title3).bold()
                         }
-                        Spacer()
-                        Text("£\(payment.amount, specifier: "%.2f")")
-                            .font(.title3).bold()
                     }
                 }
             }

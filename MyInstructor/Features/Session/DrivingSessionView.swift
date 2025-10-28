@@ -131,9 +131,10 @@ struct LessonSummaryView: View {
     let onComplete: () -> Void
     
     @State private var paymentStatus: PaymentStatus = .pending
-    @State private var distanceTraveled: Double = 8.5
-    @State private var selectedSkills: Set<String> = ["Junctions"]
+    @State private var distanceTraveled: Double = 0.0 // Default to 0
+    @State private var selectedSkills: Set<String> = [] // Default to empty
     
+    // TODO: This skill list should come from a central manager
     let allSkills = ["Junctions", "Clutch Control", "Speed Control", "Parking", "Roundabouts"]
     
     var body: some View {
@@ -185,12 +186,19 @@ struct LessonSummaryView: View {
                 
                 // MARK: - Finalize Button
                 Button("Finalize & Complete Lesson") {
-                    // 1. Update Lesson Status
                     Task {
-                        try? await lessonManager.updateLessonStatus(lessonID: lesson.id ?? "mock_id", status: .completed)
+                        // 1. Update Lesson Status
+                        guard let lessonID = lesson.id else {
+                            print("Error: Lesson ID is nil, cannot complete lesson.")
+                            return
+                        }
+                        try? await lessonManager.updateLessonStatus(lessonID: lessonID, status: .completed)
+                        
+                        // 2. Save progress/notes/payment status (TODO)
+                        
+                        // 3. Call completion handler
+                        onComplete()
                     }
-                    // 2. Save progress/notes/payment status (TODO)
-                    onComplete()
                 }
                 .buttonStyle(.primaryDrivingApp)
                 .padding(.vertical, 10)

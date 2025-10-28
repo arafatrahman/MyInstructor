@@ -1,93 +1,92 @@
 import Foundation
 import Combine
+import FirebaseFirestore
+
 /*
- DataService acts as the common interface for fetching and providing data. 
- For this phase, it provides sophisticated mock data.
+ DataService acts as the common interface for fetching and providing data.
+ It needs to be populated with real data-fetching logic.
  */
 class DataService: ObservableObject {
     
-    // Mock data storage for quick lookups
-    private var mockStudents: [Student] = []
-    private var mockLessons: [Lesson] = []
-
-    init() {
-        // Initialize mock data on startup
-        setupMockData()
+    private let db = Firestore.firestore()
+    private var usersCollection: CollectionReference {
+        db.collection("users")
+    }
+    private var lessonsCollection: CollectionReference {
+        db.collection("lessons")
     }
     
-    private func setupMockData() {
-        // Mock Students
-        mockStudents = [
-            Student(
-                id: "student_abc",
-                userID: "abc_123",
-                name: "Emma Watson",
-                email: "emma@example.com",
-                averageProgress: 0.85,
-                nextLessonTime: Calendar.current.date(byAdding: .hour, value: 2, to: Date()),
-                nextLessonTopic: "Emergency Stops"
-            ),
-            Student(
-                id: "student_xyz",
-                userID: "xyz_456",
-                name: "Alex Johnson",
-                email: "alex@example.com",
-                averageProgress: 0.65,
-                nextLessonTime: Calendar.current.date(byAdding: .day, value: 3, to: Date())!.addingTimeInterval(3600*14),
-                nextLessonTopic: "Roundabouts"
-            ),
-            Student(
-                id: "student_def",
-                userID: "def_789",
-                name: "Chloe Davis",
-                email: "chloe@example.com",
-                averageProgress: 0.40,
-                nextLessonTime: nil
-            )
-        ]
-        
-        // Mock Lessons (must reference mock student IDs)
-        mockLessons = [
-            Lesson(instructorID: "i_auth_id", studentID: "student_abc", topic: "Manoeuvres: Parking", startTime: Date().addingTimeInterval(3600*2), pickupLocation: "10 Downing St", fee: 45.00),
-            Lesson(instructorID: "i_auth_id", studentID: "student_xyz", topic: "Junctions", startTime: Date().addingTimeInterval(-3600*12), duration: 3600, pickupLocation: "High Street", fee: 40.00, status: .completed),
-            Lesson(instructorID: "i_auth_id", studentID: "student_def", topic: "Basic Controls", startTime: Date().addingTimeInterval(-3600*48), duration: 5400, pickupLocation: "Training Ground", fee: 60.00, status: .completed)
-        ]
+    init() {
+        // Initialization is now empty
     }
     
     // MARK: - Dashboard Data Fetching
     
     func fetchInstructorDashboardData(for instructorID: String) async throws -> (nextLesson: Lesson?, earnings: Double, avgProgress: Double) {
-        try await Task.sleep(nanoseconds: 500_000_000)
+        // TODO: Implement logic to fetch next lesson, calculate weekly earnings,
+        // and calculate average student progress for the given instructor.
         
-        let nextLesson = mockLessons.filter { $0.instructorID == instructorID && $0.status == .scheduled }.sorted { $0.startTime < $1.startTime }.first
+        // Example for fetching next lesson (untested)
+        let lessonSnapshot = try await lessonsCollection
+            .whereField("instructorID", isEqualTo: instructorID)
+            .whereField("status", isEqualTo: LessonStatus.scheduled.rawValue)
+            .whereField("startTime", isGreaterThan: Date())
+            .order(by: "startTime")
+            .limit(to: 1)
+            .getDocuments()
+            
+        let nextLesson = try? lessonSnapshot.documents.first?.data(as: Lesson.self)
         
-        let weeklyEarnings = 350.00 // Mock value
-        let averageStudentProgress = mockStudents.reduce(0) { $0 + $1.averageProgress } / Double(mockStudents.count)
-        
-        return (nextLesson, weeklyEarnings, averageStudentProgress)
+        // Placeholder return values
+        return (nextLesson, 0.0, 0.0)
     }
 
     func fetchStudentDashboardData(for studentID: String) async throws -> (upcomingLesson: Lesson?, progress: Double, latestFeedback: String, paymentDue: Bool) {
-        try await Task.sleep(nanoseconds: 500_000_000)
+        // TODO: Implement logic to fetch upcoming lesson, current progress,
+        // latest feedback, and payment status for the given student.
         
-        let upcomingLesson = mockLessons.filter { $0.studentID == studentID && $0.status == .scheduled }.sorted { $0.startTime < $1.startTime }.first
-        let student = mockStudents.first { $0.id == studentID }
+        // Example for fetching upcoming lesson (untested)
+        let lessonSnapshot = try await lessonsCollection
+            .whereField("studentID", isEqualTo: studentID)
+            .whereField("status", isEqualTo: LessonStatus.scheduled.rawValue)
+            .whereField("startTime", isGreaterThan: Date())
+            .order(by: "startTime")
+            .limit(to: 1)
+            .getDocuments()
+            
+        let upcomingLesson = try? lessonSnapshot.documents.first?.data(as: Lesson.self)
         
-        let progressValue = student?.averageProgress ?? 0.0
-        let feedback = "Great control on the clutch. Focus on signaling earlier at complex junctions."
-        let paymentStatus = true
-        
-        return (upcomingLesson, progressValue, feedback, paymentStatus)
+        // Placeholder return values
+        return (upcomingLesson, 0.0, "", false)
     }
     
     // MARK: - User Management Fetching
     
     func fetchStudents(for instructorID: String) async throws -> [Student] {
-        try await Task.sleep(nanoseconds: 500_000_000)
-        return mockStudents
+        // TODO: Implement logic to find and return all students
+        // associated with a specific instructor. This schema isn't
+        // fully defined in the models. Returning empty.
+        
+        // This query assumes students have an 'instructorID' field,
+        // which isn't on the 'Student' or 'AppUser' model.
+        // A more likely schema is that an instructor has an array of student IDs.
+        
+        return []
     }
     
+    // Fetches a specific user's public data (like name)
     func getStudentName(for studentID: String) -> String {
-        return mockStudents.first { $0.id == studentID }?.name ?? "Unknown Student"
+        // This function was synchronous and relied on a mock cache.
+        // It should be replaced with an async function that fetches
+        // the user's name from Firestore when needed.
+        
+        // For now, it returns a placeholder.
+        return "Unknown Student"
+        
+        // A real implementation would look like:
+        // func getUser(id: String) async throws -> AppUser? {
+        //     try await usersCollection.document(id).getDocument(as: AppUser.self)
+        // }
+        // ...and views would call this async function.
     }
 }

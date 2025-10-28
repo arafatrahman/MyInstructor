@@ -4,6 +4,7 @@ struct AddPaymentFormView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var paymentManager: PaymentManager
     @EnvironmentObject var dataService: DataService
+    @EnvironmentObject var authManager: AuthManager // Add AuthManager
 
     var onPaymentAdded: () -> Void
 
@@ -22,7 +23,6 @@ struct AddPaymentFormView: View {
             Form {
                 // MARK: - Transaction Details
                 Section("Transaction Details") {
-                    // ERROR FIXED: Student now conforms to Hashable
                     Picker("Student", selection: $selectedStudent) {
                         Text("Select Student").tag(nil as Student?)
                         ForEach(availableStudents) { student in
@@ -85,9 +85,13 @@ struct AddPaymentFormView: View {
     }
     
     private func fetchStudents() async {
+        guard let instructorID = authManager.user?.id else {
+            errorMessage = "Could not find instructor ID."
+            return
+        }
+        
         do {
-            // NOTE: Mocking instructor ID
-            availableStudents = try await dataService.fetchStudents(for: "i_auth_id")
+            availableStudents = try await dataService.fetchStudents(for: instructorID)
         } catch {
             errorMessage = "Failed to load students."
         }
@@ -99,8 +103,9 @@ struct AddPaymentFormView: View {
         isLoading = true
         errorMessage = nil
         
+        // TODO: The Payment model should probably include 'instructorID'
         let newPayment = Payment(
-            studentID: student.id ?? "unknown",
+            studentID: student.id ?? "unknown", // Student model *must* have an ID
             amount: finalAmount,
             date: date,
             isPaid: isPaid

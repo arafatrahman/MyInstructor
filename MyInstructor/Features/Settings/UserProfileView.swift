@@ -15,15 +15,14 @@ struct UserProfileView: View {
     private var appBlue: Color {
         return Color.primaryBlue
     }
-    
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                
                 // Profile Header Card
                 ProfileHeaderCard()
                     .padding(.horizontal)
-                    .padding(.top, 16) // Added padding
+                    .padding(.top, 16) // Add padding at the top
 
                 // Contact Card
                 ContactCard()
@@ -35,8 +34,7 @@ struct UserProfileView: View {
                         .padding(.horizontal)
                 }
 
-                // Education Card
-                // These cards now use the real data from AuthManager
+                // Education Card (Uses updated struct)
                 EducationCard(education: authManager.user?.education)
                     .padding(.horizontal)
 
@@ -44,7 +42,7 @@ struct UserProfileView: View {
                 AboutCard(aboutText: authManager.user?.aboutMe)
                     .padding(.horizontal)
 
-                // Expertise Card
+                // Expertise Card (Hidden for students)
                 if authManager.role == .instructor {
                     ExpertiseCard(skills: authManager.user?.expertise)
                         .padding(.horizontal)
@@ -58,7 +56,7 @@ struct UserProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .background(Color(.systemBackground)) // Use white background
         .toolbar {
-            // --- THIS IS THE NEW "EDIT PROFILE" BUTTON ---
+            // --- Edit Profile Button (Colorful Text) ---
             ToolbarItem(placement: .navigationBarTrailing) {
                 NavigationLink(destination: ProfileView()) {
                     Text("Edit Profile")
@@ -67,7 +65,7 @@ struct UserProfileView: View {
                 }
             }
         }
-        // "Back" button ToolbarItem has been removed, so the default one will show
+        // Default back button will now show
     }
 }
 
@@ -218,11 +216,12 @@ private struct RateHighlightCard: View {
 
 // MARK: - Education Card
 private struct EducationCard: View {
-    let education: [EducationEntry]? // <-- Accepts real data
-    
+    let education: [EducationEntry]? // <-- Accepts updated struct
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("EDUCATION")
+            // Label is always visible
+            Text("EDUCATION OR CERTIFICATION")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 16)
@@ -231,11 +230,11 @@ private struct EducationCard: View {
 
             Divider().padding(.horizontal, 16)
 
-            // --- Updated Logic ---
             if let education = education, !education.isEmpty {
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(education) { entry in
-                        EduRow(school: entry.school, degree: entry.degree, years: entry.years)
+                        // Uses updated EduRow
+                        EduRow(title: entry.title, subtitle: entry.subtitle, years: entry.years)
                         if entry.id != education.last?.id {
                             Divider().padding(.horizontal, 16)
                         }
@@ -243,12 +242,11 @@ private struct EducationCard: View {
                 }
                 .padding(.vertical, 14)
             } else {
-                Text("No education details added. Tap 'Edit Profile' to add them.")
+                Text("No education or certifications added. Tap 'Edit Profile' to add them.")
                     .font(.system(size: 15))
                     .foregroundColor(.secondary)
                     .padding(16)
             }
-            // --- End Logic ---
         }
         .background(Color(.systemBackground))
         .cornerRadius(16)
@@ -256,17 +254,18 @@ private struct EducationCard: View {
     }
 }
 
+// Uses updated struct fields
 private struct EduRow: View {
-    let school: String
-    let degree: String
+    let title: String
+    let subtitle: String
     let years: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(school)
+            Text(title)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(.primary)
-            Text(degree)
+            Text(subtitle)
                 .font(.system(size: 15))
                 .foregroundColor(Color.primaryBlue) // Use app color
             Text(years)
@@ -279,10 +278,11 @@ private struct EduRow: View {
 
 // MARK: - About Card
 private struct AboutCard: View {
-    let aboutText: String? // <-- Accepts real data
+    let aboutText: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Label is always visible
             Text("ABOUT")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.secondary)
@@ -292,7 +292,6 @@ private struct AboutCard: View {
 
             Divider().padding(.horizontal, 16)
 
-            // --- Updated Logic ---
             if let text = aboutText, !text.isEmpty {
                 Text(text)
                     .font(.system(size: 16))
@@ -306,7 +305,6 @@ private struct AboutCard: View {
                     .foregroundColor(.secondary)
                     .padding(16)
             }
-            // --- End Logic ---
         }
         .background(Color(.systemBackground))
         .cornerRadius(16)
@@ -316,10 +314,11 @@ private struct AboutCard: View {
 
 // MARK: - Expertise Card
 private struct ExpertiseCard: View {
-    let skills: [String]? // <-- Accepts real data
+    let skills: [String]?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Label is always visible
             Text("EXPERTISE")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.secondary)
@@ -329,7 +328,6 @@ private struct ExpertiseCard: View {
 
             Divider().padding(.horizontal, 16)
 
-            // --- Updated Logic ---
             if let skills = skills, !skills.isEmpty {
                 FlowLayout(alignment: .leading, spacing: 8) {
                     ForEach(skills, id: \.self) { skill in
@@ -350,7 +348,6 @@ private struct ExpertiseCard: View {
                     .foregroundColor(.secondary)
                     .padding(16)
             }
-            // --- End Logic ---
         }
         .background(Color(.systemBackground))
         .cornerRadius(16)
@@ -367,11 +364,10 @@ private struct FlowLayout: Layout {
         let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
         var totalHeight: CGFloat = 0
         var totalWidth: CGFloat = 0
-        
+
         var lineWidth: CGFloat = 0
         var lineHeight: CGFloat = 0
 
-        // Calculate size based on a proposal, respecting padding
         let effectiveWidth = (proposal.width ?? 0) - (spacing * 2)
 
         for size in sizes {
@@ -393,20 +389,20 @@ private struct FlowLayout: Layout {
         let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
         var (x, y) = (bounds.minX, bounds.minY)
         var lineHeight: CGFloat = 0
-        
+
         for index in subviews.indices {
             if x + sizes[index].width > bounds.maxX && x > bounds.minX {
                 x = bounds.minX
                 y += lineHeight + spacing
                 lineHeight = 0
             }
-            
+
             subviews[index].place(
                 at: .init(x: x, y: y),
                 anchor: .topLeading,
                 proposal: .init(sizes[index])
             )
-            
+
             lineHeight = max(lineHeight, sizes[index].height)
             x += sizes[index].width + spacing
         }
@@ -415,8 +411,6 @@ private struct FlowLayout: Layout {
 
 // MARK: - Preview
 struct UserProfileView_Previews: PreviewProvider {
-    // --- THIS IS THE CORRECTED PREVIEW CODE ---
-    // 1. mockAuthManager is now a static var on the struct
     static var mockAuthManager: AuthManager {
         let manager = AuthManager()
         manager.user = AppUser(id: "123", email: "emma.richardson@edu.com", name: "Emma Richardson", role: .instructor)
@@ -424,24 +418,22 @@ struct UserProfileView_Previews: PreviewProvider {
         manager.user?.address = "123 Education St, SF"
         manager.user?.hourlyRate = 85.0
         manager.user?.aboutMe = "Passionate driving instructor with 8+ years of experience."
-        manager.user?.education = [EducationEntry(school: "ADI Certified", degree: "Approved Driving Instructor", years: "2018")]
+        manager.user?.education = [EducationEntry(title: "ADI Certified", subtitle: "Approved Driving Instructor", years: "2018")]
         manager.user?.expertise = ["Nervous Drivers", "Parallel Parking", "Test Prep"]
         return manager
     }
 
-    // 2. previews var now *uses* mockAuthManager
     static var previews: some View {
         NavigationView {
             UserProfileView()
-                .environmentObject(mockAuthManager) // Use the mock manager
+                .environmentObject(mockAuthManager)
         }
         .preferredColorScheme(.light)
 
         NavigationView {
             UserProfileView()
-                .environmentObject(mockAuthManager) // Use the mock manager
+                .environmentObject(mockAuthManager)
         }
         .preferredColorScheme(.dark)
     }
-    // --- END CORRECTION ---
 }

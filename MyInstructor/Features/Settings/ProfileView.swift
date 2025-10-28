@@ -22,9 +22,9 @@ struct ProfileRow<Content: View>: View {
             content
                 .foregroundColor(.textDark)
                 .frame(maxWidth: .infinity, alignment: .trailing)
-                .multilineTextAlignment(.trailing)
+                .multilineTextAlignment(.trailing) // Ensures TextField text is right-aligned
         }
-        .padding(.vertical, 4) // Reduced vertical padding slightly
+        .padding(.vertical, 4)
     }
 }
 // --- End Helper View ---
@@ -32,6 +32,7 @@ struct ProfileRow<Content: View>: View {
 
 struct ProfileView: View {
     @EnvironmentObject var authManager: AuthManager
+    @Environment(\.dismiss) var dismiss // To potentially dismiss after save
 
     // --- State variables ---
     @State private var name: String = ""
@@ -45,17 +46,21 @@ struct ProfileView: View {
     @State private var isLoading = false
     @State private var statusMessage: (text: String, isError: Bool)?
 
-    // --- NEW STATE VARIABLES ---
+    // --- Profile Data State ---
     @State private var aboutMe: String = ""
     @State private var education: [EducationEntry] = []
     @State private var expertise: [String] = []
-    
+
     // For "Add" fields
-    @State private var newSchool: String = ""
-    @State private var newDegree: String = ""
-    @State private var newYears: String = ""
+    @State private var newEduTitle: String = ""
+    @State private var newEduSubtitle: String = ""
+    @State private var newEduYears: String = ""
     @State private var newSkill: String = ""
-    // -------------------------
+
+    // --- State for controlling add fields visibility ---
+    @State private var isAddingEducation: Bool = false
+    @State private var isAddingSkill: Bool = false
+    // ---------------------------------------------------
 
     var isInstructor: Bool {
         authManager.role == .instructor
@@ -68,7 +73,6 @@ struct ProfileView: View {
     // --- Profile Image ViewBuilder ---
     @ViewBuilder
     private var profileImageView: some View {
-        // ... (profile image loading logic - no changes)
         if let photoData = selectedPhotoData, let uiImage = UIImage(data: photoData) {
             Image(uiImage: uiImage)
                 .resizable().scaledToFill()
@@ -94,6 +98,10 @@ struct ProfileView: View {
                         .frame(width: 100, height: 100).foregroundColor(.secondaryGray)
                 }
             }
+            .frame(width: 100, height: 100) // Ensure AsyncImage frame
+            .background(Color.secondaryGray.opacity(0.3)) // Background for empty/failure
+            .clipShape(Circle())
+
         }
         else {
             Image(systemName: "person.circle.fill")
@@ -104,12 +112,11 @@ struct ProfileView: View {
     }
 
     var body: some View {
-        NavigationView {
-            // Use Form directly for standard scrolling behavior
+        VStack(spacing: 0) {
             Form {
-                // MARK: - Profile Photo Section (Reduced Padding)
+                // MARK: - Profile Photo Section
                 Section {
-                    VStack(spacing: 8) { // Tighter spacing
+                    VStack(spacing: 8) {
                         profileImageView
                         PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
                             Text("Change Photo")
@@ -117,22 +124,21 @@ struct ProfileView: View {
                         }
                         .onChange(of: selectedPhotoItem, handlePhotoSelection)
                     }
-                    .frame(maxWidth: .infinity) // Center align content
-                    .padding(.vertical, 10) // Reduced vertical padding
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
                 }
-                // Match section background to default form background
                 .listRowBackground(Color(.systemGroupedBackground))
 
                 // MARK: - Personal Details Section
                 Section("Personal Details") {
                     ProfileRow(iconName: "person.fill", label: "Name") {
-                        TextField("Required", text: $name)
+                        TextField("Your full name", text: $name)
                     }
                     ProfileRow(iconName: "envelope.fill", label: "Email") {
                         Text(userEmail).foregroundColor(.textDark.opacity(0.7))
                     }
                     ProfileRow(iconName: "phone.fill", label: "Phone") {
-                        TextField("Optional", text: $phone) .keyboardType(.phonePad)
+                        TextField("Your phone number", text: $phone) .keyboardType(.phonePad)
                     }
                     ProfileRow(iconName: "location.fill", label: "Address") {
                         Button { isShowingAddressSearch = true } label: {
@@ -141,12 +147,11 @@ struct ProfileView: View {
                                 .lineLimit(2)
                                 .frame(maxWidth: .infinity, alignment: .trailing)
                         }
-                        // Add padding to make the button text area easier to tap within the row
                         .padding(.vertical, 5)
                     }
                 }
-                
-                // --- NEW SECTION: ABOUT ME ---
+
+                // MARK: - About Me Section
                 Section("About Me") {
                     ZStack(alignment: .topLeading) {
                         TextEditor(text: $aboutMe)
@@ -155,132 +160,168 @@ struct ProfileView: View {
                             .padding(.leading, -4)
 
                         if aboutMe.isEmpty {
-                            Text("Write a short bio...")
+                            Text("Write a short bio about your experience...")
                                 .foregroundColor(Color(.placeholderText))
                                 .padding(.top, 0)
                                 .allowsHitTesting(false)
                         }
                     }
                 }
-                
-                // --- NEW SECTION: EDUCATION ---
-                Section("Education") {
+
+                // MARK: - Education or Certification Section
+                Section("Education or Certification") {
+                    // Display existing entries
                     ForEach($education) { $entry in
-                        VStack(alignment: .leading) {
-                            TextField("School Name", text: $entry.school)
-                            TextField("Degree / Certification", text: $entry.degree)
-                            TextField("Years (e.g., 2020-2022)", text: $entry.years)
+                        VStack(alignment: .leading, spacing: 5) {
+                            ProfileRow(iconName: "building.columns.fill", label: "Title") {
+                                TextField("e.g., Stanford or ADI", text: $entry.title)
+                            }
+                            ProfileRow(iconName: "graduationcap.fill", label: "From") {
+                                TextField("e.g., M.S. Maths or DVSA", text: $entry.subtitle)
+                            }
+                            ProfileRow(iconName: "calendar", label: "Year") {
+                                TextField("e.g., 2020-2022 or Present", text: $entry.years)
+                            }
                         }
+                        .padding(.vertical, 6)
                     }
                     .onDelete { offsets in
                         education.remove(atOffsets: offsets)
                     }
-                    
-                    // Add new education item
-                    VStack(alignment: .leading, spacing: 8) {
-                        TextField("New School Name", text: $newSchool)
-                        TextField("New Degree / Certification", text: $newDegree)
-                        TextField("New Years", text: $newYears)
-                        Button("Add Education Entry") {
-                            if !newSchool.isEmpty && !newDegree.isEmpty {
-                                education.append(EducationEntry(school: newSchool, degree: newDegree, years: newYears))
-                                newSchool = ""
-                                newDegree = ""
-                                newYears = ""
+
+                    // Conditionally show "Add New" fields
+                    if isAddingEducation {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ProfileRow(iconName: "building.columns.fill", label: "Title") {
+                                TextField("New School / Cert Name", text: $newEduTitle)
+                            }
+                            ProfileRow(iconName: "graduationcap.fill", label: "From") {
+                                TextField("New Degree / Body", text: $newEduSubtitle)
+                            }
+                            ProfileRow(iconName: "calendar", label: "Year") {
+                                TextField("New Years Attended / Received", text: $newEduYears)
                             }
                         }
-                        .buttonStyle(.borderless)
-                        .foregroundColor(.primaryBlue)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.top, 10)
+                        .transition(.opacity.combined(with: .move(edge: .top))) // Add animation
                     }
-                    .padding(.top, 10)
+
+                    // "Add / Confirm Add" Button
+                    Button {
+                        addEducationEntry() // Now toggles visibility or adds entry
+                    } label: {
+                        HStack {
+                           Image(systemName: isAddingEducation ? "checkmark.circle.fill" : "plus.circle.fill")
+                           Text(isAddingEducation ? "Confirm Entry" : "Add Education Entry")
+                        }
+                        .foregroundColor(.primaryBlue)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.top, 5)
+
                 }
 
                 // MARK: - Instructor Section
                 if isInstructor {
                     Section("Instructor Details") {
                         ProfileRow(iconName: "briefcase.fill", label: "School") {
-                            TextField("Optional", text: $drivingSchool)
+                            TextField("Your driving school name", text: $drivingSchool)
                         }
                         ProfileRow(iconName: "creditcard.fill", label: "Rate (£)") {
-                            TextField("0.00", text: $hourlyRate)
+                            TextField("e.g., 45.00", text: $hourlyRate)
                                 .keyboardType(.decimalPad)
                                 .foregroundColor(.primaryBlue)
                         }
                     }
-                    
-                    // --- NEW SECTION: EXPERTISE ---
+
+                    // MARK: - Expertise Section
                     Section("Expertise (Skills)") {
                         ForEach(expertise, id: \.self) { skill in
-                            Text(skill)
+                            HStack {
+                                Text(skill)
+                                Spacer()
+                            }
                         }
                         .onDelete { offsets in
                             expertise.remove(atOffsets: offsets)
                         }
-                        
-                        HStack {
-                            TextField("New Skill (e.g., Nervous Drivers)", text: $newSkill)
-                            Button("Add") {
-                                if !newSkill.isEmpty {
-                                    expertise.append(newSkill)
-                                    newSkill = ""
-                                }
-                            }
-                            .buttonStyle(.borderless)
-                            .foregroundColor(.primaryBlue)
-                        }
-                    }
-                }
 
-                // MARK: - Save Button & Status Message Section
-                Section {
-                    VStack(spacing: 10) { // VStack for spacing control
-                        if isLoading {
-                            ProgressView("Saving...")
-                        } else {
-                            Button("Save Changes") {
-                                saveProfile()
+                        // Conditionally show "Add New" field
+                        if isAddingSkill {
+                            ProfileRow(iconName: "plus.circle.fill", label: "New Skill") {
+                                 TextField("e.g., Nervous Drivers, Parking", text: $newSkill)
+                                    .onSubmit { addSkill() } // Keep onSubmit
                             }
-                            // Apply button style HERE
-                            .buttonStyle(.primaryDrivingApp)
-                            // Ensure the button itself fills available width within the VStack
-                            .frame(maxWidth: .infinity)
+                            .transition(.opacity.combined(with: .move(edge: .top))) // Add animation
                         }
 
-                        // Display status message below the button/progress view
-                        if let msg = statusMessage {
-                            Text(msg.text)
-                                .font(.caption)
-                                .foregroundColor(msg.isError ? .warningRed : .accentGreen)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.top, 5) // Add space above message
+                        // "Add / Confirm Add" Button for Skills
+                        Button {
+                            addSkill() // Now toggles visibility or adds skill
+                        } label: {
+                             HStack {
+                                Image(systemName: isAddingSkill ? "checkmark.circle.fill" : "plus.circle.fill")
+                                Text(isAddingSkill ? "Confirm Skill" : "Add Skill")
+                             }
+                             .foregroundColor(.primaryBlue)
                         }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.top, 5)
+
                     }
-                    .padding(.vertical, 5) // Add padding around the button/status
                 }
-                // Modifiers to make the button section look seamless
-                .listRowInsets(EdgeInsets()) // Remove default Form insets
-                .listRowBackground(Color.clear) // Make background clear
 
             } // End Form
-            .navigationTitle("Edit Profile")
-            .navigationBarTitleDisplayMode(.inline)
-            .onAppear(perform: loadUserData)
-            .sheet(isPresented: $isShowingAddressSearch) {
-                AddressSearchView { selectedAddressString in self.address = selectedAddressString }
+
+            // Status Message Display Area
+            if let msg = statusMessage {
+                Text(msg.text)
+                    .font(.caption)
+                    .foregroundColor(msg.isError ? .warningRed : .accentGreen)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.horizontal)
+                    .padding(.vertical, 5)
+                    .background(Color(.systemGroupedBackground))
             }
-            .onChange(of: authManager.user?.id) { _, _ in loadUserData() }
-            .onChange(of: authManager.user?.photoURL) { _, _ in loadUserData() }
+
+        } // End VStack
+        .navigationTitle("Edit Profile")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // Save Button in Toolbar
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    saveProfile()
+                } label: {
+                    if isLoading {
+                        ProgressView()
+                            .tint(Color.primaryBlue)
+                    } else {
+                        Text("Save")
+                            .bold()
+                            .foregroundColor(Color.primaryBlue)
+                    }
+                }
+                .disabled(isLoading)
+            }
         }
-        .applyAppTheme() // Apply global theme settings
+        .animation(.default, value: isAddingEducation) // Animate changes
+        .animation(.default, value: isAddingSkill)     // Animate changes
+        .onAppear(perform: loadUserData)
+        .sheet(isPresented: $isShowingAddressSearch) {
+            AddressSearchView { selectedAddressString in self.address = selectedAddressString }
+        }
+        .onChange(of: authManager.user?.id) { _, _ in loadUserData() }
+        .onChange(of: authManager.user?.photoURL) { _, _ in loadUserData() }
+        .applyAppTheme()
     }
 
     // --- HELPER FUNCTIONS ---
-    
+
     func handlePhotoSelection(oldItem: PhotosPickerItem?, newItem: PhotosPickerItem?) {
          Task {
             statusMessage = nil
-            selectedPhotoData = nil // Clear previous temp data
+            selectedPhotoData = nil
             if let item = newItem {
                 do {
                     selectedPhotoData = try await item.loadTransferable(type: Data.self)
@@ -306,29 +347,98 @@ struct ProfileView: View {
         self.address = user.address ?? ""
         self.selectedPhotoData = nil
         self.selectedPhotoItem = nil
-        
-        // --- LOAD NEW DATA ---
         self.aboutMe = user.aboutMe ?? ""
         self.education = user.education ?? []
-        // ---------------------
 
         if isInstructor {
             self.drivingSchool = user.drivingSchool ?? ""
             self.hourlyRate = String(format: "%.2f", user.hourlyRate ?? 0.0)
-            self.expertise = user.expertise ?? [] // LOAD NEW DATA
+            self.expertise = user.expertise ?? []
         }
+
+        // Reset add fields and visibility state when loading
+        self.newEduTitle = ""
+        self.newEduSubtitle = ""
+        self.newEduYears = ""
+        self.newSkill = ""
+        self.isAddingEducation = false
+        self.isAddingSkill = false
+
         print("ProfileView: User data loaded.")
     }
 
+    // Add Education Function (Toggles visibility or adds entry)
+    func addEducationEntry() {
+        if isAddingEducation {
+            // Fields are visible, try to add the entry
+            let trimmedTitle = newEduTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedSubtitle = newEduSubtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedTitle.isEmpty && !trimmedSubtitle.isEmpty {
+                education.append(EducationEntry(title: trimmedTitle, subtitle: trimmedSubtitle, years: newEduYears.trimmingCharacters(in: .whitespacesAndNewlines)))
+                // Clear fields after adding
+                newEduTitle = ""
+                newEduSubtitle = ""
+                newEduYears = ""
+                isAddingEducation = false // Hide fields after adding
+            } else {
+                 statusMessage = (text: "Title and From fields cannot be empty.", isError: true)
+            }
+        } else {
+            // Fields are hidden, just show them
+            isAddingEducation = true
+            statusMessage = nil
+        }
+    }
+
+    // Add Skill Function (Toggles visibility or adds skill)
+    func addSkill() {
+        if isAddingSkill {
+            // Fields are visible, try to add the skill
+            let trimmedSkill = newSkill.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedSkill.isEmpty {
+                if !expertise.contains(where: { $0.caseInsensitiveCompare(trimmedSkill) == .orderedSame }) {
+                     expertise.append(trimmedSkill)
+                }
+                newSkill = ""
+                isAddingSkill = false // Hide field after adding
+            } else {
+                statusMessage = (text: "Skill field cannot be empty.", isError: true)
+            }
+        } else {
+            // Field is hidden, just show it
+            isAddingSkill = true
+             statusMessage = nil
+        }
+    }
+
+
+    // Save Profile Function (No longer adds pending items)
     func saveProfile() {
         print("ProfileView: Save button tapped.")
+
+        // Hide any currently shown 'Add New' fields before saving
+        if isAddingEducation {
+            isAddingEducation = false
+            // Clear fields - user must click Confirm first
+             newEduTitle = ""
+             newEduSubtitle = ""
+             newEduYears = ""
+        }
+        if isAddingSkill {
+            isAddingSkill = false
+            newSkill = ""
+        }
+
         isLoading = true
         statusMessage = nil
+
+        // Use the current state of education and expertise arrays
+        let finalEducation = education
+        let finalExpertise = expertise
 
         Task {
             do {
                 print("ProfileView: Calling AuthManager.updateUserProfile...")
-                // --- PASS NEW DATA TO SAVING FUNCTION ---
                 try await authManager.updateUserProfile(
                     name: name,
                     phone: phone,
@@ -336,17 +446,25 @@ struct ProfileView: View {
                     drivingSchool: isInstructor ? drivingSchool : nil,
                     hourlyRate: isInstructor ? (Double(hourlyRate) ?? 0.0) : nil,
                     photoData: selectedPhotoData,
-                    aboutMe: aboutMe, // NEW
-                    education: education, // NEW
-                    expertise: isInstructor ? expertise : nil // NEW
+                    aboutMe: aboutMe,
+                    education: finalEducation,
+                    expertise: isInstructor ? finalExpertise : nil
                 )
-                // ----------------------------------------
-                
+
                 print("ProfileView: AuthManager.updateUserProfile successful.")
                 isLoading = false
                 statusMessage = (text: "Profile updated successfully!", isError: false)
                 selectedPhotoData = nil
                 selectedPhotoItem = nil
+
+                // Clear "Add New" fields just in case
+                newEduTitle = ""
+                newEduSubtitle = ""
+                newEduYears = ""
+                newSkill = ""
+
+                // Optionally dismiss after save
+                // dismiss()
 
             } catch {
                 print("!!! ProfileView Save FAILED: \(error.localizedDescription)")

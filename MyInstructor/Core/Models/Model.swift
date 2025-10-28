@@ -1,3 +1,5 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/Model.swift
+
 import Foundation
 import FirebaseFirestore // Need this for @DocumentID
 
@@ -9,15 +11,14 @@ enum UserRole: String, Codable, Hashable {
     case unselected = "unselected"
 }
 
-// --- NEW STRUCT FOR EDUCATION ---
-// Add this new struct above AppUser
+// --- THIS IS THE MODIFIED STRUCT ---
 struct EducationEntry: Identifiable, Codable, Hashable {
     var id = UUID()
-    var school: String
-    var degree: String
+    var title: String    // Replaces 'school'
+    var subtitle: String // Replaces 'degree'
     var years: String
 }
-// ------------------------------
+// ------------------------------------
 
 struct AppUser: Identifiable, Codable {
     @DocumentID var id: String? = nil
@@ -34,7 +35,7 @@ struct AppUser: Identifiable, Codable {
     
     // --- THESE ARE THE NEW FIELDS ---
     var aboutMe: String?
-    var education: [EducationEntry]?
+    var education: [EducationEntry]? // Uses new struct
     var expertise: [String]? // For instructor
     // --------------------------------
 
@@ -48,7 +49,7 @@ struct AppUser: Identifiable, Codable {
 }
 
 // Student model (Reused to represent both students and instructors in directory)
-struct Student: Identifiable, Codable, Hashable { // <-- ADDED Hashable
+struct Student: Identifiable, Codable, Hashable {
     @DocumentID var id: String?
     let userID: String // The user's Firebase Auth ID
     var name: String
@@ -61,8 +62,6 @@ struct Student: Identifiable, Codable, Hashable { // <-- ADDED Hashable
     var nextLessonTime: Date?
     var nextLessonTopic: String?
     
-    // Since all properties are Hashable, default conformance is used.
-    // If 'id' is nil, we rely on the object's identity for Hashable comparison.
     static func == (lhs: Student, rhs: Student) -> Bool {
         lhs.id == rhs.id
     }

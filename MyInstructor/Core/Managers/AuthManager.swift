@@ -3,7 +3,7 @@ import Combine
 import Foundation
 import FirebaseAuth
 import FirebaseFirestore
-import FirebaseStorage // <-- Make sure this is imported
+import FirebaseStorage
 import UIKit
 
 @MainActor // Ensures class runs on the main thread
@@ -62,18 +62,15 @@ class AuthManager: ObservableObject {
     // MARK: - Data Fetching
     // Fetches user data from Firestore, ensuring not to interfere with signUp
     private func fetchUserData(id: String, email: String?) async {
-        // Double-check flag, although listener should already prevent this call during signUp
         guard !self.isCurrentlySigningUp else {
-            print("FetchUserData: Aborted because signUp is still marked as in progress (this shouldn't normally happen here).")
+            print("FetchUserData: Aborted because signUp is still marked as in progress.")
             return
         }
-
         print("FetchUserData: Attempting to load user data for UID: \(id)...")
         if !self.isLoading { self.isLoading = true } // Ensure loading state is active
 
         do {
             let document = try await db.collection(usersCollection).document(id).getDocument()
-
             if document.exists, var appUser = try? document.data(as: AppUser.self) {
                 print("FetchUserData: Document found for user \(id). Role: \(appUser.role)")
                 if appUser.role == .unselected {
@@ -91,6 +88,10 @@ class AuthManager: ObservableObject {
                 print("FetchUserData: No document found for \(id). Creating new default user profile.")
                 let defaultRole: UserRole = .student
                 var newUser = AppUser(id: id, email: email ?? "unknown@email.com", role: defaultRole)
+                // Initialize new fields for brand new users
+                newUser.aboutMe = ""
+                newUser.education = []
+                newUser.expertise = []
                 try await db.collection(self.usersCollection).document(id).setData(from: newUser)
                 print("FetchUserData: Saved new default user document.")
                 self.user = newUser
@@ -98,14 +99,12 @@ class AuthManager: ObservableObject {
             }
             // Ensure authentication state reflects reality after data load/creation
             if !self.isAuthenticated { self.isAuthenticated = true }
-
         } catch {
             print("!!! FetchUserData FAILED for user \(id): \(error.localizedDescription)")
             // If fetching fails, reset fully to signed-out state
             self.resetState()
             return // Stop further execution here
         }
-
         // Only mark loading complete after successful fetch/creation
         self.isLoading = false
         print("FetchUserData: Loading finished successfully for UID: \(id).")
@@ -128,13 +127,11 @@ class AuthManager: ObservableObject {
     // --- SIGN IN ACTION ---
     func login(email: String, password: String) async throws {
         print("AuthManager: Attempting Sign In for \(email)...")
-        // Reset flag just in case, although it should be false unless signUp crashed
         if self.isCurrentlySigningUp {
              print("AuthManager Sign In: Resetting isCurrentlySigningUp flag before login.")
              self.isCurrentlySigningUp = false
         }
         self.isLoading = true // Show loading indicator
-
         do {
             _ = try await Auth.auth().signIn(withEmail: email, password: password)
             print("AuthManager: Firebase Sign In successful for \(email). Listener will handle data fetch.")
@@ -160,8 +157,6 @@ class AuthManager: ObservableObject {
         photoData: Data?,
         hourlyRate: Double?
     ) async throws {
-
-        // --- Start Sign Up Process ---
         guard !self.isCurrentlySigningUp else {
              print("!!! SignUp attempted while another signup was in progress. Aborting.")
              throw NSError(domain: "AuthManager", code: -10, userInfo: [NSLocalizedDescriptionKey: "Sign up already in progress."])
@@ -170,26 +165,20 @@ class AuthManager: ObservableObject {
         self.isLoading = true            // Ensure loading indicator is shown
         print("SignUp: Starting process for \(email)...")
         // -----------------------------
-
         var uid: String = ""
         var photoURL: String? = nil
-
         do {
             // 1. Create Auth user
             print("SignUp: Creating Auth user...")
             let result = try await Auth.auth().createUser(withEmail: email, password: password)
             uid = result.user.uid
             print("SignUp: Auth user created with UID: \(uid)")
-
             // 2. Upload Photo (if provided)
             if let data = photoData {
                 print("SignUp: Photo data found, attempting upload for UID: \(uid)...")
                 photoURL = try await StorageManager.shared.uploadProfilePhoto(photoData: data, userID: uid)
                 print("SignUp: Photo upload successful. URL: \(photoURL ?? "N/A")")
-            } else {
-                print("SignUp: No photo data provided.")
-            }
-
+            } else { print("SignUp: No photo data provided.") }
             // 3. Prepare Firestore data
             var newUser = AppUser(id: uid, email: email, name: name, role: role)
             newUser.phone = phone
@@ -197,19 +186,13 @@ class AuthManager: ObservableObject {
             newUser.address = address
             newUser.photoURL = photoURL
             newUser.hourlyRate = hourlyRate
-            
-            // Set empty defaults for new fields
             newUser.aboutMe = ""
             newUser.education = []
-            if role == .instructor {
-                newUser.expertise = []
-            }
-
+            if role == .instructor { newUser.expertise = [] }
             // 4. Save to Firestore
             print("SignUp: Saving user details to Firestore for UID: \(uid)...")
             try await db.collection(usersCollection).document(uid).setData(from: newUser)
             print("SignUp: Firestore save successful.")
-
             // --- SUCCESS: Manually update state ---
             print("SignUp: Process complete. Updating local state manually.")
             self.user = newUser
@@ -219,7 +202,6 @@ class AuthManager: ObservableObject {
             self.isCurrentlySigningUp = false // **** UNSET FLAG ****
             // The listener might fire now or might have fired already, but because isCurrentlySigningUp WAS true, fetchUserData wouldn't have run. Now that the flag is false, subsequent listener events (if any) will work correctly.
             // ------------------------------------
-
         } catch {
             // --- CATCH BLOCK FOR ANY FAILURE ---
             print("!!! SignUp FAILED: \(error.localizedDescription)")
@@ -235,7 +217,7 @@ class AuthManager: ObservableObject {
         }
     }
 
-    // --- *** THIS IS THE UPDATED FUNCTION *** ---
+    // --- *** THIS IS THE REVISED FUNCTION *** ---
     // --- UPDATE PROFILE ACTION ---
     func updateUserProfile(
         name: String,
@@ -244,9 +226,9 @@ class AuthManager: ObservableObject {
         drivingSchool: String?,
         hourlyRate: Double?,
         photoData: Data?,
-        aboutMe: String?,       // NEW
-        education: [EducationEntry]?, // NEW
-        expertise: [String]?     // NEW
+        aboutMe: String?,
+        education: [EducationEntry]?, // Uses updated struct
+        expertise: [String]?
     ) async throws {
         guard let currentUserID = user?.id else {
             throw NSError(domain: "AuthManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "User not logged in."])
@@ -261,83 +243,115 @@ class AuthManager: ObservableObject {
             print("UpdateProfile: New photo data found, attempting upload...")
             do {
                 uploadedPhotoURL = try await StorageManager.shared.uploadProfilePhoto(photoData: data, userID: currentUserID)
-                dataToUpdate["photoURL"] = uploadedPhotoURL
+                dataToUpdate["photoURL"] = uploadedPhotoURL // Add URL to update dict
                 print("UpdateProfile: Photo uploaded successfully. URL: \(uploadedPhotoURL ?? "N/A")")
             } catch {
                 print("!!! UpdateProfile Photo Upload FAILED: \(error.localizedDescription)")
-                throw error // Stop update if photo upload fails
+                throw error
             }
         } else {
             print("UpdateProfile: No new photo data provided.")
         }
 
-        // 2. Add other fields
+        // 2. Add other fields if changed
         if name != self.user?.name { dataToUpdate["name"] = name }
         if phone != self.user?.phone { dataToUpdate["phone"] = phone }
         if address != self.user?.address { dataToUpdate["address"] = address }
-        
-        // --- NEW FIELDS LOGIC ---
         if aboutMe != self.user?.aboutMe { dataToUpdate["aboutMe"] = aboutMe ?? "" }
-            
-        // Convert EducationEntry array to a dictionary array for Firestore
-        if let eduData = education {
-            let eduDicts = eduData.map {
-                ["id": $0.id.uuidString, "school": $0.school, "degree": $0.degree, "years": $0.years]
-            }
-            // We update the whole array
-            dataToUpdate["education"] = eduDicts
-        }
-        // ------------------------
 
+        // --- REVISED EDUCATION CHECK ---
+        let currentEducation = self.user?.education ?? []
+        let newEducation = education ?? []
+
+        // Check if counts are different OR if content differs
+        var educationChanged = false
+        if currentEducation.count != newEducation.count {
+            educationChanged = true
+        } else {
+            // If counts are the same, check content pair-wise (order matters here)
+            // For a more robust check ignoring order, you'd need to sort or use Sets.
+            for i in 0..<currentEducation.count {
+                if currentEducation[i].title != newEducation[i].title ||
+                   currentEducation[i].subtitle != newEducation[i].subtitle ||
+                   currentEducation[i].years != newEducation[i].years {
+                    educationChanged = true
+                    break // Found a difference, no need to check further
+                }
+            }
+        }
+
+        if educationChanged {
+             // Convert to dictionaries for reliable Firestore saving
+             let eduDicts = newEducation.map {
+                 ["id": $0.id.uuidString, "title": $0.title, "subtitle": $0.subtitle, "years": $0.years]
+             }
+             dataToUpdate["education"] = eduDicts
+             print("UpdateProfile: Education data changed, adding to update.")
+        } else {
+             print("UpdateProfile: Education data unchanged.")
+        }
+        // --- END REVISED EDUCATION CHECK ---
+
+        // Instructor specific fields
         if role == .instructor {
             if drivingSchool != self.user?.drivingSchool { dataToUpdate["drivingSchool"] = drivingSchool ?? "" }
             let rateDouble = Double(hourlyRate ?? 0.0)
             if rateDouble != self.user?.hourlyRate { dataToUpdate["hourlyRate"] = rateDouble }
-            
-            // Expertise is instructor-only
-            if let expData = expertise {
-                dataToUpdate["expertise"] = expData // Simple array
+
+            // --- REVISED EXPERTISE CHECK ---
+            // Simple array comparison often works for Strings, but let's be explicit
+            let currentExpertise = self.user?.expertise ?? []
+            let newExpertise = expertise ?? []
+            if currentExpertise.count != newExpertise.count || Set(currentExpertise) != Set(newExpertise) {
+                 dataToUpdate["expertise"] = newExpertise // Simple array
+                 print("UpdateProfile: Expertise data changed, adding to update.")
+            } else {
+                 print("UpdateProfile: Expertise data unchanged.")
             }
+            // --- END REVISED EXPERTISE CHECK ---
         }
 
         // 3. Update Firestore only if there's data to update
         if !dataToUpdate.isEmpty {
             print("UpdateProfile: Updating Firestore with fields: \(dataToUpdate.keys)")
-            try await db.collection(usersCollection).document(currentUserID).updateData(dataToUpdate)
-            print("UpdateProfile: Firestore update successful.")
+            do {
+                try await db.collection(usersCollection).document(currentUserID).updateData(dataToUpdate)
+                print("UpdateProfile: Firestore update successful.")
+            } catch {
+                print("!!! UpdateProfile Firestore Update FAILED: \(error.localizedDescription)")
+                throw error // Re-throw Firestore error
+            }
 
             // 4. Update local user object AFTER successful Firestore update
-            self.user?.name = name
-            self.user?.phone = phone
-            self.user?.address = address
-            self.user?.aboutMe = aboutMe // NEW
-            self.user?.education = education // NEW
-            
+            // Only update fields that were actually sent to Firestore
+            if dataToUpdate["name"] != nil { self.user?.name = name }
+            if dataToUpdate["phone"] != nil { self.user?.phone = phone }
+            if dataToUpdate["address"] != nil { self.user?.address = address }
+            if dataToUpdate["aboutMe"] != nil { self.user?.aboutMe = aboutMe }
+            if dataToUpdate["education"] != nil { self.user?.education = education } // Update local user
+            if dataToUpdate["photoURL"] != nil { self.user?.photoURL = uploadedPhotoURL } // Use the actual uploaded URL
+
             if self.role == .instructor {
-                self.user?.drivingSchool = drivingSchool
-                self.user?.hourlyRate = Double(hourlyRate ?? 0.0)
-                self.user?.expertise = expertise // NEW
+                if dataToUpdate["drivingSchool"] != nil { self.user?.drivingSchool = drivingSchool }
+                if dataToUpdate["hourlyRate"] != nil { self.user?.hourlyRate = Double(hourlyRate ?? 0.0) }
+                if dataToUpdate["expertise"] != nil { self.user?.expertise = expertise } // Update local user
             }
-            // Update photoURL only if it was successfully uploaded AND saved in this call
-            if let finalURL = uploadedPhotoURL {
-                self.user?.photoURL = finalURL
-            }
+
         } else {
             print("UpdateProfile: No data changed, skipping Firestore update.")
         }
         print("UpdateProfile: Update process finished.")
     }
-    // --- *** END OF UPDATED FUNCTION *** ---
+    // --- *** END OF REVISED FUNCTION *** ---
+
 
     // Updates only the role field
     @MainActor
     func updateRole(to newRole: UserRole) async throws {
         guard let currentUserID = user?.id else { throw NSError(domain: "AuthManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "User not logged in."]) }
-
         print("UpdateRole: Updating role to \(newRole.rawValue) for UID: \(currentUserID)")
         try await db.collection(usersCollection).document(currentUserID).updateData(["role": newRole.rawValue])
         print("UpdateRole: Firestore role update successful.")
-
         self.user?.role = newRole
         self.role = newRole
     }

@@ -1,15 +1,25 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Common/Views/DashboardHeader.swift
 import SwiftUI
 
 // Shared Header for Instructor and Student Dashboards (Flow 5 & 6)
 struct DashboardHeader: View {
     @EnvironmentObject var authManager: AuthManager
-    
+
     var userName: String {
         authManager.user?.name ?? (authManager.role == .instructor ? "Instructor" : "Student")
     }
 
+    // Computed property for the profile image URL
+    private var profileImageURL: URL? {
+        guard let urlString = authManager.user?.photoURL, !urlString.isEmpty else {
+            return nil
+        }
+        return URL(string: urlString)
+    }
+
     var body: some View {
         HStack {
+            // Welcome Text
             VStack(alignment: .leading) {
                 Text("Welcome Back,")
                     .font(.callout)
@@ -18,35 +28,73 @@ struct DashboardHeader: View {
                     .font(.title2).bold()
                     .foregroundColor(.textDark)
             }
-            
+
             Spacer()
-            
+
             // Notifications Bell (Flow 14)
             NavigationLink(destination: NotificationsView()) {
                 ZStack {
                     Image(systemName: "bell.fill")
                         .font(.title2)
                         .foregroundColor(.textDark)
-                    
+
                     // Placeholder for badge count
+                    // TODO: Replace with actual count logic if needed
                     Circle()
                         .fill(Color.warningRed)
                         .frame(width: 10, height: 10)
                         .offset(x: 8, y: -8)
+                        .opacity(3 > 0 ? 1 : 0) // Example: Show badge if count > 0
                 }
             }
-            
-            // Profile Avatar/Settings (Flow 15)
-            // UPDATED: Destination changed to ProfileView()
-            NavigationLink(destination: ProfileView()) {
-                Image(systemName: "person.crop.circle.fill")
-                    .resizable()
-                    .frame(width: 35, height: 35)
-                    .clipShape(Circle())
-                    .foregroundColor(.primaryBlue)
+            .padding(.trailing, 10) // Add some spacing
+
+            // --- Profile Avatar/Settings (Flow 15 - Updated) ---
+            NavigationLink(destination: ProfileView()) { // Link still goes to ProfileView
+                // Use AsyncImage if URL exists, otherwise fallback
+                if let url = profileImageURL {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .empty:
+                            // Placeholder while loading
+                            ProgressView()
+                                .frame(width: 35, height: 35)
+                        case .success(let image):
+                            // Display loaded image
+                            image
+                                .resizable()
+                                .scaledToFill() // Fill the circle frame
+                                .frame(width: 35, height: 35)
+                                .clipShape(Circle()) // Make it circular
+                                .overlay(Circle().stroke(Color.primaryBlue.opacity(0.3), lineWidth: 1)) // Optional border
+                        case .failure:
+                            // Fallback icon if loading fails
+                            Image(systemName: "person.crop.circle.fill")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 35, height: 35)
+                                .foregroundColor(.primaryBlue) // Use accent color for fallback
+                        @unknown default:
+                            // Fallback icon for future cases
+                            Image(systemName: "person.crop.circle.fill")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 35, height: 35)
+                                .foregroundColor(.primaryBlue)
+                        }
+                    }
+                } else {
+                    // Default icon if no photoURL
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .scaledToFit() // Use scaledToFit for system icons
+                        .frame(width: 35, height: 35)
+                        .foregroundColor(.primaryBlue)
+                }
             }
+            // --- End of Profile Avatar Update ---
         }
         .padding(.horizontal)
-        .padding(.top, 10)
+        .padding(.top, 10) // Adjust top padding as needed for safe area
     }
 }

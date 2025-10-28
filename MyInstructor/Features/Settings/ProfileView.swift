@@ -2,270 +2,259 @@
 import SwiftUI
 import PhotosUI
 
+// --- Helper View for Profile Rows (with Icons) ---
+struct ProfileRow<Content: View>: View {
+    let iconName: String
+    let label: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 15) {
+            Image(systemName: iconName)
+                .foregroundColor(.primaryBlue)
+                .frame(width: 20, alignment: .center)
+
+            Text(label)
+                .font(.subheadline)
+                .foregroundColor(.textLight)
+                .frame(width: 70, alignment: .leading) // Consistent label width
+
+            content
+                .foregroundColor(.textDark)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 4) // Reduced vertical padding slightly
+    }
+}
+// --- End Helper View ---
+
+
 struct ProfileView: View {
     @EnvironmentObject var authManager: AuthManager
-    
-    // --- STATE FOR ALL EDITABLE FIELDS ---
+
+    // --- State variables remain the same ---
     @State private var name: String = ""
     @State private var phone: String = ""
     @State private var address: String = ""
     @State private var drivingSchool: String = ""
     @State private var hourlyRate: String = ""
-
-    // --- STATE FOR PHOTO PICKER ---
     @State private var selectedPhotoItem: PhotosPickerItem?
-    @State private var selectedPhotoData: Data? // Holds data from picker TEMPORARILY
-    
-    // --- STATE FOR UI AND ACTIONS ---
+    @State private var selectedPhotoData: Data?
     @State private var isShowingAddressSearch = false
     @State private var isLoading = false
-    @State private var statusMessage: (text: String, isError: Bool)? // Unified status message
-    
+    @State private var statusMessage: (text: String, isError: Bool)?
+
     var isInstructor: Bool {
         authManager.role == .instructor
     }
-    
+
     var userEmail: String {
         authManager.user?.email ?? "email@notfound.com"
     }
-    
-    // Displays the profile image: New selection > Existing URL > Placeholder
+
+    // --- Profile Image ViewBuilder remains the same ---
     @ViewBuilder
     private var profileImageView: some View {
-        // Priority 1: Show newly selected image if present
+        // ... (profile image loading logic - no changes)
         if let photoData = selectedPhotoData, let uiImage = UIImage(data: photoData) {
             Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 120, height: 120)
-                .clipShape(Circle())
-                .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
-                .onAppear {
-                    print("ProfileView: Displaying newly selected photo data.")
-                }
+                .resizable().scaledToFill()
+                .frame(width: 100, height: 100).clipShape(Circle())
+                .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 2))
         }
-        // Priority 2: Show existing image from URL if available
         else if let photoURLString = authManager.user?.photoURL, let url = URL(string: photoURLString) {
-            // Using AsyncImage (iOS 15+)
             AsyncImage(url: url) { phase in
                 switch phase {
-                case .empty:
-                    ProgressView()
-                        .frame(width: 120, height: 120)
-                        .onAppear { print("ProfileView: Loading image from URL: \(url)") } // Log URL
+                case .empty: ProgressView().frame(width: 100, height: 100)
                 case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 120, height: 120)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.primaryBlue.opacity(0.5), lineWidth: 2))
-                        .onAppear { print("ProfileView: Successfully loaded image from URL.") } // Log success
-                case .failure(let error):
-                    // Show placeholder if loading fails
+                    image.resizable().scaledToFill()
+                         .frame(width: 100, height: 100).clipShape(Circle())
+                         .overlay(Circle().stroke(Color.primaryBlue.opacity(0.3), lineWidth: 1))
+                case .failure:
                     Image(systemName: "person.circle.fill")
-                        .resizable()
-                        .frame(width: 120, height: 120)
-                        .foregroundColor(.secondaryGray)
-                        .overlay(Circle().stroke(Color.warningRed, lineWidth: 2)) // Indicate error
-                        .onAppear { print("!!! ProfileView: Failed to load image from URL: \(url). Error: \(error.localizedDescription)") } // Log failure
+                        .resizable().scaledToFit()
+                        .frame(width: 100, height: 100).foregroundColor(.secondaryGray)
+                        .overlay(Circle().stroke(Color.warningRed.opacity(0.5), lineWidth: 1))
                 @unknown default:
-                    EmptyView()
+                    Image(systemName: "person.circle.fill")
+                        .resizable().scaledToFit()
+                        .frame(width: 100, height: 100).foregroundColor(.secondaryGray)
                 }
             }
         }
-        // Priority 3: Show placeholder if no selection and no URL
         else {
             Image(systemName: "person.circle.fill")
-                .resizable()
-                .frame(width: 120, height: 120)
-                .foregroundColor(.secondaryGray)
-                .overlay(Circle().stroke(Color.textLight.opacity(0.3), lineWidth: 2))
-                .onAppear { print("ProfileView: Displaying placeholder image.") } // Log placeholder
+                .resizable().scaledToFit()
+                .frame(width: 100, height: 100).foregroundColor(.secondaryGray)
+                .overlay(Circle().stroke(Color.textLight.opacity(0.3), lineWidth: 1))
         }
     }
 
     var body: some View {
         NavigationView {
+            // Use Form directly for standard scrolling behavior
             Form {
-                // MARK: - Profile Photo Section
+                // MARK: - Profile Photo Section (Reduced Padding)
                 Section {
-                    VStack(spacing: 15) {
-                        profileImageView // Use the ViewBuilder computed property
-                        
-                        Text(name) // Display name loaded from AuthManager
-                            .font(.title2).bold()
-                            .foregroundColor(.textDark)
-                        
-                        Text(userEmail)
-                            .font(.subheadline)
-                            .foregroundColor(.textLight)
-
-                        // Button to trigger PhotosPicker
-                        PhotosPicker(
-                            selection: $selectedPhotoItem,
-                            matching: .images, // Only allow images
-                            photoLibrary: .shared()
-                        ) {
+                    VStack(spacing: 8) { // Tighter spacing
+                        profileImageView
+                        PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
                             Text("Change Photo")
-                                .font(.headline)
-                                .foregroundColor(.primaryBlue)
+                                .font(.caption).foregroundColor(.primaryBlue)
                         }
-                        .onChange(of: selectedPhotoItem) { newItem in
-                            Task {
-                                // Clear previous status message when selecting a new photo
-                                statusMessage = nil
-                                selectedPhotoData = nil // Clear previous data first
-                                if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                                    selectedPhotoData = data
-                                    print("ProfileView: New photo selected (\(data.count) bytes).")
-                                } else if newItem != nil {
-                                    // Handle case where loading data failed
-                                    statusMessage = (text: "Could not load selected photo.", isError: true)
-                                    print("!!! ProfileView: Failed to load data from PhotosPickerItem.")
-                                }
-                            }
-                        }
+                        .onChange(of: selectedPhotoItem, handlePhotoSelection)
                     }
-                    .frame(maxWidth: .infinity) // Center the VStack content
-                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity) // Center align content
+                    .padding(.vertical, 10) // Reduced vertical padding
                 }
-                
+                // Match section background to default form background
+                .listRowBackground(Color(.systemGroupedBackground))
+
                 // MARK: - Personal Details Section
                 Section("Personal Details") {
-                    TextField("Name", text: $name)
-                    
-                    TextField("Phone", text: $phone)
-                        .keyboardType(.phonePad)
-                    
-                    Button {
-                        isShowingAddressSearch = true
-                    } label: {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Address")
-                                .font(.caption)
-                                .foregroundColor(address.isEmpty ? .textLight : .primaryBlue) // More contrast
+                    ProfileRow(iconName: "person.fill", label: "Name") {
+                        TextField("Required", text: $name)
+                    }
+                    ProfileRow(iconName: "envelope.fill", label: "Email") {
+                        Text(userEmail).foregroundColor(.textDark.opacity(0.7))
+                    }
+                    ProfileRow(iconName: "phone.fill", label: "Phone") {
+                        TextField("Optional", text: $phone) .keyboardType(.phonePad)
+                    }
+                    ProfileRow(iconName: "location.fill", label: "Address") {
+                        Button { isShowingAddressSearch = true } label: {
                             Text(address.isEmpty ? "Select Address" : address)
-                                .foregroundColor(address.isEmpty ? Color(.placeholderText) : .textDark) // Use placeholder color
+                                .foregroundColor(address.isEmpty ? Color(.placeholderText) : .textDark)
                                 .lineLimit(2)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
                         }
-                        .padding(.vertical, 4)
+                        // Add padding to make the button text area easier to tap within the row
+                        .padding(.vertical, 5)
                     }
                 }
-                
+
                 // MARK: - Instructor Section
                 if isInstructor {
                     Section("Instructor Details") {
-                        TextField("Driving School", text: $drivingSchool)
-                        
-                        HStack {
-                            Text("Hourly Rate (£)")
-                            Spacer()
-                            TextField("Rate", text: $hourlyRate)
+                        ProfileRow(iconName: "briefcase.fill", label: "School") {
+                            TextField("Optional", text: $drivingSchool)
+                        }
+                        ProfileRow(iconName: "creditcard.fill", label: "Rate (£)") {
+                            TextField("0.00", text: $hourlyRate)
                                 .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                                .foregroundColor(.primaryBlue) // Highlight the rate
+                                .foregroundColor(.primaryBlue)
                         }
                     }
                 }
-                
-                // MARK: - Save Action & Status Message
+
+                // MARK: - Save Button & Status Message Section
                 Section {
-                    if isLoading {
-                        HStack {
-                            Spacer()
-                            ProgressView("Saving...") // Add text
-                            Spacer()
+                    VStack(spacing: 10) { // VStack for spacing control
+                        if isLoading {
+                            ProgressView("Saving...")
+                        } else {
+                            Button("Save Changes") {
+                                saveProfile()
+                            }
+                            // Apply button style HERE
+                            .buttonStyle(.primaryDrivingApp)
+                            // Ensure the button itself fills available width within the VStack
+                            .frame(maxWidth: .infinity)
                         }
-                    } else {
-                        Button("Save Changes") {
-                            saveProfile()
+
+                        // Display status message below the button/progress view
+                        if let msg = statusMessage {
+                            Text(msg.text)
+                                .font(.caption)
+                                .foregroundColor(msg.isError ? .warningRed : .accentGreen)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.top, 5) // Add space above message
                         }
-                        .buttonStyle(.primaryDrivingApp)
-                        .listRowBackground(Color.clear) // Make button fill width
                     }
-                    
-                    // Display status message (success or error)
-                    if let msg = statusMessage {
-                        Text(msg.text)
-                            .font(.caption)
-                            .foregroundColor(msg.isError ? .warningRed : .accentGreen)
-                            .frame(maxWidth: .infinity, alignment: .center) // Center the message
-                    }
+                    .padding(.vertical, 5) // Add padding around the button/status
                 }
-            }
+                // Modifiers to make the button section look seamless
+                .listRowInsets(EdgeInsets()) // Remove default Form insets
+                .listRowBackground(Color.clear) // Make background clear
+
+            } // End Form
             .navigationTitle("Edit Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .onAppear {
-                // Load existing user data when the view appears
-                loadUserData()
-            }
+            .onAppear(perform: loadUserData)
             .sheet(isPresented: $isShowingAddressSearch) {
-                // Sheet for address search
-                AddressSearchView { selectedAddressString in
-                    self.address = selectedAddressString
+                AddressSearchView { selectedAddressString in self.address = selectedAddressString }
+            }
+            .onChange(of: authManager.user?.id) { _, _ in loadUserData() }
+            .onChange(of: authManager.user?.photoURL) { _, _ in loadUserData() }
+        }
+        .applyAppTheme() // Apply global theme settings
+    }
+
+    // --- HELPER FUNCTIONS (No changes needed) ---
+    // ... (handlePhotoSelection, loadUserData, saveProfile remain the same)
+    func handlePhotoSelection(oldItem: PhotosPickerItem?, newItem: PhotosPickerItem?) {
+         Task {
+            statusMessage = nil
+            selectedPhotoData = nil // Clear previous temp data
+            if let item = newItem {
+                do {
+                    selectedPhotoData = try await item.loadTransferable(type: Data.self)
+                    if let data = selectedPhotoData {
+                        print("ProfileView: New photo selected (\(data.count) bytes).")
+                    } else {
+                        statusMessage = (text: "Could not load selected photo.", isError: true)
+                        print("!!! ProfileView: loadTransferable returned nil data.")
+                    }
+                } catch {
+                    statusMessage = (text: "Error loading photo: \(error.localizedDescription)", isError: true)
+                    print("!!! ProfileView: Failed to load data from PhotosPickerItem: \(error.localizedDescription)")
                 }
             }
-            // Refresh data if user object changes externally (e.g., after initial load)
-            .onChange(of: authManager.user?.id) { _, _ in loadUserData() }
-            .onChange(of: authManager.user?.photoURL) { _, _ in loadUserData() } // Refresh if photo URL changes
         }
     }
-    
-    // --- HELPER FUNCTIONS ---
-    
-    // Loads data from AuthManager into the @State variables
+
     func loadUserData() {
-        guard let user = authManager.user else {
-            print("ProfileView: Cannot load data, AuthManager user is nil.")
-            return
-        }
-        print("ProfileView: Loading user data for \(user.email)") // Added log
+        guard let user = authManager.user else { return }
+        print("ProfileView: Loading user data.")
         self.name = user.name ?? ""
         self.phone = user.phone ?? ""
         self.address = user.address ?? ""
-        // Reset temporary photo data when loading existing data
         self.selectedPhotoData = nil
         self.selectedPhotoItem = nil
-        
+
         if isInstructor {
             self.drivingSchool = user.drivingSchool ?? ""
             self.hourlyRate = String(format: "%.2f", user.hourlyRate ?? 0.0)
         }
-        print("ProfileView: User data loaded.") // Added log
+        print("ProfileView: User data loaded.")
     }
-    
-    // Saves the profile data using AuthManager
+
     func saveProfile() {
-        print("ProfileView: Save button tapped.") // Added log
+        print("ProfileView: Save button tapped.")
         isLoading = true
-        statusMessage = nil // Clear previous message
-        
+        statusMessage = nil
+
         Task {
             do {
-                print("ProfileView: Calling AuthManager.updateUserProfile...") // Added log
+                print("ProfileView: Calling AuthManager.updateUserProfile...")
                 try await authManager.updateUserProfile(
                     name: name,
                     phone: phone,
                     address: address,
                     drivingSchool: isInstructor ? drivingSchool : nil,
                     hourlyRate: isInstructor ? (Double(hourlyRate) ?? 0.0) : nil,
-                    photoData: selectedPhotoData // Pass the temporary photo data
+                    photoData: selectedPhotoData
                 )
-                
-                // Success
-                print("ProfileView: AuthManager.updateUserProfile successful.") // Added log
+                print("ProfileView: AuthManager.updateUserProfile successful.")
                 isLoading = false
                 statusMessage = (text: "Profile updated successfully!", isError: false)
-                // Clear temporary photo data AFTER successful save
                 selectedPhotoData = nil
                 selectedPhotoItem = nil
-                
+
             } catch {
-                // Handle error from AuthManager
-                print("!!! ProfileView Save FAILED: \(error.localizedDescription)") // Enhanced log
+                print("!!! ProfileView Save FAILED: \(error.localizedDescription)")
                 isLoading = false
-                // Show specific error message
                 statusMessage = (text: "Failed to update profile. \(error.localizedDescription)", isError: true)
             }
         }

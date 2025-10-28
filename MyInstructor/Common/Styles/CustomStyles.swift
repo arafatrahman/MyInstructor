@@ -1,3 +1,4 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Common/Styles/CustomStyles.swift
 import SwiftUI
 import Combine
 
@@ -21,12 +22,16 @@ struct PrimaryDrivingAppButtonStyle: ButtonStyle {
         configuration.label
             .font(.headline)
             .padding(.vertical, 14)
+            .frame(maxWidth: .infinity) // Ensure label content tries to fill width
             .background(Color.primaryBlue)
             .foregroundColor(.white)
             .cornerRadius(12)
-            .opacity(configuration.isPressed ? 0.8 : 1.0)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
-            .shadow(color: Color.primaryBlue.opacity(0.3), radius: 8, x: 0, y: 5)
+            .shadow(color: Color.primaryBlue.opacity(0.3), radius: configuration.isPressed ? 3 : 8, x: 0, y: configuration.isPressed ? 2 : 5) // Subtle shadow change
+            // --- ANIMATION MODIFIERS ---
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0) // Slightly shrink when pressed
+            .opacity(configuration.isPressed ? 0.9 : 1.0)    // Slightly fade when pressed
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed) // Smooth transition
+            // --------------------------
     }
 }
 
@@ -46,6 +51,10 @@ struct SecondaryDrivingAppButtonStyle: ButtonStyle {
             .background(Color.secondaryGray)
             .cornerRadius(10)
             .opacity(configuration.isPressed ? 0.7 : 1.0)
+            // --- Optional: Add subtle animation here too ---
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+            // ------------------------------------------
     }
 }
 
@@ -64,10 +73,7 @@ struct FormTextFieldModifier: ViewModifier {
             .padding()
             .background(Color.secondaryGray)
             .cornerRadius(10)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.clear, lineWidth: 1)
-            )
+            // Removed overlay as it wasn't doing much
     }
 }
 
@@ -85,7 +91,7 @@ extension View {
         self
             // Set the global accent color
             .accentColor(.primaryBlue)
-            // Apply a subtle background color to form views
-            .background(Color(.systemBackground))
+            // Apply a consistent background, especially useful outside Forms
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
 }

@@ -33,7 +33,7 @@ struct ProfileRow<Content: View>: View {
 struct ProfileView: View {
     @EnvironmentObject var authManager: AuthManager
 
-    // --- State variables remain the same ---
+    // --- State variables ---
     @State private var name: String = ""
     @State private var phone: String = ""
     @State private var address: String = ""
@@ -45,6 +45,18 @@ struct ProfileView: View {
     @State private var isLoading = false
     @State private var statusMessage: (text: String, isError: Bool)?
 
+    // --- NEW STATE VARIABLES ---
+    @State private var aboutMe: String = ""
+    @State private var education: [EducationEntry] = []
+    @State private var expertise: [String] = []
+    
+    // For "Add" fields
+    @State private var newSchool: String = ""
+    @State private var newDegree: String = ""
+    @State private var newYears: String = ""
+    @State private var newSkill: String = ""
+    // -------------------------
+
     var isInstructor: Bool {
         authManager.role == .instructor
     }
@@ -53,7 +65,7 @@ struct ProfileView: View {
         authManager.user?.email ?? "email@notfound.com"
     }
 
-    // --- Profile Image ViewBuilder remains the same ---
+    // --- Profile Image ViewBuilder ---
     @ViewBuilder
     private var profileImageView: some View {
         // ... (profile image loading logic - no changes)
@@ -133,6 +145,56 @@ struct ProfileView: View {
                         .padding(.vertical, 5)
                     }
                 }
+                
+                // --- NEW SECTION: ABOUT ME ---
+                Section("About Me") {
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $aboutMe)
+                            .frame(minHeight: 100)
+                            .padding(.top, -8)
+                            .padding(.leading, -4)
+
+                        if aboutMe.isEmpty {
+                            Text("Write a short bio...")
+                                .foregroundColor(Color(.placeholderText))
+                                .padding(.top, 0)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                }
+                
+                // --- NEW SECTION: EDUCATION ---
+                Section("Education") {
+                    ForEach($education) { $entry in
+                        VStack(alignment: .leading) {
+                            TextField("School Name", text: $entry.school)
+                            TextField("Degree / Certification", text: $entry.degree)
+                            TextField("Years (e.g., 2020-2022)", text: $entry.years)
+                        }
+                    }
+                    .onDelete { offsets in
+                        education.remove(atOffsets: offsets)
+                    }
+                    
+                    // Add new education item
+                    VStack(alignment: .leading, spacing: 8) {
+                        TextField("New School Name", text: $newSchool)
+                        TextField("New Degree / Certification", text: $newDegree)
+                        TextField("New Years", text: $newYears)
+                        Button("Add Education Entry") {
+                            if !newSchool.isEmpty && !newDegree.isEmpty {
+                                education.append(EducationEntry(school: newSchool, degree: newDegree, years: newYears))
+                                newSchool = ""
+                                newDegree = ""
+                                newYears = ""
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundColor(.primaryBlue)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    .padding(.top, 10)
+                }
 
                 // MARK: - Instructor Section
                 if isInstructor {
@@ -144,6 +206,28 @@ struct ProfileView: View {
                             TextField("0.00", text: $hourlyRate)
                                 .keyboardType(.decimalPad)
                                 .foregroundColor(.primaryBlue)
+                        }
+                    }
+                    
+                    // --- NEW SECTION: EXPERTISE ---
+                    Section("Expertise (Skills)") {
+                        ForEach(expertise, id: \.self) { skill in
+                            Text(skill)
+                        }
+                        .onDelete { offsets in
+                            expertise.remove(atOffsets: offsets)
+                        }
+                        
+                        HStack {
+                            TextField("New Skill (e.g., Nervous Drivers)", text: $newSkill)
+                            Button("Add") {
+                                if !newSkill.isEmpty {
+                                    expertise.append(newSkill)
+                                    newSkill = ""
+                                }
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundColor(.primaryBlue)
                         }
                     }
                 }
@@ -191,8 +275,8 @@ struct ProfileView: View {
         .applyAppTheme() // Apply global theme settings
     }
 
-    // --- HELPER FUNCTIONS (No changes needed) ---
-    // ... (handlePhotoSelection, loadUserData, saveProfile remain the same)
+    // --- HELPER FUNCTIONS ---
+    
     func handlePhotoSelection(oldItem: PhotosPickerItem?, newItem: PhotosPickerItem?) {
          Task {
             statusMessage = nil
@@ -222,10 +306,16 @@ struct ProfileView: View {
         self.address = user.address ?? ""
         self.selectedPhotoData = nil
         self.selectedPhotoItem = nil
+        
+        // --- LOAD NEW DATA ---
+        self.aboutMe = user.aboutMe ?? ""
+        self.education = user.education ?? []
+        // ---------------------
 
         if isInstructor {
             self.drivingSchool = user.drivingSchool ?? ""
             self.hourlyRate = String(format: "%.2f", user.hourlyRate ?? 0.0)
+            self.expertise = user.expertise ?? [] // LOAD NEW DATA
         }
         print("ProfileView: User data loaded.")
     }
@@ -238,14 +328,20 @@ struct ProfileView: View {
         Task {
             do {
                 print("ProfileView: Calling AuthManager.updateUserProfile...")
+                // --- PASS NEW DATA TO SAVING FUNCTION ---
                 try await authManager.updateUserProfile(
                     name: name,
                     phone: phone,
                     address: address,
                     drivingSchool: isInstructor ? drivingSchool : nil,
                     hourlyRate: isInstructor ? (Double(hourlyRate) ?? 0.0) : nil,
-                    photoData: selectedPhotoData
+                    photoData: selectedPhotoData,
+                    aboutMe: aboutMe, // NEW
+                    education: education, // NEW
+                    expertise: isInstructor ? expertise : nil // NEW
                 )
+                // ----------------------------------------
+                
                 print("ProfileView: AuthManager.updateUserProfile successful.")
                 isLoading = false
                 statusMessage = (text: "Profile updated successfully!", isError: false)

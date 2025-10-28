@@ -197,6 +197,13 @@ class AuthManager: ObservableObject {
             newUser.address = address
             newUser.photoURL = photoURL
             newUser.hourlyRate = hourlyRate
+            
+            // Set empty defaults for new fields
+            newUser.aboutMe = ""
+            newUser.education = []
+            if role == .instructor {
+                newUser.expertise = []
+            }
 
             // 4. Save to Firestore
             print("SignUp: Saving user details to Firestore for UID: \(uid)...")
@@ -228,6 +235,7 @@ class AuthManager: ObservableObject {
         }
     }
 
+    // --- *** THIS IS THE UPDATED FUNCTION *** ---
     // --- UPDATE PROFILE ACTION ---
     func updateUserProfile(
         name: String,
@@ -235,7 +243,10 @@ class AuthManager: ObservableObject {
         address: String,
         drivingSchool: String?,
         hourlyRate: Double?,
-        photoData: Data?
+        photoData: Data?,
+        aboutMe: String?,       // NEW
+        education: [EducationEntry]?, // NEW
+        expertise: [String]?     // NEW
     ) async throws {
         guard let currentUserID = user?.id else {
             throw NSError(domain: "AuthManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "User not logged in."])
@@ -260,15 +271,33 @@ class AuthManager: ObservableObject {
             print("UpdateProfile: No new photo data provided.")
         }
 
-        // 2. Add other fields ONLY IF they changed
+        // 2. Add other fields
         if name != self.user?.name { dataToUpdate["name"] = name }
         if phone != self.user?.phone { dataToUpdate["phone"] = phone }
         if address != self.user?.address { dataToUpdate["address"] = address }
+        
+        // --- NEW FIELDS LOGIC ---
+        if aboutMe != self.user?.aboutMe { dataToUpdate["aboutMe"] = aboutMe ?? "" }
+            
+        // Convert EducationEntry array to a dictionary array for Firestore
+        if let eduData = education {
+            let eduDicts = eduData.map {
+                ["id": $0.id.uuidString, "school": $0.school, "degree": $0.degree, "years": $0.years]
+            }
+            // We update the whole array
+            dataToUpdate["education"] = eduDicts
+        }
+        // ------------------------
+
         if role == .instructor {
             if drivingSchool != self.user?.drivingSchool { dataToUpdate["drivingSchool"] = drivingSchool ?? "" }
-            // Convert String back to Double for comparison/saving
             let rateDouble = Double(hourlyRate ?? 0.0)
             if rateDouble != self.user?.hourlyRate { dataToUpdate["hourlyRate"] = rateDouble }
+            
+            // Expertise is instructor-only
+            if let expData = expertise {
+                dataToUpdate["expertise"] = expData // Simple array
+            }
         }
 
         // 3. Update Firestore only if there's data to update
@@ -281,9 +310,13 @@ class AuthManager: ObservableObject {
             self.user?.name = name
             self.user?.phone = phone
             self.user?.address = address
+            self.user?.aboutMe = aboutMe // NEW
+            self.user?.education = education // NEW
+            
             if self.role == .instructor {
                 self.user?.drivingSchool = drivingSchool
                 self.user?.hourlyRate = Double(hourlyRate ?? 0.0)
+                self.user?.expertise = expertise // NEW
             }
             // Update photoURL only if it was successfully uploaded AND saved in this call
             if let finalURL = uploadedPhotoURL {
@@ -294,6 +327,7 @@ class AuthManager: ObservableObject {
         }
         print("UpdateProfile: Update process finished.")
     }
+    // --- *** END OF UPDATED FUNCTION *** ---
 
     // Updates only the role field
     @MainActor

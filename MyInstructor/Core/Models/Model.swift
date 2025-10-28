@@ -9,6 +9,16 @@ enum UserRole: String, Codable, Hashable {
     case unselected = "unselected"
 }
 
+// --- NEW STRUCT FOR EDUCATION ---
+// Add this new struct above AppUser
+struct EducationEntry: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var school: String
+    var degree: String
+    var years: String
+}
+// ------------------------------
+
 struct AppUser: Identifiable, Codable {
     @DocumentID var id: String? = nil
     let email: String
@@ -21,7 +31,12 @@ struct AppUser: Identifiable, Codable {
     var photoURL: String?
     var address: String?
     var hourlyRate: Double? // For instructor
-    // ---------------------------
+    
+    // --- THESE ARE THE NEW FIELDS ---
+    var aboutMe: String?
+    var education: [EducationEntry]?
+    var expertise: [String]? // For instructor
+    // --------------------------------
 
     // Initializer for new Firebase Auth users
     init(id: String, email: String, name: String? = nil, role: UserRole = .unselected) {

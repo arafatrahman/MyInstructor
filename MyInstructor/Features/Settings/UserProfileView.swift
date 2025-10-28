@@ -15,14 +15,15 @@ struct UserProfileView: View {
     private var appBlue: Color {
         return Color.primaryBlue
     }
-
+    
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                
                 // Profile Header Card
                 ProfileHeaderCard()
                     .padding(.horizontal)
-                    .padding(.top, 16) // Add padding at the top
+                    .padding(.top, 16) // Added padding
 
                 // Contact Card
                 ContactCard()
@@ -35,16 +36,19 @@ struct UserProfileView: View {
                 }
 
                 // Education Card
-                EducationCard()
+                // These cards now use the real data from AuthManager
+                EducationCard(education: authManager.user?.education)
                     .padding(.horizontal)
 
                 // About Card
-                AboutCard()
+                AboutCard(aboutText: authManager.user?.aboutMe)
                     .padding(.horizontal)
 
                 // Expertise Card
-                ExpertiseCard()
-                    .padding(.horizontal)
+                if authManager.role == .instructor {
+                    ExpertiseCard(skills: authManager.user?.expertise)
+                        .padding(.horizontal)
+                }
 
                 Spacer(minLength: 20)
             }
@@ -54,7 +58,7 @@ struct UserProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .background(Color(.systemBackground)) // Use white background
         .toolbar {
-            // --- THIS IS THE MODIFIED EDIT BUTTON ---
+            // --- THIS IS THE NEW "EDIT PROFILE" BUTTON ---
             ToolbarItem(placement: .navigationBarTrailing) {
                 NavigationLink(destination: ProfileView()) {
                     Text("Edit Profile")
@@ -63,7 +67,7 @@ struct UserProfileView: View {
                 }
             }
         }
-        // --- .navigationBarBackButtonHidden(true) has been REMOVED ---
+        // "Back" button ToolbarItem has been removed, so the default one will show
     }
 }
 
@@ -102,11 +106,10 @@ private struct ProfileHeaderCard: View {
             .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3)) // Use app color
             .padding(.top, 20)
 
-            Text(authManager.user?.name ?? "Emma Richardson")
+            Text(authManager.user?.name ?? "User Name")
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundColor(.primary)
 
-            // --- ROLE ---
             Text(authManager.role.rawValue.capitalized)
                 .font(.system(size: 15))
                 .foregroundColor(.secondary)
@@ -191,7 +194,6 @@ private struct RateHighlightCard: View {
                 .font(.system(size: 15))
                 .foregroundColor(.white.opacity(0.9))
 
-            // Using your app's currency (GBP)
             Text(authManager.user?.hourlyRate ?? 0.0, format: .currency(code: "GBP"))
                 .font(.system(size: 36, weight: .bold))
                 .foregroundColor(.white)
@@ -216,7 +218,8 @@ private struct RateHighlightCard: View {
 
 // MARK: - Education Card
 private struct EducationCard: View {
-    // Placeholder data as "About" and "Education" are not in your AppUser model
+    let education: [EducationEntry]? // <-- Accepts real data
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("EDUCATION")
@@ -228,9 +231,24 @@ private struct EducationCard: View {
 
             Divider().padding(.horizontal, 16)
 
-            EduRow(school: "ADI Certified", degree: "Approved Driving Instructor", years: "2018 – Present")
-            Divider().padding(.horizontal, 16)
-            EduRow(school: "RoSPA Advanced Drivers", degree: "Gold Standard Driving", years: "2020")
+            // --- Updated Logic ---
+            if let education = education, !education.isEmpty {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(education) { entry in
+                        EduRow(school: entry.school, degree: entry.degree, years: entry.years)
+                        if entry.id != education.last?.id {
+                            Divider().padding(.horizontal, 16)
+                        }
+                    }
+                }
+                .padding(.vertical, 14)
+            } else {
+                Text("No education details added. Tap 'Edit Profile' to add them.")
+                    .font(.system(size: 15))
+                    .foregroundColor(.secondary)
+                    .padding(16)
+            }
+            // --- End Logic ---
         }
         .background(Color(.systemBackground))
         .cornerRadius(16)
@@ -256,13 +274,13 @@ private struct EduRow: View {
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
     }
 }
 
 // MARK: - About Card
 private struct AboutCard: View {
-    // Placeholder data
+    let aboutText: String? // <-- Accepts real data
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("ABOUT")
@@ -274,12 +292,21 @@ private struct AboutCard: View {
 
             Divider().padding(.horizontal, 16)
 
-            Text("Passionate driving instructor with 8+ years of experience. Expert in teaching nervous drivers, parking, and test prep. I make complex topics simple using real-world examples.")
-                .font(.system(size: 16))
-                .foregroundColor(.primary)
-                .lineSpacing(4)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 16) // Added vertical padding
+            // --- Updated Logic ---
+            if let text = aboutText, !text.isEmpty {
+                Text(text)
+                    .font(.system(size: 16))
+                    .foregroundColor(.primary)
+                    .lineSpacing(4)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 16)
+            } else {
+                Text("No bio added. Tap 'Edit Profile' to add one.")
+                    .font(.system(size: 15))
+                    .foregroundColor(.secondary)
+                    .padding(16)
+            }
+            // --- End Logic ---
         }
         .background(Color(.systemBackground))
         .cornerRadius(16)
@@ -289,8 +316,7 @@ private struct AboutCard: View {
 
 // MARK: - Expertise Card
 private struct ExpertiseCard: View {
-    // Placeholder data
-    let skills = ["Nervous Drivers", "Parallel Parking", "Roundabouts", "Motorway Driving", "Manual Transmission", "Defensive Driving", "Test Prep"]
+    let skills: [String]? // <-- Accepts real data
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -303,20 +329,28 @@ private struct ExpertiseCard: View {
 
             Divider().padding(.horizontal, 16)
 
-            // Using FlowLayout from your previous version
-            FlowLayout(alignment: .leading, spacing: 8) {
-                ForEach(skills, id: \.self) { skill in
-                    Text(skill)
-                        .font(.system(size: 14, weight: .medium))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color(.systemGray5))
-                        .cornerRadius(12)
-                        .foregroundColor(.primary)
+            // --- Updated Logic ---
+            if let skills = skills, !skills.isEmpty {
+                FlowLayout(alignment: .leading, spacing: 8) {
+                    ForEach(skills, id: \.self) { skill in
+                        Text(skill)
+                            .font(.system(size: 14, weight: .medium))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color(.systemGray5))
+                            .cornerRadius(12)
+                            .foregroundColor(.primary)
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+            } else {
+                Text("No skills added. Tap 'Edit Profile' to add your expertise.")
+                    .font(.system(size: 15))
+                    .foregroundColor(.secondary)
+                    .padding(16)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16) // Added vertical padding
+            // --- End Logic ---
         }
         .background(Color(.systemBackground))
         .cornerRadius(16)
@@ -337,8 +371,11 @@ private struct FlowLayout: Layout {
         var lineWidth: CGFloat = 0
         var lineHeight: CGFloat = 0
 
+        // Calculate size based on a proposal, respecting padding
+        let effectiveWidth = (proposal.width ?? 0) - (spacing * 2)
+
         for size in sizes {
-            if lineWidth + size.width + spacing > (proposal.width ?? 0) - (spacing * 2) { // Adjusted for padding
+            if lineWidth + size.width + spacing > effectiveWidth && lineWidth > 0 {
                 totalHeight += lineHeight + spacing
                 lineWidth = size.width
                 lineHeight = size.height
@@ -358,7 +395,7 @@ private struct FlowLayout: Layout {
         var lineHeight: CGFloat = 0
         
         for index in subviews.indices {
-            if x + sizes[index].width > bounds.maxX {
+            if x + sizes[index].width > bounds.maxX && x > bounds.minX {
                 x = bounds.minX
                 y += lineHeight + spacing
                 lineHeight = 0
@@ -378,17 +415,33 @@ private struct FlowLayout: Layout {
 
 // MARK: - Preview
 struct UserProfileView_Previews: PreviewProvider {
+    // --- THIS IS THE CORRECTED PREVIEW CODE ---
+    // 1. mockAuthManager is now a static var on the struct
+    static var mockAuthManager: AuthManager {
+        let manager = AuthManager()
+        manager.user = AppUser(id: "123", email: "emma.richardson@edu.com", name: "Emma Richardson", role: .instructor)
+        manager.user?.phone = "+1 (555) 123-4567"
+        manager.user?.address = "123 Education St, SF"
+        manager.user?.hourlyRate = 85.0
+        manager.user?.aboutMe = "Passionate driving instructor with 8+ years of experience."
+        manager.user?.education = [EducationEntry(school: "ADI Certified", degree: "Approved Driving Instructor", years: "2018")]
+        manager.user?.expertise = ["Nervous Drivers", "Parallel Parking", "Test Prep"]
+        return manager
+    }
+
+    // 2. previews var now *uses* mockAuthManager
     static var previews: some View {
         NavigationView {
             UserProfileView()
-                .environmentObject(AuthManager()) // Mock manager
+                .environmentObject(mockAuthManager) // Use the mock manager
         }
         .preferredColorScheme(.light)
 
         NavigationView {
             UserProfileView()
-                .environmentObject(AuthManager()) // Mock manager
+                .environmentObject(mockAuthManager) // Use the mock manager
         }
         .preferredColorScheme(.dark)
     }
+    // --- END CORRECTION ---
 }

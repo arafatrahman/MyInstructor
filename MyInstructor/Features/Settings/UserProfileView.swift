@@ -2,93 +2,89 @@
 //  UserProfileView.swift
 //  MyInstructor
 //
-//  (REVISED FILE - Header now styled as a card matching other sections)
+//  Exact iOS-style replica of the HTML/CSS version
 //
 
 import SwiftUI
 
-/// This is the main profile display view, redesigned to match the card-based UI image.
-/// It shows user information in a read-only format and links to the edit page.
 struct UserProfileView: View {
     @EnvironmentObject var authManager: AuthManager
-    
+    @Environment(\.colorScheme) var colorScheme
+
+    // Get the primaryBlue color from your app's custom color palette
+    private var appBlue: Color {
+        return Color.primaryBlue
+    }
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 25) {
-                
-                // --- 1. HEADER (now a card) ---
+            VStack(spacing: 16) {
+                // Profile Header Card
                 ProfileHeaderCard()
                     .padding(.horizontal)
-                
-                // --- 2. EDIT PROFILE BUTTON ---
-                NavigationLink(destination: ProfileView()) {
-                    Text("Edit Profile")
-                        .font(.headline).bold()
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.secondaryGray)
-                        .foregroundColor(.textDark)
-                        .cornerRadius(10)
-                }
-                .padding(.horizontal)
+                    .padding(.top, 16) // Add padding at the top
 
-                // --- 3. INFO CARDS ---
-                
-                // Contact Info Card
-                ContactInfoCard(
-                    email: authManager.user?.email,
-                    phone: authManager.user?.phone,
-                    address: authManager.user?.address
-                )
-                .padding(.horizontal)
-                
-                // Instructor: Hourly Rate Card
+                // Contact Card
+                ContactCard()
+                    .padding(.horizontal)
+
+                // Hourly Rate Card
                 if authManager.role == .instructor {
-                    RateCard(rate: authManager.user?.hourlyRate ?? 0.0)
+                    RateHighlightCard()
                         .padding(.horizontal)
                 }
 
                 // Education Card
                 EducationCard()
                     .padding(.horizontal)
-                
-                // About Me Card
+
+                // About Card
                 AboutCard()
                     .padding(.horizontal)
 
                 // Expertise Card
                 ExpertiseCard()
                     .padding(.horizontal)
-                
-                Spacer()
+
+                Spacer(minLength: 20)
             }
             .padding(.bottom, 20)
         }
-        .navigationTitle("Your Profile")
+        .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
-        .background(Color(.systemGroupedBackground))
+        .background(Color(.systemBackground)) // Use white background
+        .toolbar {
+            // --- THIS IS THE MODIFIED EDIT BUTTON ---
+            ToolbarItem(placement: .navigationBarTrailing) {
+                NavigationLink(destination: ProfileView()) {
+                    Text("Edit Profile")
+                        .bold()
+                        .foregroundColor(appBlue) // Use the app's primary color
+                }
+            }
+        }
+        // --- .navigationBarBackButtonHidden(true) has been REMOVED ---
     }
 }
 
-// MARK: - HEADER CARD (matches other cards)
+// MARK: - Profile Header Card (exact match)
 private struct ProfileHeaderCard: View {
     @EnvironmentObject var authManager: AuthManager
-    
+
     private var profileImageURL: URL? {
         guard let urlString = authManager.user?.photoURL, !urlString.isEmpty else { return nil }
         return URL(string: urlString)
     }
-    
+
     private var locationString: String {
         if let address = authManager.user?.address, !address.isEmpty {
-            return address.components(separatedBy: ",").first ?? "Location N/A"
+            return address.components(separatedBy: ",").first?.trimmingCharacters(in: .whitespaces) ?? "Location N/A"
         }
         return "Location N/A"
     }
-    
+
     var body: some View {
         VStack(spacing: 12) {
-            // Profile Picture
             AsyncImage(url: profileImageURL) { phase in
                 if let image = phase.image {
                     image
@@ -97,220 +93,234 @@ private struct ProfileHeaderCard: View {
                 } else {
                     Image(systemName: "person.crop.circle.fill")
                         .resizable()
-                        .scaledToFit()
-                        .foregroundColor(.secondaryGray)
+                        .foregroundColor(.secondary)
                 }
             }
             .frame(width: 100, height: 100)
-            .background(Color.secondaryGray.opacity(0.3))
+            .background(Color(.systemGray5))
             .clipShape(Circle())
-            .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 2))
+            .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3)) // Use app color
             .padding(.top, 20)
-            
-            // Name
-            Text(authManager.user?.name ?? "User Name")
-                .font(.largeTitle).bold()
-                .foregroundColor(.textDark)
-            
-            // Location
-            HStack {
+
+            Text(authManager.user?.name ?? "Emma Richardson")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(.primary)
+
+            // --- ROLE ---
+            Text(authManager.role.rawValue.capitalized)
+                .font(.system(size: 15))
+                .foregroundColor(.secondary)
+
+            HStack(spacing: 4) {
                 Image(systemName: "mappin.and.ellipse")
                 Text(locationString)
             }
-            .font(.subheadline)
-            .foregroundColor(.textLight)
+            .font(.system(size: 14))
+            .foregroundColor(Color.primaryBlue) // Use app color
             .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity)
         .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
-// MARK: - Base Card View
-private struct ProfileCard<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-    
+// MARK: - Contact Card
+private struct ContactCard: View {
+    @EnvironmentObject var authManager: AuthManager
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title.uppercased())
-                .font(.caption).bold()
-                .foregroundColor(.textLight)
-                .padding([.horizontal, .top], 20)
-                .padding(.bottom, 10)
-            
-            Divider()
-            
-            content
-                .padding(20)
+            Text("CONTACT")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+            Divider().padding(.horizontal, 16)
+
+            ContactRow(icon: "envelope.fill", label: "Email", value: authManager.user?.email ?? "Not provided")
+            ContactRow(icon: "phone.fill", label: "Phone", value: authManager.user?.phone ?? "Not provided")
+            ContactRow(icon: "mappin.and.ellipse", label: "Address", value: authManager.user?.address ?? "Not provided")
         }
         .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
-// MARK: - Card 1: Contact Info
-private struct ContactInfoCard: View {
-    var email: String?
-    var phone: String?
-    var address: String?
-    
-    var body: some View {
-        ProfileCard(title: "Contact") {
-            VStack(spacing: 20) {
-                ContactInfoRow(
-                    icon: "envelope.fill",
-                    label: "Email",
-                    value: email ?? "Not provided"
-                )
-                ContactInfoRow(
-                    icon: "phone.fill",
-                    label: "Phone",
-                    value: phone ?? "Not provided"
-                )
-                ContactInfoRow(
-                    icon: "mappin.and.ellipse",
-                    label: "Address",
-                    value: address ?? "Not provided"
-                )
-            }
-        }
-    }
-}
-
-// Helper for ContactInfoCard
-private struct ContactInfoRow: View {
+private struct ContactRow: View {
     let icon: String
     let label: String
     let value: String
-    
+
     var body: some View {
-        HStack(alignment: .top, spacing: 15) {
+        HStack(spacing: 16) {
             Image(systemName: icon)
-                .font(.body)
-                .frame(width: 20)
-                .foregroundColor(.primaryBlue)
-            
+                .font(.system(size: 16))
+                .frame(width: 32, height: 32)
+                .background(Color.primaryBlue) // Use app color
+                .foregroundColor(.white)
+                .cornerRadius(8)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(.subheadline)
-                    .foregroundColor(.textDark)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
                 Text(value)
-                    .font(.callout)
-                    .foregroundColor(.textLight)
-                    .lineLimit(2)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundColor(.primary)
             }
             Spacer()
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
     }
 }
 
-// MARK: - Card 2: Hourly Rate (Special)
-private struct RateCard: View {
-    let rate: Double
-    
+// MARK: - Hourly Rate Highlight
+private struct RateHighlightCard: View {
+    @EnvironmentObject var authManager: AuthManager
+
     var body: some View {
         VStack(spacing: 4) {
             Text("Hourly Rate")
-                .font(.subheadline)
-            
-            Text(rate, format: .currency(code: "GBP"))
+                .font(.system(size: 15))
+                .foregroundColor(.white.opacity(0.9))
+
+            // Using your app's currency (GBP)
+            Text(authManager.user?.hourlyRate ?? 0.0, format: .currency(code: "GBP"))
                 .font(.system(size: 36, weight: .bold))
-            
+                .foregroundColor(.white)
+
             Text("per hour")
-                .font(.caption)
+                .font(.system(size: 15))
+                .foregroundColor(.white.opacity(0.9))
         }
         .padding(20)
         .frame(maxWidth: .infinity)
-        .foregroundColor(.white)
         .background(
             LinearGradient(
-                gradient: Gradient(colors: [Color.primaryBlue, Color(red: 0.25, green: 0.25, blue: 0.8)]),
+                gradient: Gradient(colors: [Color.primaryBlue, Color(red: 0.35, green: 0.34, blue: 0.84)]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         )
-        .cornerRadius(12)
+        .cornerRadius(16)
         .shadow(color: Color.primaryBlue.opacity(0.4), radius: 8, y: 4)
     }
 }
 
-// MARK: - Card 3: Education
+// MARK: - Education Card
 private struct EducationCard: View {
+    // Placeholder data as "About" and "Education" are not in your AppUser model
     var body: some View {
-        ProfileCard(title: "Education") {
-            VStack(spacing: 15) {
-                EducationRow(
-                    school: "ADI Certified",
-                    degree: "Approved Driving Instructor",
-                    years: "2018 - Present"
-                )
-                Divider()
-                EducationRow(
-                    school: "RoSPA Advanced Drivers",
-                    degree: "Gold Standard Driving",
-                    years: "2020"
-                )
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            Text("EDUCATION")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+            Divider().padding(.horizontal, 16)
+
+            EduRow(school: "ADI Certified", degree: "Approved Driving Instructor", years: "2018 – Present")
+            Divider().padding(.horizontal, 16)
+            EduRow(school: "RoSPA Advanced Drivers", degree: "Gold Standard Driving", years: "2020")
         }
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
-// Helper for EducationCard
-private struct EducationRow: View {
+private struct EduRow: View {
     let school: String
     let degree: String
     let years: String
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(school)
-                .font(.headline)
-                .foregroundColor(.textDark)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.primary)
             Text(degree)
-                .font(.subheadline)
-                .foregroundColor(.primaryBlue)
+                .font(.system(size: 15))
+                .foregroundColor(Color.primaryBlue) // Use app color
             Text(years)
-                .font(.caption)
-                .foregroundColor(.textLight)
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
     }
 }
 
-// MARK: - Card 4: About
+// MARK: - About Card
 private struct AboutCard: View {
+    // Placeholder data
     var body: some View {
-        ProfileCard(title: "About") {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("ABOUT")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+            Divider().padding(.horizontal, 16)
+
             Text("Passionate driving instructor with 8+ years of experience. Expert in teaching nervous drivers, parking, and test prep. I make complex topics simple using real-world examples.")
-                .font(.body)
-                .foregroundColor(.textLight)
-                .lineSpacing(5)
+                .font(.system(size: 16))
+                .foregroundColor(.primary)
+                .lineSpacing(4)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16) // Added vertical padding
         }
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
-// MARK: - Card 5: Expertise
+// MARK: - Expertise Card
 private struct ExpertiseCard: View {
+    // Placeholder data
     let skills = ["Nervous Drivers", "Parallel Parking", "Roundabouts", "Motorway Driving", "Manual Transmission", "Defensive Driving", "Test Prep"]
-    
+
     var body: some View {
-        ProfileCard(title: "Expertise") {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("EXPERTISE")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+            Divider().padding(.horizontal, 16)
+
+            // Using FlowLayout from your previous version
             FlowLayout(alignment: .leading, spacing: 8) {
                 ForEach(skills, id: \.self) { skill in
                     Text(skill)
-                        .font(.caption).bold()
+                        .font(.system(size: 14, weight: .medium))
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.secondaryGray)
-                        .foregroundColor(.textDark)
-                        .cornerRadius(18)
+                        .padding(.vertical, 6)
+                        .background(Color(.systemGray5))
+                        .cornerRadius(12)
+                        .foregroundColor(.primary)
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16) // Added vertical padding
         }
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
@@ -318,7 +328,7 @@ private struct ExpertiseCard: View {
 private struct FlowLayout: Layout {
     var alignment: Alignment
     var spacing: CGFloat
-    
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
         var totalHeight: CGFloat = 0
@@ -326,9 +336,9 @@ private struct FlowLayout: Layout {
         
         var lineWidth: CGFloat = 0
         var lineHeight: CGFloat = 0
-        
+
         for size in sizes {
-            if lineWidth + size.width + spacing > proposal.width ?? 0 {
+            if lineWidth + size.width + spacing > (proposal.width ?? 0) - (spacing * 2) { // Adjusted for padding
                 totalHeight += lineHeight + spacing
                 lineWidth = size.width
                 lineHeight = size.height
@@ -341,7 +351,7 @@ private struct FlowLayout: Layout {
         totalHeight += lineHeight
         return .init(width: totalWidth, height: totalHeight)
     }
-    
+
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
         var (x, y) = (bounds.minX, bounds.minY)
@@ -363,5 +373,22 @@ private struct FlowLayout: Layout {
             lineHeight = max(lineHeight, sizes[index].height)
             x += sizes[index].width + spacing
         }
+    }
+}
+
+// MARK: - Preview
+struct UserProfileView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationView {
+            UserProfileView()
+                .environmentObject(AuthManager()) // Mock manager
+        }
+        .preferredColorScheme(.light)
+
+        NavigationView {
+            UserProfileView()
+                .environmentObject(AuthManager()) // Mock manager
+        }
+        .preferredColorScheme(.dark)
     }
 }

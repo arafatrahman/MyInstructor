@@ -1,8 +1,10 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/RootView.swift
 import SwiftUI
 
 // MARK: - Root View Router
 struct RootView: View {
     @EnvironmentObject var authManager: AuthManager
+    @EnvironmentObject var locationManager: LocationManager // <-- ADDED
     
     @State private var showSplash = true
     // State variable to track if Onboarding has been seen, initialized from UserDefaults
@@ -35,6 +37,11 @@ struct RootView: View {
             if self.hasSeenOnboarding != UserDefaults.standard.bool(forKey: "hasSeenOnboarding") {
                 self.hasSeenOnboarding = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
             }
+        }
+        .task { // <-- ADDED THIS TASK
+            // As soon as the RootView is active (after splash),
+            // request the user's location.
+            await locationManager.requestLocation()
         }
     }
 }

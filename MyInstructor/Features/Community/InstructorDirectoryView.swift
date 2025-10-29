@@ -2,22 +2,22 @@
 import SwiftUI
 import Combine
 import MapKit
-import CoreLocation // <-- 1. ADD IMPORT
+import CoreLocation
 
 // Flow Item 21: Instructor Directory (Student/Public View)
 struct InstructorDirectoryView: View {
     @EnvironmentObject var communityManager: CommunityManager
-    @StateObject private var locationManager = LocationManager() // <-- 2. ADD LOCATION MANAGER
+    @EnvironmentObject var locationManager: LocationManager
     
     @State private var allInstructors: [Student] = [] // This is the master list
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var isShowingMapView = false
     
-    // --- 3. UPDATED FILTERED LIST LOGIC ---
+    // Computed property for filtering
     var filteredInstructors: [Student] {
         if searchText.isEmpty {
-            // If no search, return the master list, which is already sorted by distance
+            // Return the master list, already sorted by distance (if available)
             return allInstructors
         }
         
@@ -28,20 +28,23 @@ struct InstructorDirectoryView: View {
             let phoneMatch = (instructor.phone ?? "").lowercased().contains(lowercasedSearch)
             let schoolMatch = (instructor.drivingSchool ?? "").lowercased().contains(lowercasedSearch)
             
-            // Return true if any field matches
             return nameMatch || emailMatch || phoneMatch || schoolMatch
         }
     }
+    
+    // Default region for the map (London)
+    @State private var mapRegion: MKCoordinateRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 51.5074, longitude: -0.1278),
+        span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+    )
 
     var body: some View {
         NavigationView {
             VStack {
                 // Search + Filter bar
                 HStack {
-                    // SearchBar is now more powerful
                     SearchBar(text: $searchText, placeholder: "Search by name, email, phone...")
                     
-                    // Filters (Placeholder)
                     Button {
                         // TODO: Open advanced filter modal
                     } label: {
@@ -65,10 +68,52 @@ struct InstructorDirectoryView: View {
                     ProgressView("Loading Directory...")
                         .padding(.top, 50)
                 } else if isShowingMapView {
-                    // Map View (Placeholder for Flow Item 21 Map Pins)
-                    Map(coordinateRegion: .constant(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 51.5, longitude: -0.1), span: MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2))))
-                        .ignoresSafeArea(edges: .bottom)
-                        .overlay(Text("Showing nearby instructors on map").font(.caption).padding().background(.thickMaterial).cornerRadius(10), alignment: .center)
+                    // --- *** UPDATED MAP ANNOTATION *** ---
+                    Map(coordinateRegion: $mapRegion, annotationItems: allInstructors.filter { $0.coordinate != nil }) { instructor in
+                        MapAnnotation(coordinate: instructor.coordinate!) {
+                            NavigationLink(destination: InstructorPublicProfileView(instructorID: instructor.id ?? "")) {
+                                VStack(spacing: 4) {
+                                    // Use AsyncImage to show profile pic, with car icon as fallback
+                                    AsyncImage(url: URL(string: instructor.photoURL ?? "")) { phase in
+                                        switch phase {
+                                        case .success(let image):
+                                            image
+                                                .resizable()
+                                                .scaledToFill()
+                                                .frame(width: 35, height: 35) // Pin size
+                                                .clipShape(Circle())
+                                                .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 1.5))
+                                        case .failure, .empty:
+                                            // Fallback car icon
+                                            Image(systemName: "car.circle.fill")
+                                                .font(.title)
+                                                .foregroundColor(.primaryBlue)
+                                                .frame(width: 35, height: 35)
+                                        @unknown default:
+                                            // Default fallback
+                                            Image(systemName: "car.circle.fill")
+                                                .font(.title)
+                                                .foregroundColor(.primaryBlue)
+                                                .frame(width: 35, height: 35)
+                                        }
+                                    }
+                                    
+                                    // Show first name
+                                    Text(instructor.name.split(separator: " ").first.map(String.init) ?? "")
+                                        .font(.caption)
+                                        .foregroundColor(.textDark)
+                                        .lineLimit(1)
+                                }
+                                .padding(5)
+                                .frame(minWidth: 60) // Ensure a minimum width for the tap area
+                                .background(Color(.systemBackground).opacity(0.8))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .shadow(radius: 3)
+                            }
+                        }
+                    }
+                    .ignoresSafeArea(edges: .bottom)
+                    // --- *** END OF UPDATE *** ---
                 } else if filteredInstructors.isEmpty {
                     EmptyStateView(icon: "magnifyingglass", message: "No instructors match your search criteria.")
                 } else {
@@ -88,84 +133,103 @@ struct InstructorDirectoryView: View {
             }
             .navigationTitle("Find Instructors")
             .navigationBarTitleDisplayMode(.inline)
-            .task { await loadData() } // <-- 4. USE NEW LOAD FUNCTION
+            .task { await loadData() }
         }
     }
     
-    // --- 5. NEW DATA LOADING AND SORTING FUNCTIONS ---
-    
-    /// Loads instructors, gets the user's location, and sorts the list by proximity.
+    /// Loads instructors, geocodes them for the map, and *then* sorts by distance if location is available.
     func loadData() async {
         isLoading = true
         
         // 1. Fetch all instructors from Firestore
+        var instructors: [Student] = []
         do {
-            self.allInstructors = try await communityManager.fetchInstructorDirectory(filters: [:])
+            instructors = try await communityManager.fetchInstructorDirectory(filters: [:])
         } catch {
             print("Failed to fetch directory: \(error)")
-            self.allInstructors = []
         }
         
-        // 2. Request the user's current location
-        await locationManager.requestLocation()
+        // 2. Geocode all instructors to get their coordinates for the map
+        // This happens regardless of user location permission
+        instructors = await geocodeInstructors(instructors)
         
-        // 3. Once location is available, calculate distances and sort the list
+        // 3. Check for user's location
         if let userLocation = locationManager.location {
-            self.allInstructors = await calculateAndSortDistances(for: allInstructors, from: userLocation)
+            // Location is available! Calculate distances and sort.
+            instructors = sortInstructorsByDistance(instructors, from: userLocation)
+            // Center the map on the user's location
+            withAnimation {
+                mapRegion.center = userLocation.coordinate
+                mapRegion.span = MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+            }
         } else {
-            // Handle case where location is denied or fails
-            // Just show the list as-is (default sort)
-            print("Location not available. Showing list without distance sorting.")
+            // Location not available. Center map on the first instructor (if any).
+            if let firstCoord = instructors.first(where: { $0.coordinate != nil })?.coordinate {
+                withAnimation {
+                    mapRegion.center = firstCoord
+                }
+            }
         }
         
+        // 4. Update the main state property to refresh the UI
+        self.allInstructors = instructors
         isLoading = false
     }
-    
-    /// Geocodes addresses and sorts the instructor list by distance from the user.
-    func calculateAndSortDistances(for instructors: [Student], from userLocation: CLLocation) async -> [Student] {
+
+    /// Takes a list of instructors, finds their coordinates, and returns an updated list.
+    func geocodeInstructors(_ instructors: [Student]) async -> [Student] {
         let geocoder = CLGeocoder()
-        
-        var instructorsWithDistance: [(student: Student, distance: Double)] = []
-        
-        // Use a TaskGroup to geocode all addresses concurrently
-        await withTaskGroup(of: (Student, Double)?.self) { group in
+        var geocodedInstructors: [Student] = []
+
+        await withTaskGroup(of: Student.self) { group in
             for var instructor in instructors {
                 group.addTask {
-                    guard let address = instructor.address, !address.isEmpty else { return nil }
-                    do {
-                        // Geocode the instructor's address string
-                        let placemarks = try await geocoder.geocodeAddressString(address)
-                        if let instructorLocation = placemarks.first?.location {
-                            // Calculate distance from user
-                            let distanceInMeters = userLocation.distance(from: instructorLocation)
-                            instructor.distance = distanceInMeters // Save the distance
-                            return (instructor, distanceInMeters)
+                    if let address = instructor.address, !address.isEmpty {
+                        do {
+                            let placemarks = try await geocoder.geocodeAddressString(address)
+                            if let location = placemarks.first?.location {
+                                instructor.coordinate = location.coordinate
+                            }
+                        } catch {
+                            // Address is invalid or not found, coordinate remains nil
                         }
-                    } catch {
-                        // This can happen if an address is invalid
-                        print("Geocoding error for \(address): \(error.localizedDescription)")
                     }
-                    return nil // Return nil if geocoding fails
+                    return instructor
                 }
             }
             
-            // Collect all the successful results
-            for await result in group {
-                if let (instructor, distance) = result {
-                    instructorsWithDistance.append((instructor, distance))
-                }
+            for await instructor in group {
+                geocodedInstructors.append(instructor)
+            }
+        }
+        return geocodedInstructors
+    }
+    
+    /// Calculates distance for each instructor (who has coordinates) and sorts the list.
+    func sortInstructorsByDistance(_ instructors: [Student], from userLocation: CLLocation) -> [Student] {
+        var sortedInstructors = instructors
+        
+        // Calculate distance for each
+        for i in 0..<sortedInstructors.count {
+            if let coord = sortedInstructors[i].coordinate {
+                let instructorLocation = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+                let distanceInMeters = userLocation.distance(from: instructorLocation)
+                sortedInstructors[i].distance = distanceInMeters
             }
         }
         
-        // Sort the list by distance (shortest first)
-        instructorsWithDistance.sort { $0.distance < $1.distance }
+        // Sort the list by distance (nil distances go to the end)
+        sortedInstructors.sort {
+            guard let dist1 = $0.distance else { return false } // $0 (lhs) has no distance, move to end
+            guard let dist2 = $1.distance else { return true }  // $1 (rhs) has no distance, $0 is closer
+            return dist1 < dist2
+        }
         
-        // Return just the sorted array of Student objects
-        return instructorsWithDistance.map { $0.student }
+        return sortedInstructors
     }
 }
 
-// Instructor Directory Card (Flow Item 21 detail)
+// Instructor Directory Card
 struct InstructorDirectoryCard: View {
     let instructor: Student
     
@@ -175,7 +239,8 @@ struct InstructorDirectoryCard: View {
                 if let image = phase.image {
                     image.resizable().scaledToFill()
                 } else {
-                    Image(systemName: "person.fill.viewfinder")
+                    // Use a standard person icon for the list view
+                    Image(systemName: "person.circle.fill")
                         .resizable().scaledToFit()
                         .foregroundColor(.primaryBlue)
                 }

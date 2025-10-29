@@ -2,6 +2,7 @@
 
 import Foundation
 import FirebaseFirestore // Need this for @DocumentID
+import CoreLocation // <-- ADDED
 
 // MARK: - Core User Models
 
@@ -68,6 +69,7 @@ struct Student: Identifiable, Codable, Hashable {
     var phone: String?
     var address: String?
     var distance: Double? // Used for sorting by proximity, in meters
+    var coordinate: CLLocationCoordinate2D? // <-- ADDED FOR MAP PINS
     // --- *** END OF ADDED/MODIFIED FIELDS *** ---
     
     // Calculated/Derived properties for dashboard/progress display
@@ -75,17 +77,24 @@ struct Student: Identifiable, Codable, Hashable {
     var nextLessonTime: Date?
     var nextLessonTopic: String?
     
+    // --- CODABLE CONFORMANCE (To exclude view-only properties) ---
+    enum CodingKeys: String, CodingKey {
+        case id, userID, name, photoURL, email, drivingSchool, phone, address
+        case averageProgress, nextLessonTime, nextLessonTopic
+        // `distance` and `coordinate` are omitted, so they won't be encoded/decoded
+    }
+    
     static func == (lhs: Student, rhs: Student) -> Bool {
         lhs.id == rhs.id
     }
     
     func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
+        hasher.combine(id) // Hashing on `id` is sufficient
     }
 }
 
 // MARK: - Lesson Models
-
+// ... (rest of file is unchanged)
 struct Lesson: Identifiable, Codable {
     @DocumentID var id: String?
     let instructorID: String

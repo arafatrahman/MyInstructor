@@ -1,5 +1,7 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/MyInstructor.swift
 import SwiftUI
-import FirebaseCore 
+import FirebaseCore
+import Combine // <-- ADDED
 
 // MARK: - App Delegate (For Firebase Setup)
 class AppDelegate: NSObject, UIApplicationDelegate {
@@ -24,6 +26,7 @@ struct DrivingApp: App {
     @StateObject var lessonManager = LessonManager()
     @StateObject var paymentManager = PaymentManager()
     @StateObject var communityManager = CommunityManager()
+    @StateObject var locationManager = LocationManager() // <-- ADDED
 
     var body: some Scene {
         WindowGroup {
@@ -34,8 +37,9 @@ struct DrivingApp: App {
                 .environmentObject(lessonManager)
                 .environmentObject(paymentManager)
                 .environmentObject(communityManager)
+                .environmentObject(locationManager) // <-- ADDED
                 // Apply the custom theme globally
-                .applyAppTheme() 
+                .applyAppTheme()
         }
     }
 }

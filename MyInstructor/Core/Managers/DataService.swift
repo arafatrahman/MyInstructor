@@ -1,3 +1,4 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/DataService.swift
 import Foundation
 import Combine
 import FirebaseFirestore
@@ -62,16 +63,48 @@ class DataService: ObservableObject {
     
     // MARK: - User Management Fetching
     
+    // --- *** THIS IS THE UPDATED/FIXED FUNCTION *** ---
     func fetchStudents(for instructorID: String) async throws -> [Student] {
-        // TODO: Implement logic to find and return all students
-        // associated with a specific instructor. This schema isn't
-        // fully defined in the models. Returning empty.
+        // 1. Fetch the instructor's AppUser document first
+        let instructorDoc = try await usersCollection.document(instructorID).getDocument()
+        guard let instructor = try? instructorDoc.data(as: AppUser.self) else {
+            print("Could not find instructor AppUser.")
+            return []
+        }
         
-        // This query assumes students have an 'instructorID' field,
-        // which isn't on the 'Student' or 'AppUser' model.
-        // A more likely schema is that an instructor has an array of student IDs.
+        // 2. Get the array of approved student IDs
+        guard let studentIDs = instructor.studentIDs, !studentIDs.isEmpty else {
+            print("Instructor has no approved students.")
+            return []
+        }
         
-        return []
+        // 3. Fetch all user documents where the ID is in our studentIDs array
+        // NOTE: Firestore 'in' queries are limited to 30 items.
+        // For > 30 students, you would need multiple queries.
+        let studentQuery = try await usersCollection
+            .whereField(FieldPath.documentID(), in: studentIDs)
+            .getDocuments()
+            
+        // 4. Map the AppUser data to the 'Student' model, as your app expects
+        let students = studentQuery.documents.compactMap { document -> Student? in
+            guard let appUser = try? document.data(as: AppUser.self) else { return nil }
+            
+            // This maps AppUser data to the Student model for your lists
+            return Student(
+                id: appUser.id,
+                userID: appUser.id ?? "unknown_user_id",
+                name: appUser.name ?? "Student",
+                photoURL: appUser.photoURL,
+                email: appUser.email,
+                drivingSchool: appUser.drivingSchool
+                // Note: averageProgress etc. are on the Student model
+                // but not AppUser. This data would need to be populated
+                // from a different source (e.g., a 'progress' collection).
+                // For now, it will default to 0.0.
+            )
+        }
+        
+        return students
     }
     
     // Fetches a specific user's public data (like name)

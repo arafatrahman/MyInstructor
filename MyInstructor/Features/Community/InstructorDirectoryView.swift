@@ -1,18 +1,36 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorDirectoryView.swift
 import SwiftUI
 import Combine
 import MapKit
+import CoreLocation // <-- 1. ADD IMPORT
 
 // Flow Item 21: Instructor Directory (Student/Public View)
 struct InstructorDirectoryView: View {
     @EnvironmentObject var communityManager: CommunityManager
+    @StateObject private var locationManager = LocationManager() // <-- 2. ADD LOCATION MANAGER
     
-    @State private var instructors: [Student] = []
+    @State private var allInstructors: [Student] = [] // This is the master list
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var isShowingMapView = false
     
+    // --- 3. UPDATED FILTERED LIST LOGIC ---
     var filteredInstructors: [Student] {
-        instructors.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        if searchText.isEmpty {
+            // If no search, return the master list, which is already sorted by distance
+            return allInstructors
+        }
+        
+        let lowercasedSearch = searchText.lowercased()
+        return allInstructors.filter { instructor in
+            let nameMatch = instructor.name.lowercased().contains(lowercasedSearch)
+            let emailMatch = instructor.email.lowercased().contains(lowercasedSearch)
+            let phoneMatch = (instructor.phone ?? "").lowercased().contains(lowercasedSearch)
+            let schoolMatch = (instructor.drivingSchool ?? "").lowercased().contains(lowercasedSearch)
+            
+            // Return true if any field matches
+            return nameMatch || emailMatch || phoneMatch || schoolMatch
+        }
     }
 
     var body: some View {
@@ -20,7 +38,8 @@ struct InstructorDirectoryView: View {
             VStack {
                 // Search + Filter bar
                 HStack {
-                    SearchBar(text: $searchText, placeholder: "Search instructors by name")
+                    // SearchBar is now more powerful
+                    SearchBar(text: $searchText, placeholder: "Search by name, email, phone...")
                     
                     // Filters (Placeholder)
                     Button {
@@ -56,8 +75,7 @@ struct InstructorDirectoryView: View {
                     List {
                         ForEach(filteredInstructors) { instructor in
                             NavigationLink {
-                                // TODO: Navigate to Instructor Public Profile (Flow 22)
-                                Text("Instructor Public Profile for \(instructor.name)").navigationTitle(instructor.name)
+                                InstructorPublicProfileView(instructorID: instructor.id ?? "")
                             } label: {
                                 InstructorDirectoryCard(instructor: instructor)
                             }
@@ -70,18 +88,80 @@ struct InstructorDirectoryView: View {
             }
             .navigationTitle("Find Instructors")
             .navigationBarTitleDisplayMode(.inline)
-            .task { await fetchInstructors() }
+            .task { await loadData() } // <-- 4. USE NEW LOAD FUNCTION
         }
     }
     
-    func fetchInstructors() async {
+    // --- 5. NEW DATA LOADING AND SORTING FUNCTIONS ---
+    
+    /// Loads instructors, gets the user's location, and sorts the list by proximity.
+    func loadData() async {
         isLoading = true
+        
+        // 1. Fetch all instructors from Firestore
         do {
-            self.instructors = try await communityManager.fetchInstructorDirectory(filters: [:])
+            self.allInstructors = try await communityManager.fetchInstructorDirectory(filters: [:])
         } catch {
             print("Failed to fetch directory: \(error)")
+            self.allInstructors = []
         }
+        
+        // 2. Request the user's current location
+        await locationManager.requestLocation()
+        
+        // 3. Once location is available, calculate distances and sort the list
+        if let userLocation = locationManager.location {
+            self.allInstructors = await calculateAndSortDistances(for: allInstructors, from: userLocation)
+        } else {
+            // Handle case where location is denied or fails
+            // Just show the list as-is (default sort)
+            print("Location not available. Showing list without distance sorting.")
+        }
+        
         isLoading = false
+    }
+    
+    /// Geocodes addresses and sorts the instructor list by distance from the user.
+    func calculateAndSortDistances(for instructors: [Student], from userLocation: CLLocation) async -> [Student] {
+        let geocoder = CLGeocoder()
+        
+        var instructorsWithDistance: [(student: Student, distance: Double)] = []
+        
+        // Use a TaskGroup to geocode all addresses concurrently
+        await withTaskGroup(of: (Student, Double)?.self) { group in
+            for var instructor in instructors {
+                group.addTask {
+                    guard let address = instructor.address, !address.isEmpty else { return nil }
+                    do {
+                        // Geocode the instructor's address string
+                        let placemarks = try await geocoder.geocodeAddressString(address)
+                        if let instructorLocation = placemarks.first?.location {
+                            // Calculate distance from user
+                            let distanceInMeters = userLocation.distance(from: instructorLocation)
+                            instructor.distance = distanceInMeters // Save the distance
+                            return (instructor, distanceInMeters)
+                        }
+                    } catch {
+                        // This can happen if an address is invalid
+                        print("Geocoding error for \(address): \(error.localizedDescription)")
+                    }
+                    return nil // Return nil if geocoding fails
+                }
+            }
+            
+            // Collect all the successful results
+            for await result in group {
+                if let (instructor, distance) = result {
+                    instructorsWithDistance.append((instructor, distance))
+                }
+            }
+        }
+        
+        // Sort the list by distance (shortest first)
+        instructorsWithDistance.sort { $0.distance < $1.distance }
+        
+        // Return just the sorted array of Student objects
+        return instructorsWithDistance.map { $0.student }
     }
 }
 
@@ -91,10 +171,20 @@ struct InstructorDirectoryCard: View {
     
     var body: some View {
         HStack(alignment: .top) {
-            Image(systemName: "person.fill.viewfinder")
-                .resizable()
-                .frame(width: 60, height: 60)
-                .foregroundColor(.primaryBlue)
+            AsyncImage(url: URL(string: instructor.photoURL ?? "")) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    Image(systemName: "person.fill.viewfinder")
+                        .resizable().scaledToFit()
+                        .foregroundColor(.primaryBlue)
+                }
+            }
+            .frame(width: 60, height: 60)
+            .clipShape(Circle())
+            .background(Color.secondaryGray)
+            .clipShape(Circle())
+
             
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
@@ -102,17 +192,24 @@ struct InstructorDirectoryCard: View {
                     Image(systemName: "star.fill").foregroundColor(.yellow)
                     Text("4.8").font(.subheadline) // Stars ⭐
                 }
-                Text("From £35/hr").font(.subheadline).bold().foregroundColor(.accentGreen)
-                Text("Manual, Automatic | Speaks Spanish").font(.caption).foregroundColor(.textLight)
+                
+                // Show distance if available
+                if let distance = instructor.distance {
+                    Text(String(format: "%.1f km away", distance / 1000))
+                        .font(.subheadline).bold()
+                        .foregroundColor(.accentGreen)
+                } else {
+                    Text(instructor.drivingSchool ?? "Independent")
+                        .font(.subheadline).bold()
+                        .foregroundColor(.accentGreen)
+                }
+                
+                Text(instructor.address ?? "Location not provided")
+                    .font(.caption).foregroundColor(.textLight)
+                    .lineLimit(1)
             }
             
             Spacer()
-            
-            Button("Book Lesson") {
-                // TODO: Open booking modal
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.primaryBlue)
         }
         .padding(10)
         .background(Color(.systemBackground))

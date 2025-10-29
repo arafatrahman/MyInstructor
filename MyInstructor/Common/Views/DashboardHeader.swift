@@ -30,6 +30,20 @@ struct DashboardHeader: View {
             }
 
             Spacer()
+            
+            // --- *** NEW BUTTON ADDED HERE *** ---
+            // Show "Find Instructor" button ONLY for students
+            if authManager.role == .student {
+                NavigationLink(destination: InstructorDirectoryView()) {
+                    ZStack {
+                        Image(systemName: "person.badge.plus.fill")
+                            .font(.title2)
+                            .foregroundColor(.textDark)
+                    }
+                    .padding(.trailing, 8) // Add spacing between this and the bell
+                }
+            }
+            // --- *** END OF NEW BUTTON *** ---
 
             // Notifications Bell (Flow 14)
             NavigationLink(destination: NotificationsView()) {

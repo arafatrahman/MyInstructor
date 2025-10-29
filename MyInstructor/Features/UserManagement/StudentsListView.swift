@@ -1,3 +1,4 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
 import SwiftUI
 
 // Flow Item 11: Students List (Instructor Only)
@@ -9,7 +10,8 @@ struct StudentsListView: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var filterMode: StudentFilter = .active // Filter (Active/Completed)
-    @State private var isAddStudentModalPresented = false
+    
+    // --- REMOVED: isAddStudentModalPresented ---
     
     // Computed property for filtering and searching
     var filteredStudents: [Student] {
@@ -50,11 +52,10 @@ struct StudentsListView: View {
                     ProgressView("Loading Students...")
                         .padding(.top, 50)
                 } else if filteredStudents.isEmpty && students.isEmpty {
+                    // --- UPDATED EMPTY STATE ---
                     EmptyStateView(
-                        icon: "person.3.fill", 
-                        message: "No students yet. Tap '+' to add your first client!",
-                        actionTitle: "Add Student",
-                        action: { isAddStudentModalPresented = true }
+                        icon: "person.3.fill",
+                        message: "No students have been approved yet. Students can find and request you from the Community Directory."
                     )
                 } else if filteredStudents.isEmpty {
                     Text("No students found matching the criteria.")
@@ -77,14 +78,7 @@ struct StudentsListView: View {
             }
             .navigationTitle("Your Students")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        isAddStudentModalPresented = true
-                    } label: {
-                        Image(systemName: "person.badge.plus.fill")
-                            .font(.title2)
-                    }
-                }
+                // --- REMOVED ToolbarItem ---
             }
             .task {
                 await fetchStudents()
@@ -92,11 +86,7 @@ struct StudentsListView: View {
             .refreshable {
                 await fetchStudents()
             }
-            // Add Student Modal (Placeholder)
-            .sheet(isPresented: $isAddStudentModalPresented) {
-                // In a real app, this would be a simple form to register a new user/student.
-                Text("Add Student Form Placeholder").presentationDetents([.medium])
-            }
+            // --- REMOVED .sheet ---
         }
     }
     
@@ -104,7 +94,7 @@ struct StudentsListView: View {
         guard let instructorID = authManager.user?.id else { return }
         isLoading = true
         do {
-            // Using DataService for mock student data
+            // This function is now fixed in DataService.swift
             self.students = try await dataService.fetchStudents(for: instructorID)
         } catch {
             print("Failed to fetch students: \(error)")
@@ -141,9 +131,19 @@ struct StudentListCard: View {
             // Photo & Progress Circle
             CircularProgressView(progress: student.averageProgress, color: progressColor, size: 50)
                 .overlay(
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(progressColor)
+                    // --- Use AsyncImage for student photo ---
+                    AsyncImage(url: URL(string: student.photoURL ?? "")) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(progressColor)
+                        }
+                    }
+                    .frame(width: 45, height: 45)
+                    .clipShape(Circle())
+                    // --- End AsyncImage ---
                 )
                 .frame(width: 50, height: 50)
             

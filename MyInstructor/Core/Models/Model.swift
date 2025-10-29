@@ -38,6 +38,13 @@ struct AppUser: Identifiable, Codable {
     var education: [EducationEntry]? // Uses new struct
     var expertise: [String]? // For instructor
     // --------------------------------
+    
+    // --- *** ADD THESE NEW RELATIONSHIP FIELDS *** ---
+    // For Instructors: An array of their approved student User IDs
+    var studentIDs: [String]?
+    // For Students: An array of their approved instructor User IDs
+    var instructorIDs: [String]?
+    // ---------------------------------------------
 
     // Initializer for new Firebase Auth users
     init(id: String, email: String, name: String? = nil, role: UserRole = .unselected) {
@@ -56,6 +63,12 @@ struct Student: Identifiable, Codable, Hashable {
     var photoURL: String?
     var email: String
     var drivingSchool: String?
+    
+    // --- *** ADDED/MODIFIED FIELDS FOR SEARCH & SORTING *** ---
+    var phone: String?
+    var address: String?
+    var distance: Double? // Used for sorting by proximity, in meters
+    // --- *** END OF ADDED/MODIFIED FIELDS *** ---
     
     // Calculated/Derived properties for dashboard/progress display
     var averageProgress: Double = 0.0 // 0.0 to 1.0

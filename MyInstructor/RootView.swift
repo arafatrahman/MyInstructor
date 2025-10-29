@@ -136,9 +136,29 @@ struct MainTabView: View {
                 // Flow 15: Settings
                 SettingsView()
                     .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+            
+            // --- *** THIS IS THE FIX *** ---
             } else {
-                // Fallback for .unselected role, which should be rare now.
-                Text("Error: Unknown Role").onAppear { try? authManager.logout() }
+                // This state means auth succeeded but profile fetch failed (e.g., permissions error)
+                VStack(spacing: 15) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.largeTitle)
+                        .foregroundColor(.warningRed)
+                    Text("Error Loading Profile")
+                        .font(.title).bold()
+                    Text("We couldn't load your user data. Please check your network connection or try again.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    
+                    Button("Logout and Try Again") {
+                        try? authManager.logout()
+                    }
+                    .buttonStyle(.primaryDrivingApp)
+                    .padding()
+                }
+                // --- *** END OF FIX *** ---
             }
         }
     }

@@ -27,8 +27,16 @@ struct RootView: View {
                 })
             } else if !authManager.isAuthenticated {
                 AuthenticationView()
+            
+            // --- *** THIS IS THE FIX *** ---
+            // We check if authManager is loading *before* trying to show MainTabView
+            } else if authManager.isLoading {
+                // Show a loading spinner WHILE the profile is being fetched
+                ProgressView()
+            // --- *** END OF FIX *** ---
+
             } else {
-                // Skips RoleSelectionView and goes directly to the main content
+                // You only get here if you ARE authenticated AND you ARE NOT loading
                 MainTabView()
             }
         }

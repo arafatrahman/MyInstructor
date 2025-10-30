@@ -81,7 +81,7 @@ struct Student: Identifiable, Codable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, userID, name, photoURL, email, drivingSchool, phone, address
         case averageProgress, nextLessonTime, nextLessonTopic
-        // `distance` and `coordinate` are omitted, so they won't be encoded/decoded
+        // `distance` and `coordinate` are omitted, so they won'Do not be encoded/decoded
     }
     
     static func == (lhs: Student, rhs: Student) -> Bool {

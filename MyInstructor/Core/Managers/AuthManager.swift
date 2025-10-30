@@ -100,7 +100,7 @@ class AuthManager: ObservableObject {
             // Ensure authentication state reflects reality after data load/creation
             if !self.isAuthenticated { self.isAuthenticated = true }
         } catch {
-            print("!!! FetchUserData FAILED for user \(id): \(error.localizedDescription)")
+            print("!!! FetchUserData FAILED for user \(id): \(error)")
             
             // --- *** THIS IS THE FIX *** ---
             // A profile fetch failure should not log the user out.

@@ -1,8 +1,9 @@
 // File: Features/Community/InstructorPublicProfileView.swift
+// --- UPDATED with Toolbar Button ---
+
 import SwiftUI
 import FirebaseFirestore
 
-// A (simplified) public profile view for an instructor
 struct InstructorPublicProfileView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var communityManager: CommunityManager
@@ -14,52 +15,45 @@ struct InstructorPublicProfileView: View {
     @State private var requestSent = false
     @State private var errorMessage: String?
     
+    // Get the primaryBlue color from your app's custom color palette
+    private var appBlue: Color {
+        return Color.primaryBlue
+    }
+    
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
+            VStack(spacing: 16) {
                 if let user = instructor {
-                    // --- Profile Header ---
+                    // --- Profile Header Card (Copied from UserProfileView) ---
                     ProfileHeaderCard(user: user)
-                        .padding(.top, 16)
-                    
-                    // --- About Card ---
-                    AboutCard(aboutText: user.aboutMe)
-                    
-                    // --- Education Card ---
-                    EducationCard(education: user.education)
-                    
-                    // --- Expertise Card ---
-                    ExpertiseCard(skills: user.expertise)
-
-                    // --- THE NEW REQUEST BUTTON ---
-                    if authManager.role == .student {
-                        Button {
-                            Task {
-                                if let currentUser = authManager.user {
-                                    do {
-                                        try await communityManager.sendRequest(from: currentUser, to: instructorID)
-                                        self.requestSent = true
-                                    } catch {
-                                        self.errorMessage = error.localizedDescription
-                                    }
-                                }
-                            }
-                        } label: {
-                            Text(requestSent ? "Request Sent!" : "Send Request to this Instructor")
-                        }
-                        .buttonStyle(.primaryDrivingApp)
-                        .disabled(requestSent)
                         .padding(.horizontal)
-                        .padding(.bottom, 20)
-                        
-                        if requestSent {
-                            Text("The instructor will be notified. Once approved, they will appear in your contacts.")
-                                .font(.caption)
-                                .foregroundColor(.textLight)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                        }
+                        .padding(.top, 16)
+
+                    // --- Contact Card (Copied from UserProfileView) ---
+                    ContactCard(user: user)
+                        .padding(.horizontal)
+
+                    // --- Hourly Rate Card (Copied from UserProfileView) ---
+                    if user.role == .instructor {
+                        RateHighlightCard(user: user)
+                            .padding(.horizontal)
                     }
+
+                    // --- Education Card (Copied from UserProfileView) ---
+                    EducationCard(education: user.education)
+                        .padding(.horizontal)
+
+                    // --- About Card (Copied from UserProfileView) ---
+                    AboutCard(aboutText: user.aboutMe)
+                        .padding(.horizontal)
+
+                    // --- Expertise Card (Copied from UserProfileView) ---
+                    if user.role == .instructor {
+                        ExpertiseCard(skills: user.expertise)
+                            .padding(.horizontal)
+                    }
+                    
+                    // --- REQUEST BUTTON HAS BEEN MOVED FROM HERE TO THE TOOLBAR ---
                     
                 } else if isLoading {
                     ProgressView()
@@ -69,11 +63,41 @@ struct InstructorPublicProfileView: View {
                         .padding()
                 }
             }
-            .padding(.horizontal) // Padding for the cards
+            .padding(.bottom, 20)
         }
         .navigationTitle(instructor?.name ?? "Profile")
         .navigationBarTitleDisplayMode(.inline)
-        .background(Color(.systemGroupedBackground)) // Match form backgrounds
+        // --- *** THIS IS THE NEWLY ADDED SECTION *** ---
+        .toolbar {
+            // The "Back" button is handled automatically by NavigationView
+            
+            // Add the "Send Request" button to the top-right corner
+            if authManager.role == .student {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        Task {
+                            if let currentUser = authManager.user {
+                                do {
+                                    try await communityManager.sendRequest(from: currentUser, to: instructorID)
+                                    self.requestSent = true
+                                } catch {
+                                    // This error won't be visible, but is good to log
+                                    self.errorMessage = error.localizedDescription
+                                }
+                            }
+                        }
+                    } label: {
+                        // Change text based on state
+                        Text(requestSent ? "Sent" : "Request")
+                            .bold()
+                    }
+                    .disabled(requestSent) // Disable after sending
+                    .tint(appBlue) // Match the app's theme
+                }
+            }
+        }
+        // --- *** END OF NEWLY ADDED SECTION *** ---
+        .background(Color(.systemBackground))
         .task {
             await fetchInstructorData()
         }
@@ -95,11 +119,12 @@ struct InstructorPublicProfileView: View {
 
 
 // MARK: - Re-usable Profile Sub-views
-// These are simplified, read-only versions of the views in UserProfileView.swift
-// You should move these to a "Shared/Views" folder to avoid duplicating code.
+// --- These are copied from UserProfileView.swift and modified ---
+// --- to accept a `user: AppUser` parameter instead of AuthManager ---
 
+// MARK: - Profile Header Card
 private struct ProfileHeaderCard: View {
-    let user: AppUser
+    let user: AppUser // <-- MODIFIED
 
     private var profileImageURL: URL? {
         guard let urlString = user.photoURL, !urlString.isEmpty else { return nil }
@@ -128,11 +153,11 @@ private struct ProfileHeaderCard: View {
             .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
             .padding(.top, 20)
 
-            Text(user.name ?? "User Name")
+            Text(user.name ?? "User Name") // <-- MODIFIED
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundColor(.primary)
 
-            Text(user.role.rawValue.capitalized)
+            Text(user.role.rawValue.capitalized) // <-- MODIFIED
                 .font(.system(size: 15))
                 .foregroundColor(.secondary)
 
@@ -151,6 +176,94 @@ private struct ProfileHeaderCard: View {
     }
 }
 
+// MARK: - Contact Card
+private struct ContactCard: View {
+    let user: AppUser // <-- MODIFIED
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("CONTACT")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+            Divider().padding(.horizontal, 16)
+
+            ContactRow(icon: "envelope.fill", label: "Email", value: user.email) // <-- MODIFIED
+            ContactRow(icon: "phone.fill", label: "Phone", value: user.phone ?? "Not provided") // <-- MODIFIED
+            ContactRow(icon: "mappin.and.ellipse", label: "Address", value: user.address ?? "Not provided") // <-- MODIFIED
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+    }
+}
+
+private struct ContactRow: View {
+    let icon: String
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .frame(width: 32, height: 32)
+                .background(Color.primaryBlue)
+                .foregroundColor(.white)
+                .cornerRadius(8)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                Text(value)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundColor(.primary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
+    }
+}
+
+// MARK: - Hourly Rate Highlight
+private struct RateHighlightCard: View {
+    let user: AppUser // <-- MODIFIED
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("Hourly Rate")
+                .font(.system(size: 15))
+                .foregroundColor(.white.opacity(0.9))
+
+            Text(user.hourlyRate ?? 0.0, format: .currency(code: "GBP")) // <-- MODIFIED
+                .font(.system(size: 36, weight: .bold))
+                .foregroundColor(.white)
+
+            Text("per hour")
+                .font(.system(size: 15))
+                .foregroundColor(.white.opacity(0.9))
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [Color.primaryBlue, Color(red: 0.35, green: 0.34, blue: 0.84)]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .cornerRadius(16)
+        .shadow(color: Color.primaryBlue.opacity(0.4), radius: 8, y: 4)
+    }
+}
+
+// MARK: - Education Card
 private struct EducationCard: View {
     let education: [EducationEntry]?
 
@@ -209,6 +322,7 @@ private struct EduRow: View {
     }
 }
 
+// MARK: - About Card
 private struct AboutCard: View {
     let aboutText: String?
 
@@ -243,6 +357,7 @@ private struct AboutCard: View {
     }
 }
 
+// MARK: - Expertise Card
 private struct ExpertiseCard: View {
     let skills: [String]?
 
@@ -258,9 +373,7 @@ private struct ExpertiseCard: View {
             Divider().padding(.horizontal, 16)
 
             if let skills = skills, !skills.isEmpty {
-                // You must also copy the FlowLayout struct from UserProfileView.swift
-                // For simplicity, I will use a simple VStack here.
-                VStack(alignment: .leading, spacing: 8) {
+                FlowLayout(alignment: .leading, spacing: 8) { // Requires FlowLayout
                     ForEach(skills, id: \.self) { skill in
                         Text(skill)
                             .font(.system(size: 14, weight: .medium))
@@ -283,5 +396,59 @@ private struct ExpertiseCard: View {
         .background(Color(.systemBackground))
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+    }
+}
+
+// MARK: - Helper: FlowLayout (for skills)
+private struct FlowLayout: Layout {
+    var alignment: Alignment
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        var totalHeight: CGFloat = 0
+        var totalWidth: CGFloat = 0
+
+        var lineWidth: CGFloat = 0
+        var lineHeight: CGFloat = 0
+
+        let effectiveWidth = (proposal.width ?? 0) - (spacing * 2)
+
+        for size in sizes {
+            if lineWidth + size.width + spacing > effectiveWidth && lineWidth > 0 {
+                totalHeight += lineHeight + spacing
+                lineWidth = size.width
+                lineHeight = size.height
+            } else {
+                lineWidth += size.width + spacing
+                lineHeight = max(lineHeight, size.height)
+            }
+            totalWidth = max(totalWidth, lineWidth)
+        }
+        totalHeight += lineHeight
+        return .init(width: totalWidth, height: totalHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        var (x, y) = (bounds.minX, bounds.minY)
+        var lineHeight: CGFloat = 0
+
+        for index in subviews.indices {
+            if x + sizes[index].width > bounds.maxX && x > bounds.minX {
+                x = bounds.minX
+                y += lineHeight + spacing
+                lineHeight = 0
+            }
+
+            subviews[index].place(
+                at: .init(x: x, y: y),
+                anchor: .topLeading,
+                proposal: .init(sizes[index])
+            )
+
+            lineHeight = max(lineHeight, sizes[index].height)
+            x += sizes[index].width + spacing
+        }
     }
 }

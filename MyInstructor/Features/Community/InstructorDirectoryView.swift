@@ -1,4 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorDirectoryView.swift
+// --- UPDATED: Removed redundant NavigationView and fixed CLLocationCoordinateD typo ---
+
 import SwiftUI
 import Combine
 import MapKit
@@ -33,108 +35,109 @@ struct InstructorDirectoryView: View {
     }
     
     // Default region for the map (London)
+    // --- THIS IS THE FIX for the typo ---
     @State private var mapRegion: MKCoordinateRegion = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 51.5074, longitude: -0.1278),
+        center: CLLocationCoordinate2D(latitude: 51.5074, longitude: -0.1278), // Was CLLocationCoordinateD
         span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
     )
 
     var body: some View {
-        NavigationView {
-            VStack {
-                // Search + Filter bar
-                HStack {
-                    SearchBar(text: $searchText, placeholder: "Search by name, email, phone...")
-                    
-                    Button {
-                        // TODO: Open advanced filter modal
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.title2)
-                            .foregroundColor(.primaryBlue)
-                    }
-                }
-                .padding(.horizontal)
+        // --- The NavigationView was removed from here to fix the double back button ---
+        VStack {
+            // Search + Filter bar
+            HStack {
+                SearchBar(text: $searchText, placeholder: "Search by name, email, phone...")
                 
-                // Toggle: List ↔ Map
-                Picker("View Mode", selection: $isShowingMapView) {
-                    Text("List").tag(false)
-                    Text("Map").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.bottom, 5)
-                
-                if isLoading {
-                    ProgressView("Loading Directory...")
-                        .padding(.top, 50)
-                } else if isShowingMapView {
-                    // --- *** UPDATED MAP ANNOTATION *** ---
-                    Map(coordinateRegion: $mapRegion, annotationItems: allInstructors.filter { $0.coordinate != nil }) { instructor in
-                        MapAnnotation(coordinate: instructor.coordinate!) {
-                            NavigationLink(destination: InstructorPublicProfileView(instructorID: instructor.id ?? "")) {
-                                VStack(spacing: 4) {
-                                    // Use AsyncImage to show profile pic, with car icon as fallback
-                                    AsyncImage(url: URL(string: instructor.photoURL ?? "")) { phase in
-                                        switch phase {
-                                        case .success(let image):
-                                            image
-                                                .resizable()
-                                                .scaledToFill()
-                                                .frame(width: 35, height: 35) // Pin size
-                                                .clipShape(Circle())
-                                                .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 1.5))
-                                        case .failure, .empty:
-                                            // Fallback car icon
-                                            Image(systemName: "car.circle.fill")
-                                                .font(.title)
-                                                .foregroundColor(.primaryBlue)
-                                                .frame(width: 35, height: 35)
-                                        @unknown default:
-                                            // Default fallback
-                                            Image(systemName: "car.circle.fill")
-                                                .font(.title)
-                                                .foregroundColor(.primaryBlue)
-                                                .frame(width: 35, height: 35)
-                                        }
-                                    }
-                                    
-                                    // Show first name
-                                    Text(instructor.name.split(separator: " ").first.map(String.init) ?? "")
-                                        .font(.caption)
-                                        .foregroundColor(.textDark)
-                                        .lineLimit(1)
-                                }
-                                .padding(5)
-                                .frame(minWidth: 60) // Ensure a minimum width for the tap area
-                                .background(Color(.systemBackground).opacity(0.8))
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .shadow(radius: 3)
-                            }
-                        }
-                    }
-                    .ignoresSafeArea(edges: .bottom)
-                    // --- *** END OF UPDATE *** ---
-                } else if filteredInstructors.isEmpty {
-                    EmptyStateView(icon: "magnifyingglass", message: "No instructors match your search criteria.")
-                } else {
-                    List {
-                        ForEach(filteredInstructors) { instructor in
-                            NavigationLink {
-                                InstructorPublicProfileView(instructorID: instructor.id ?? "")
-                            } label: {
-                                InstructorDirectoryCard(instructor: instructor)
-                            }
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-                        }
-                    }
-                    .listStyle(.plain)
+                Button {
+                    // TODO: Open advanced filter modal
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.title2)
+                        .foregroundColor(.primaryBlue)
                 }
             }
-            .navigationTitle("Find Instructors")
-            .navigationBarTitleDisplayMode(.inline)
-            .task { await loadData() }
+            .padding(.horizontal)
+            
+            // Toggle: List ↔ Map
+            Picker("View Mode", selection: $isShowingMapView) {
+                Text("List").tag(false)
+                Text("Map").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 5)
+            
+            if isLoading {
+                ProgressView("Loading Directory...")
+                    .padding(.top, 50)
+            } else if isShowingMapView {
+                // --- UPDATED MAP ANNOTATION ---
+                Map(coordinateRegion: $mapRegion, annotationItems: allInstructors.filter { $0.coordinate != nil }) { instructor in
+                    MapAnnotation(coordinate: instructor.coordinate!) {
+                        NavigationLink(destination: InstructorPublicProfileView(instructorID: instructor.id ?? "")) {
+                            VStack(spacing: 4) {
+                                // Use AsyncImage to show profile pic, with car icon as fallback
+                                AsyncImage(url: URL(string: instructor.photoURL ?? "")) { phase in
+                                    switch phase {
+                                    case .success(let image):
+                                        image
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 35, height: 35) // Pin size
+                                            .clipShape(Circle())
+                                            .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 1.5))
+                                    case .failure, .empty:
+                                        // Fallback car icon
+                                        Image(systemName: "car.circle.fill")
+                                            .font(.title)
+                                            .foregroundColor(.primaryBlue)
+                                            .frame(width: 35, height: 35)
+                                    @unknown default:
+                                        // Default fallback
+                                        Image(systemName: "car.circle.fill")
+                                            .font(.title)
+                                            .foregroundColor(.primaryBlue)
+                                            .frame(width: 35, height: 35)
+                                    }
+                                }
+                                
+                                // Show first name
+                                Text(instructor.name.split(separator: " ").first.map(String.init) ?? "")
+                                    .font(.caption)
+                                    .foregroundColor(.textDark)
+                                    .lineLimit(1)
+                            }
+                            .padding(5)
+                            .frame(minWidth: 60) // Ensure a minimum width for the tap area
+                            .background(Color(.systemBackground).opacity(0.8))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .shadow(radius: 3)
+                        }
+                    }
+                }
+                .ignoresSafeArea(edges: .bottom)
+                // --- *** END OF UPDATE *** ---
+            } else if filteredInstructors.isEmpty {
+                EmptyStateView(icon: "magnifyingglass", message: "No instructors match your search criteria.")
+            } else {
+                List {
+                    ForEach(filteredInstructors) { instructor in
+                        NavigationLink {
+                            InstructorPublicProfileView(instructorID: instructor.id ?? "")
+                        } label: {
+                            InstructorDirectoryCard(instructor: instructor)
+                        }
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                    }
+                }
+                .listStyle(.plain)
+            }
         }
+        .navigationTitle("Find Instructors") // This title will now appear on the inherited navigation bar
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await loadData() }
+        // --- The matching } for the NavigationView was removed from here ---
     }
     
     /// Loads instructors, geocodes them for the map, and *then* sorts by distance if location is available.

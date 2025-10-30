@@ -1,5 +1,5 @@
 // File: MyInstructor/Features/Student/MyInstructorsView.swift
-// --- UPDATED with a visible Cancel button ---
+// --- UPDATED: Removed button and made rows into NavigationLinks ---
 
 import SwiftUI
 
@@ -20,8 +20,13 @@ struct MyInstructorsView: View {
         sentRequests.filter { $0.status == .approved }
     }
     
-    private var otherRequests: [StudentRequest] {
-        sentRequests.filter { $0.status == .pending || $0.status == .denied }
+    private var pendingRequests: [StudentRequest] {
+        sentRequests.filter { $0.status == .pending }
+    }
+    
+    // --- NEW: A list for "Denied" requests ---
+    private var deniedRequests: [StudentRequest] {
+        sentRequests.filter { $0.status == .denied }
     }
     
     var body: some View {
@@ -29,7 +34,8 @@ struct MyInstructorsView: View {
             VStack {
                 Picker("Request Status", selection: $selectedStatus) {
                     Text("My Instructors (\(approvedRequests.count))").tag(MyInstructorsFilter.approved)
-                    Text("Pending (\(otherRequests.count))").tag(MyInstructorsFilter.pending)
+                    // The tab title now only counts pending requests
+                    Text("Pending (\(pendingRequests.count))").tag(MyInstructorsFilter.pending)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
@@ -40,7 +46,6 @@ struct MyInstructorsView: View {
                 } else {
                     if selectedStatus == .approved {
                         if approvedRequests.isEmpty {
-                            // --- This is the Empty State with the working NavigationLink ---
                             VStack(spacing: 15) {
                                 Image(systemName: "person.badge.plus")
                                     .font(.system(size: 50))
@@ -65,26 +70,48 @@ struct MyInstructorsView: View {
                             List {
                                 Section("Approved Instructors") {
                                     ForEach(approvedRequests) { request in
-                                        MyInstructorRow(request: request, onCancel: nil)
+                                        // --- *** THIS IS THE FIX *** ---
+                                        NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
+                                            MyInstructorRow(request: request)
+                                        }
+                                        // --- *** END OF FIX *** ---
                                     }
                                 }
                             }
                             .listStyle(.insetGrouped)
                         }
                     } else {
-                        if otherRequests.isEmpty {
+                        // This 'if' now checks the new 'pendingRequests' list
+                        if pendingRequests.isEmpty && deniedRequests.isEmpty {
                             EmptyStateView(
                                 icon: "paperplane.fill",
-                                message: "You have no pending or denied requests."
+                                message: "You have no pending or denied requests." // Updated message
                             )
                         } else {
                             List {
-                                Section("Pending & Denied Requests") {
-                                    ForEach(otherRequests) { request in
-                                        // --- UPDATED: Pass the cancel action ---
-                                        MyInstructorRow(request: request, onCancel: {
-                                            Task { await cancelRequest(request) }
-                                        })
+                                // --- Section for Pending ---
+                                if !pendingRequests.isEmpty {
+                                    Section("Pending Requests") {
+                                        ForEach(pendingRequests) { request in
+                                            // --- *** THIS IS THE FIX *** ---
+                                            NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
+                                                MyInstructorRow(request: request)
+                                            }
+                                            // --- *** END OF FIX *** ---
+                                        }
+                                    }
+                                }
+                                
+                                // --- Section for Denied ---
+                                if !deniedRequests.isEmpty {
+                                    Section("Denied Requests") {
+                                        ForEach(deniedRequests) { request in
+                                            // --- *** THIS IS THE FIX *** ---
+                                            NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
+                                                MyInstructorRow(request: request)
+                                            }
+                                            // --- *** END OF FIX *** ---
+                                        }
                                     }
                                 }
                             }
@@ -107,25 +134,12 @@ struct MyInstructorsView: View {
         guard let studentID = authManager.user?.id else { return }
         isLoading = true
         do {
+            // This fetch is still correct, it gets all requests
             self.sentRequests = try await communityManager.fetchSentRequests(for: studentID)
         } catch {
             print("Failed to fetch sent requests: \(error)")
         }
         isLoading = false
-    }
-    
-    // --- NEW FUNCTION to handle cancel ---
-    private func cancelRequest(_ request: StudentRequest) async {
-        guard let requestID = request.id else { return }
-        
-        do {
-            try await communityManager.cancelRequest(requestID: requestID)
-            // Refresh the list locally to make it feel instant
-            sentRequests.removeAll(where: { $0.id == requestID })
-        } catch {
-            print("Failed to cancel request: \(error.localizedDescription)")
-            // TODO: Show an error alert to the user
-        }
     }
 }
 
@@ -134,50 +148,41 @@ struct MyInstructorRow: View {
     @EnvironmentObject var dataService: DataService
     let request: StudentRequest
     
-    // --- UPDATED: Add a callback for the cancel button ---
-    var onCancel: (() -> Void)?
+    // --- REMOVED: onCancel callback ---
     
     @State private var instructor: AppUser?
     
     var body: some View {
-        VStack(alignment: .leading) {
-            HStack(spacing: 12) {
-                AsyncImage(url: URL(string: instructor?.photoURL ?? "")) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        Image(systemName: "person.circle.fill")
-                            .resizable()
-                            .foregroundColor(.primaryBlue)
-                    }
+        // --- REMOVED: The VStack wrapper ---
+        HStack(spacing: 12) {
+            AsyncImage(url: URL(string: instructor?.photoURL ?? "")) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    Image(systemName: "person.circle.fill")
+                        .resizable()
+                        .foregroundColor(.primaryBlue)
                 }
-                .frame(width: 45, height: 45)
-                .clipShape(Circle())
+            }
+            .frame(width: 45, height: 45)
+            .clipShape(Circle())
 
-                VStack(alignment: .leading) {
-                    if let instructor {
-                        Text(instructor.name ?? "Instructor")
-                            .font(.headline)
-                    } else {
-                        ProgressView()
-                            .frame(maxWidth: 100)
-                    }
-                    Text(request.timestamp, style: .date)
-                        .font(.caption)
-                        .foregroundColor(.textLight)
+            VStack(alignment: .leading) {
+                if let instructor {
+                    Text(instructor.name ?? "Instructor")
+                        .font(.headline)
+                } else {
+                    ProgressView()
+                        .frame(maxWidth: 100)
                 }
-                
-                Spacer()
-                
-                StatusBadge(status: request.status)
+                Text(request.timestamp, style: .date)
+                    .font(.caption)
+                    .foregroundColor(.textLight)
             }
             
-            // --- NEW: VISIBLE CANCEL BUTTON ---
-            if request.status == .pending, let onCancel {
-                Button("Cancel Request", role: .destructive, action: onCancel)
-                    .font(.caption)
-                    .padding(.top, 8)
-            }
+            Spacer()
+            
+            StatusBadge(status: request.status)
         }
         .padding(.vertical, 6)
         .task {
@@ -189,5 +194,6 @@ struct MyInstructorRow: View {
                 }
             }
         }
+        // --- REMOVED: The visible "Cancel Request" button ---
     }
 }

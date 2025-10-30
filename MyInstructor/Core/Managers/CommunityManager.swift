@@ -1,9 +1,25 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
-// --- UPDATED to fix 'approveRequest' bug and add 'fetchSentRequests' ---
+// --- UPDATED with fixed 'sendRequest' (delete-then-create) and 'cancelRequest' ---
 
 import Combine
 import Foundation
 import FirebaseFirestore
+
+// --- NEW: Define custom errors for the UI ---
+enum RequestError: Error, LocalizedError {
+    case alreadyPending
+    case alreadyApproved
+    
+    var errorDescription: String? {
+        switch self {
+        case .alreadyPending:
+            return "A request is already pending with this instructor."
+        case .alreadyApproved:
+            return "You are already an approved student of this instructor."
+        }
+    }
+}
+
 
 class CommunityManager: ObservableObject {
     private let db = Firestore.firestore()
@@ -19,14 +35,11 @@ class CommunityManager: ObservableObject {
 
     // Fetches recent community posts based on filters
     func fetchPosts(filter: String) async throws -> [Post] {
-        // TODO: Implement actual filter logic based on the 'filter' string.
-        // This example just fetches the 20 newest posts.
         let snapshot = try await postsCollection
             .order(by: "timestamp", descending: true)
             .limit(to: 20)
             .getDocuments()
         
-        // Use compactMap to safely decode posts
         let posts = snapshot.documents.compactMap { document in
             try? document.data(as: Post.self)
         }
@@ -34,9 +47,7 @@ class CommunityManager: ObservableObject {
     }
     
     func createPost(post: Post) async throws {
-        // Use `addDocument(from:)` to encode the Post object
         try postsCollection.addDocument(from: post)
-        print("Post created successfully by \(post.authorName)")
     }
 
     // Fetches instructors from the 'users' collection
@@ -64,20 +75,43 @@ class CommunityManager: ObservableObject {
     
     // MARK: - --- STUDENT REQUEST FUNCTIONS ---
     
-    // --- 1. Called by Student ---
+    // --- 1. Called by Student (FIXED) ---
     func sendRequest(from student: AppUser, to instructorID: String) async throws {
         guard let studentID = student.id else { throw URLError(.badServerResponse) }
         
-        let existing = try await requestsCollection
+        let existingQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
             .whereField("instructorID", isEqualTo: instructorID)
             .getDocuments()
-            
-        guard existing.isEmpty else {
-            print("Request already sent.")
-            return
-        }
 
+        // --- UPDATED LOGIC TO THROW ERRORS and "DELETE THEN CREATE" ---
+        for doc in existingQuery.documents {
+            if let status = doc.data()["status"] as? String {
+                if status == RequestStatus.pending.rawValue {
+                    print("Request already pending.")
+                    throw RequestError.alreadyPending
+                }
+                if status == RequestStatus.approved.rawValue {
+                    print("Student is already approved by this instructor.")
+                    throw RequestError.alreadyApproved
+                }
+                // --- THIS IS THE FIX ---
+                // Find a "denied" request
+                if status == RequestStatus.denied.rawValue {
+                    print("Found a denied request. Deleting it to re-apply...")
+                    // A student IS allowed to delete their own request per your rules.
+                    try await doc.reference.delete()
+                    print("Old request deleted.")
+                }
+                // --- END OF FIX ---
+            }
+        }
+        
+        // If we are here, any old 'denied' requests are gone,
+        // and no 'pending' or 'approved' requests exist.
+        // We can now create a new one.
+        
+        print("Creating new request...")
         let newRequest = StudentRequest(
             studentID: studentID,
             studentName: student.name ?? "New Student",
@@ -88,9 +122,10 @@ class CommunityManager: ObservableObject {
         )
         
         try requestsCollection.addDocument(from: newRequest)
+        print("New request sent successfully.")
     }
 
-    // --- 2. Called by Instructor (NotificationsView) ---
+    // --- 2. Called by Instructor (StudentsListView) ---
     func fetchRequests(for instructorID: String) async throws -> [StudentRequest] {
         let snapshot = try await requestsCollection
             .whereField("instructorID", isEqualTo: instructorID)
@@ -102,42 +137,50 @@ class CommunityManager: ObservableObject {
     }
     
     // --- 3. Called by Instructor (Approve Button) ---
-    // --- *** THIS IS THE FIX *** ---
     func approveRequest(_ request: StudentRequest) async throws {
         guard let requestID = request.id else { throw URLError(.badServerResponse) }
         
-        // Use a batch write to make this transactional
         let batch = db.batch()
         
-        // 1. Update the request status to "approved"
         let requestRef = requestsCollection.document(requestID)
         batch.updateData(["status": RequestStatus.approved.rawValue], forDocument: requestRef)
         
-        // 2. Add studentID to instructor's 'studentIDs' array
         let instructorRef = usersCollection.document(request.instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayUnion([request.studentID])], forDocument: instructorRef)
         
-        // --- REMOVED ---
-        // The line below was failing due to Firestore rules.
-        // An instructor cannot write to a student's document.
-        // The student's app will now see the "approved" status
-        // and handle its own side of the relationship.
-        // -----------------
-        // let studentRef = usersCollection.document(request.studentID)
-        // batch.updateData(["instructorIDs": FieldValue.arrayUnion([request.instructorID])], forDocument: studentRef)
-        
-        // Commit the batch
         try await batch.commit()
     }
     
     // --- 4. Called by Instructor (Deny Button) ---
     func denyRequest(_ request: StudentRequest) async throws {
         guard let requestID = request.id else { throw URLError(.badServerResponse) }
-        // We just update the status. We don't need a batch.
         try await requestsCollection.document(requestID).updateData(["status": RequestStatus.denied.rawValue])
     }
     
-    // --- 5. NEW FUNCTION (Called by Student) ---
+    // --- 5. Called by Instructor ("Remove" button) ---
+    func removeStudent(studentID: String, instructorID: String) async throws {
+        let batch = db.batch()
+        
+        // 1. Remove student from instructor's list
+        let instructorRef = usersCollection.document(instructorID)
+        batch.updateData(["studentIDs": FieldValue.arrayRemove([studentID])], forDocument: instructorRef)
+        
+        // 2. Find and update the original request document to 'denied'
+        let requestQuery = try await requestsCollection
+            .whereField("studentID", isEqualTo: studentID)
+            .whereField("instructorID", isEqualTo: instructorID)
+            .whereField("status", isEqualTo: RequestStatus.approved.rawValue) // Only find the approved one
+            .getDocuments()
+        
+        // Should only be one, but we loop just in case
+        for doc in requestQuery.documents {
+            batch.updateData(["status": RequestStatus.denied.rawValue], forDocument: doc.reference)
+        }
+        
+        try await batch.commit()
+    }
+    
+    // --- 6. Called by Student (MyInstructorsView) ---
     func fetchSentRequests(for studentID: String) async throws -> [StudentRequest] {
         let snapshot = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
@@ -145,5 +188,12 @@ class CommunityManager: ObservableObject {
             .getDocuments()
             
         return snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
+    }
+    
+    // --- 7. NEW FUNCTION (Called by Student "Cancel" button) ---
+    func cancelRequest(requestID: String) async throws {
+        // Your Firebase rule allows this:
+        // allow delete: if request.auth != null && request.auth.uid == resource.data.studentID;
+        try await requestsCollection.document(requestID).delete()
     }
 }

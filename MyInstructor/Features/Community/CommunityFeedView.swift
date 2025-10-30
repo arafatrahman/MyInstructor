@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
+// --- UPDATED: Removed 'Directory' button, added 'Find Instructor' icon link ---
+
 import SwiftUI
 
 // Flow Item 18: Community Feed
@@ -9,7 +12,10 @@ struct CommunityFeedView: View {
     @State private var searchText = ""
     @State private var filterMode: CommunityFilter = .all
     @State private var isCreatePostPresented = false
-    @State private var isShowingDirectory = false
+    
+    // --- THIS STATE IS NO LONGER NEEDED ---
+    // @State private var isShowingDirectory = false
+    
     @State private var isLoading = true
     
     // Simple mock filter for the UI demonstration
@@ -65,19 +71,34 @@ struct CommunityFeedView: View {
             }
             .navigationTitle("Community")
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Directory") {
-                        isShowingDirectory = true // Navigate to Flow 21
-                    }
-                    .foregroundColor(.primaryBlue)
-                }
+                // --- THIS LEADING BUTTON HAS BEEN REMOVED ---
+                // ToolbarItem(placement: .navigationBarLeading) {
+                //    Button("Directory") {
+                //        isShowingDirectory = true // Navigate to Flow 21
+                //    }
+                //    .foregroundColor(.primaryBlue)
+                // }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    // Floating Button: “+” → Create Post
-                    Button {
-                        isCreatePostPresented = true // Navigate to Flow 19
-                    } label: {
-                        Image(systemName: "square.and.pencil")
-                            .font(.title2)
+                    HStack {
+                        // --- *** NEW "FIND INSTRUCTOR" BUTTON *** ---
+                        // Show "Find Instructor" button ONLY for students
+                        if authManager.role == .student {
+                            NavigationLink(destination: InstructorDirectoryView()) {
+                                Image(systemName: "person.badge.plus.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.primaryBlue)
+                            }
+                        }
+                        // --- *** END OF NEW BUTTON *** ---
+
+                        // Floating Button: “+” → Create Post
+                        Button {
+                            isCreatePostPresented = true // Navigate to Flow 19
+                        } label: {
+                            Image(systemName: "square.and.pencil")
+                                .font(.title2)
+                        }
                     }
                 }
             }
@@ -85,10 +106,12 @@ struct CommunityFeedView: View {
             .sheet(isPresented: $isCreatePostPresented) {
                 CreatePostView(onPostCreated: { Task { await fetchPosts() } })
             }
-            .sheet(isPresented: $isShowingDirectory) {
-                InstructorDirectoryView()
-            }
+            // --- THIS SHEET IS NO LONGER NEEDED ---
+            // .sheet(isPresented: $isShowingDirectory) {
+            //    InstructorDirectoryView()
+            // }
         }
+        .navigationViewStyle(.stack) // Add this for correct navigation
     }
     
     func fetchPosts() async {

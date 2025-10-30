@@ -1,21 +1,24 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
+// --- UPDATED to show Pending Requests and Approved Students ---
+
 import SwiftUI
 
 // Flow Item 11: Students List (Instructor Only)
 struct StudentsListView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var dataService: DataService
+    @EnvironmentObject var communityManager: CommunityManager // --- ADDED ---
     
-    @State private var students: [Student] = []
+    @State private var approvedStudents: [Student] = [] // --- RENAMED ---
+    @State private var pendingRequests: [StudentRequest] = [] // --- ADDED ---
+    
     @State private var isLoading = true
     @State private var searchText = ""
-    @State private var filterMode: StudentFilter = .active // Filter (Active/Completed)
+    @State private var filterMode: StudentFilter = .active
     
-    // --- REMOVED: isAddStudentModalPresented ---
-    
-    // Computed property for filtering and searching
-    var filteredStudents: [Student] {
-        let list = students.filter { student in
+    // Computed property for filtering *approved* students only
+    var filteredApprovedStudents: [Student] {
+        let list = approvedStudents.filter { student in
             switch filterMode {
             case .all: return true
             case .active: return student.averageProgress < 1.0 // Active if not 100%
@@ -51,55 +54,111 @@ struct StudentsListView: View {
                 if isLoading {
                     ProgressView("Loading Students...")
                         .padding(.top, 50)
-                } else if filteredStudents.isEmpty && students.isEmpty {
-                    // --- UPDATED EMPTY STATE ---
+                } else if pendingRequests.isEmpty && approvedStudents.isEmpty {
+                    // Show empty state if both lists are empty
                     EmptyStateView(
                         icon: "person.3.fill",
-                        message: "No students have been approved yet. Students can find and request you from the Community Directory."
+                        message: "No students or requests yet. Students can find and request you from the Community Directory."
                     )
-                } else if filteredStudents.isEmpty {
-                    Text("No students found matching the criteria.")
-                        .foregroundColor(.textLight)
-                        .padding()
                 } else {
                     List {
-                        ForEach(filteredStudents) { student in
-                            NavigationLink {
-                                StudentProfileView(student: student) // Navigate to Flow 12
-                            } label: {
-                                StudentListCard(student: student)
+                        // --- SECTION 1: PENDING REQUESTS ---
+                        if !pendingRequests.isEmpty {
+                            Section(header: Text("Pending Requests").font(.headline).foregroundColor(.accentGreen)) {
+                                ForEach(pendingRequests) { request in
+                                    RequestRow(request: request, onApprove: {
+                                        Task { await handleRequest(request, approve: true) }
+                                    }, onDeny: {
+                                        Task { await handleRequest(request, approve: false) }
+                                    })
+                                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                                    .listRowSeparator(.hidden)
+                                }
                             }
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                        }
+                        
+                        // --- SECTION 2: APPROVED STUDENTS ---
+                        // Only show this section if search is not active, or if search results exist
+                        if searchText.isEmpty || !filteredApprovedStudents.isEmpty {
+                            Section("Approved Students (\(filteredApprovedStudents.count))") {
+                                ForEach(filteredApprovedStudents) { student in
+                                    NavigationLink {
+                                        StudentProfileView(student: student) // Navigate to Flow 12
+                                    } label: {
+                                        StudentListCard(student: student)
+                                    }
+                                    // --- ADDED SWIPE ACTION ---
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        Button(role: .destructive) {
+                                            Task { await removeStudent(student) }
+                                        } label: {
+                                            Label("Remove", systemImage: "trash.fill")
+                                        }
+                                    }
+                                }
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                            }
                         }
                     }
-                    .listStyle(.plain)
+                    .listStyle(.insetGrouped) // Changed to grouped for better sectioning
                 }
             }
             .navigationTitle("Your Students")
             .toolbar {
-                // --- REMOVED ToolbarItem ---
+                // Toolbar is now clean
             }
             .task {
-                await fetchStudents()
+                await fetchData() // --- RENAMED ---
             }
             .refreshable {
-                await fetchStudents()
+                await fetchData() // --- RENAMED ---
             }
-            // --- REMOVED .sheet ---
         }
     }
     
-    func fetchStudents() async {
+    // --- UPDATED FUNCTION ---
+    func fetchData() async {
         guard let instructorID = authManager.user?.id else { return }
         isLoading = true
+        
+        // Fetch both lists in parallel
+        async let studentsTask = dataService.fetchStudents(for: instructorID)
+        async let requestsTask = communityManager.fetchRequests(for: instructorID)
+        
         do {
-            // This function is now fixed in DataService.swift
-            self.students = try await dataService.fetchStudents(for: instructorID)
+            self.approvedStudents = try await studentsTask
+            self.pendingRequests = try await requestsTask
         } catch {
-            print("Failed to fetch students: \(error)")
+            print("Failed to fetch data: \(error)")
         }
         isLoading = false
+    }
+    
+    // --- NEW FUNCTION ---
+    func handleRequest(_ request: StudentRequest, approve: Bool) async {
+        do {
+            if approve {
+                try await communityManager.approveRequest(request)
+            } else {
+                try await communityManager.denyRequest(request)
+            }
+            await fetchData() // Refresh both lists
+        } catch {
+            print("Failed to handle request: \(error)")
+        }
+    }
+    
+    // --- NEW FUNCTION ---
+    func removeStudent(_ student: Student) async {
+        guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
+        
+        do {
+            try await communityManager.removeStudent(studentID: studentID, instructorID: instructorID)
+            await fetchData() // Refresh both lists
+        } catch {
+            print("Failed to remove student: \(error)")
+        }
     }
 }
 
@@ -107,7 +166,64 @@ enum StudentFilter: String {
     case all, active, completed
 }
 
-// Student List Card (Flow Item 11 detail)
+// (StudentListCard is unchanged, but we must add RequestRow)
+
+// --- COPIED FROM NOTIFICATIONSVIEW.SWIFT ---
+// This is the card for pending requests
+struct RequestRow: View {
+    let request: StudentRequest
+    let onApprove: () -> Void
+    let onDeny: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                AsyncImage(url: URL(string: request.studentPhotoURL ?? "")) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "person.circle.fill")
+                            .resizable()
+                            .foregroundColor(.primaryBlue)
+                    }
+                }
+                .frame(width: 50, height: 50)
+                .clipShape(Circle())
+                
+                VStack(alignment: .leading) {
+                    Text(request.studentName)
+                        .font(.headline)
+                    Text("Sent \(request.timestamp.formatted(.relative(presentation: .named)))")
+                        .font(.caption)
+                        .foregroundColor(.textLight)
+                }
+                Spacer()
+            }
+            
+            Text("\"I would like to request you as my instructor.\"")
+                .font(.subheadline)
+                .italic()
+                .padding(.leading, 62)
+                
+            HStack(spacing: 10) {
+                Button("Deny", role: .destructive, action: onDeny)
+                    .buttonStyle(.secondaryDrivingApp)
+                    .frame(maxWidth: .infinity)
+                    
+                Button("Approve", action: onApprove)
+                    .buttonStyle(.primaryDrivingApp)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+}
+
+
+// (StudentListCard is unchanged)
 struct StudentListCard: View {
     let student: Student
     
@@ -128,10 +244,8 @@ struct StudentListCard: View {
 
     var body: some View {
         HStack {
-            // Photo & Progress Circle
             CircularProgressView(progress: student.averageProgress, color: progressColor, size: 50)
                 .overlay(
-                    // --- Use AsyncImage for student photo ---
                     AsyncImage(url: URL(string: student.photoURL ?? "")) { phase in
                         if let image = phase.image {
                             image.resizable().scaledToFill()
@@ -143,16 +257,13 @@ struct StudentListCard: View {
                     }
                     .frame(width: 45, height: 45)
                     .clipShape(Circle())
-                    // --- End AsyncImage ---
                 )
                 .frame(width: 50, height: 50)
             
             VStack(alignment: .leading) {
-                // Name
                 Text(student.name)
                     .font(.headline)
                 
-                // Next Lesson
                 HStack {
                     Image(systemName: student.nextLessonTime != nil ? "clock.fill" : "calendar.badge.exclamationmark")
                         .font(.caption)
@@ -164,7 +275,6 @@ struct StudentListCard: View {
             
             Spacer()
             
-            // Progress Indicator (Text)
             VStack(alignment: .trailing) {
                 Text("\(Int(student.averageProgress * 100))%")
                     .font(.title3).bold()

@@ -1,9 +1,8 @@
 // File: MyInstructor/Features/Student/MyInstructorsView.swift
-// --- UPDATED to fix 'ambiguous' and 'redeclaration' errors ---
+// --- UPDATED with a visible Cancel button ---
 
 import SwiftUI
 
-// This enum now has a unique name to avoid conflicts
 enum MyInstructorsFilter {
     case approved, pending
 }
@@ -15,7 +14,6 @@ struct MyInstructorsView: View {
     @State private var sentRequests: [StudentRequest] = []
     @State private var isLoading = true
     
-    // Use the uniquely named enum
     @State private var selectedStatus: MyInstructorsFilter = .approved
     
     private var approvedRequests: [StudentRequest] {
@@ -29,7 +27,6 @@ struct MyInstructorsView: View {
     var body: some View {
         NavigationView {
             VStack {
-                // Use the uniquely named enum in the picker
                 Picker("Request Status", selection: $selectedStatus) {
                     Text("My Instructors (\(approvedRequests.count))").tag(MyInstructorsFilter.approved)
                     Text("Pending (\(otherRequests.count))").tag(MyInstructorsFilter.pending)
@@ -41,23 +38,34 @@ struct MyInstructorsView: View {
                     ProgressView("Loading Requests...")
                         .frame(maxHeight: .infinity)
                 } else {
-                    // Check against the uniquely named enum
                     if selectedStatus == .approved {
                         if approvedRequests.isEmpty {
-                            EmptyStateView(
-                                icon: "person.badge.plus",
-                                message: "You have no approved instructors yet.",
-                                actionTitle: "Find an Instructor",
-                                action: {
-                                    // TODO: This should ideally switch to the Community tab
-                                    print("Finding instructor...")
+                            // --- This is the Empty State with the working NavigationLink ---
+                            VStack(spacing: 15) {
+                                Image(systemName: "person.badge.plus")
+                                    .font(.system(size: 50))
+                                    .foregroundColor(.textLight)
+                                
+                                Text("You have no approved instructors yet.")
+                                    .font(.headline)
+                                    .foregroundColor(.textLight)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                                
+                                NavigationLink(destination: InstructorDirectoryView()) {
+                                    Text("Find an Instructor")
                                 }
-                            )
+                                .buttonStyle(.primaryDrivingApp)
+                                .frame(width: 200)
+                            }
+                            .padding(40)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            
                         } else {
                             List {
                                 Section("Approved Instructors") {
                                     ForEach(approvedRequests) { request in
-                                        MyInstructorRow(request: request)
+                                        MyInstructorRow(request: request, onCancel: nil)
                                     }
                                 }
                             }
@@ -73,7 +81,10 @@ struct MyInstructorsView: View {
                             List {
                                 Section("Pending & Denied Requests") {
                                     ForEach(otherRequests) { request in
-                                        MyInstructorRow(request: request)
+                                        // --- UPDATED: Pass the cancel action ---
+                                        MyInstructorRow(request: request, onCancel: {
+                                            Task { await cancelRequest(request) }
+                                        })
                                     }
                                 }
                             }
@@ -102,6 +113,20 @@ struct MyInstructorsView: View {
         }
         isLoading = false
     }
+    
+    // --- NEW FUNCTION to handle cancel ---
+    private func cancelRequest(_ request: StudentRequest) async {
+        guard let requestID = request.id else { return }
+        
+        do {
+            try await communityManager.cancelRequest(requestID: requestID)
+            // Refresh the list locally to make it feel instant
+            sentRequests.removeAll(where: { $0.id == requestID })
+        } catch {
+            print("Failed to cancel request: \(error.localizedDescription)")
+            // TODO: Show an error alert to the user
+        }
+    }
 }
 
 // This helper view loads the instructor's details
@@ -109,40 +134,50 @@ struct MyInstructorRow: View {
     @EnvironmentObject var dataService: DataService
     let request: StudentRequest
     
+    // --- UPDATED: Add a callback for the cancel button ---
+    var onCancel: (() -> Void)?
+    
     @State private var instructor: AppUser?
     
     var body: some View {
-        HStack(spacing: 12) {
-            AsyncImage(url: URL(string: instructor?.photoURL ?? "")) { phase in
-                if let image = phase.image {
-                    image.resizable().scaledToFill()
-                } else {
-                    Image(systemName: "person.circle.fill")
-                        .resizable()
-                        .foregroundColor(.primaryBlue)
+        VStack(alignment: .leading) {
+            HStack(spacing: 12) {
+                AsyncImage(url: URL(string: instructor?.photoURL ?? "")) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "person.circle.fill")
+                            .resizable()
+                            .foregroundColor(.primaryBlue)
+                    }
                 }
-            }
-            .frame(width: 45, height: 45)
-            .clipShape(Circle())
+                .frame(width: 45, height: 45)
+                .clipShape(Circle())
 
-            VStack(alignment: .leading) {
-                if let instructor {
-                    Text(instructor.name ?? "Instructor")
-                        .font(.headline)
-                } else {
-                    ProgressView()
-                        .frame(maxWidth: 100)
+                VStack(alignment: .leading) {
+                    if let instructor {
+                        Text(instructor.name ?? "Instructor")
+                            .font(.headline)
+                    } else {
+                        ProgressView()
+                            .frame(maxWidth: 100)
+                    }
+                    Text(request.timestamp, style: .date)
+                        .font(.caption)
+                        .foregroundColor(.textLight)
                 }
-                Text(request.timestamp, style: .date)
-                    .font(.caption)
-                    .foregroundColor(.textLight)
+                
+                Spacer()
+                
+                StatusBadge(status: request.status)
             }
             
-            Spacer()
-            
-            // This will now use the 'StatusBadge'
-            // struct defined in your other file
-            StatusBadge(status: request.status)
+            // --- NEW: VISIBLE CANCEL BUTTON ---
+            if request.status == .pending, let onCancel {
+                Button("Cancel Request", role: .destructive, action: onCancel)
+                    .font(.caption)
+                    .padding(.top, 8)
+            }
         }
         .padding(.vertical, 6)
         .task {
@@ -156,5 +191,3 @@ struct MyInstructorRow: View {
         }
     }
 }
-
-// --- *** THE DUPLICATE StatusBadge STRUCT HAS BEEN REMOVED FROM HERE *** ---

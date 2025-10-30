@@ -1,5 +1,5 @@
 // File: Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED with Toolbar Button ---
+// --- UPDATED with new button text ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -53,8 +53,6 @@ struct InstructorPublicProfileView: View {
                             .padding(.horizontal)
                     }
                     
-                    // --- REQUEST BUTTON HAS BEEN MOVED FROM HERE TO THE TOOLBAR ---
-                    
                 } else if isLoading {
                     ProgressView()
                         .padding(.top, 50)
@@ -67,7 +65,6 @@ struct InstructorPublicProfileView: View {
         }
         .navigationTitle(instructor?.name ?? "Profile")
         .navigationBarTitleDisplayMode(.inline)
-        // --- *** THIS IS THE NEWLY ADDED SECTION *** ---
         .toolbar {
             // The "Back" button is handled automatically by NavigationView
             
@@ -87,16 +84,16 @@ struct InstructorPublicProfileView: View {
                             }
                         }
                     } label: {
-                        // Change text based on state
-                        Text(requestSent ? "Sent" : "Request")
+                        // --- *** THIS IS THE ONLY CHANGE *** ---
+                        Text(requestSent ? "Request Sent" : "Become a Student")
                             .bold()
+                        // --- *** END OF CHANGE *** ---
                     }
                     .disabled(requestSent) // Disable after sending
                     .tint(appBlue) // Match the app's theme
                 }
             }
         }
-        // --- *** END OF NEWLY ADDED SECTION *** ---
         .background(Color(.systemBackground))
         .task {
             await fetchInstructorData()

@@ -1,13 +1,15 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/NotificationsView.swift
+// --- REDESIGNED with new RequestRow ---
+
 import SwiftUI
 
 // Flow Item 14: Notifications
 struct NotificationsView: View {
     @EnvironmentObject var authManager: AuthManager
-    @EnvironmentObject var communityManager: CommunityManager // <-- ADDED
+    @EnvironmentObject var communityManager: CommunityManager
     
     @State private var notifications: [NotificationGroup] = []
-    @State private var requests: [StudentRequest] = [] // <-- ADDED
+    @State private var requests: [StudentRequest] = []
     
     var body: some View {
         NavigationView {
@@ -18,21 +20,37 @@ struct NotificationsView: View {
                         ForEach(requests) { request in
                             RequestRow(request: request, onApprove: {
                                 Task {
-                                    try? await communityManager.approveRequest(request)
-                                    await fetchNotifications() // Refresh list
+                                    do {
+                                        try await communityManager.approveRequest(request)
+                                        // On success, refresh the list
+                                        await fetchNotifications()
+                                    } catch {
+                                        print("!!! Failed to approve request: \(error.localizedDescription)")
+                                        // TODO: Show an error alert to the user
+                                    }
                                 }
                             }, onDeny: {
                                 Task {
-                                    try? await communityManager.denyRequest(request)
-                                    await fetchNotifications() // Refresh list
+                                    do {
+                                        try await communityManager.denyRequest(request)
+                                        // On success, refresh the list
+                                        await fetchNotifications()
+                                    } catch {
+                                        print("!!! Failed to deny request: \(error.localizedDescription)")
+                                        // TODO: Show an error alert to the user
+                                    }
                                 }
                             })
+                            // --- NEW MODIFIERS ---
+                            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                            .listRowSeparator(.hidden)
+                            // ---------------------
                         }
                     }
                 }
                 // --- *** END NEW SECTION *** ---
                 
-                if notifications.isEmpty && requests.isEmpty { // <-- UPDATED CHECK
+                if notifications.isEmpty && requests.isEmpty {
                     Text("You're all caught up! No new notifications.")
                         .foregroundColor(.textLight)
                         .padding()
@@ -79,7 +97,7 @@ struct NotificationsView: View {
     }
 }
 
-// --- *** ADD THIS NEW SUPPORTING VIEW *** ---
+// --- *** THIS IS THE REDESIGNED REQUEST ROW *** ---
 struct RequestRow: View {
     let request: StudentRequest
     let onApprove: () -> Void
@@ -87,8 +105,8 @@ struct RequestRow: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Top part: Photo, Name, Time
             HStack(spacing: 12) {
-                // Use AsyncImage for the student's photo
                 AsyncImage(url: URL(string: request.studentPhotoURL ?? "")) { phase in
                     if let image = phase.image {
                         image.resizable().scaledToFill()
@@ -98,21 +116,26 @@ struct RequestRow: View {
                             .foregroundColor(.primaryBlue)
                     }
                 }
-                .frame(width: 45, height: 45)
+                .frame(width: 50, height: 50)
                 .clipShape(Circle())
                 
                 VStack(alignment: .leading) {
-                    Text(request.studentName).font(.headline)
+                    Text(request.studentName)
+                        .font(.headline)
                     Text("Sent \(request.timestamp.formatted(.relative(presentation: .named)))")
                         .font(.caption)
                         .foregroundColor(.textLight)
                 }
                 Spacer()
             }
+            
+            // Middle part: Message
             Text("\"I would like to request you as my instructor.\"")
                 .font(.subheadline)
                 .italic()
+                .padding(.leading, 62) // Aligns with name
                 
+            // Bottom part: Buttons
             HStack(spacing: 10) {
                 Button("Deny", role: .destructive, action: onDeny)
                     .buttonStyle(.secondaryDrivingApp)
@@ -123,12 +146,16 @@ struct RequestRow: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .padding(.vertical, 8)
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 }
-// --- *** END NEW VIEW *** ---
+// --- *** END REDESIGNED VIEW *** ---
 
 
+// (The rest of the file is unchanged)
 struct NotificationGroup: Identifiable {
     let id = UUID()
     let type: String

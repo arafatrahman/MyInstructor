@@ -1,14 +1,10 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/DataService.swift
-// --- UPDATED with new fetchUser function ---
+// --- UPDATED: Fixed 'AppAppUser' typo and added 'fetchInstructors' function ---
 
 import Foundation
 import Combine
 import FirebaseFirestore
 
-/*
- DataService acts as the common interface for fetching and providing data.
- It needs to be populated with real data-fetching logic.
- */
 class DataService: ObservableObject {
     
     private let db = Firestore.firestore()
@@ -89,17 +85,43 @@ class DataService: ObservableObject {
         return students
     }
     
-    // --- *** ADD THIS NEW FUNCTION *** ---
-    // Fetches a single AppUser by their ID
     func fetchUser(withId userID: String) async throws -> AppUser? {
         let doc = try await usersCollection.document(userID).getDocument()
         return try doc.data(as: AppUser.self)
     }
     
-    // Fetches a specific user's public data (like name)
+    // --- *** THIS IS THE NEW FUNCTION *** ---
+    // Fetches all the instructors a student is approved by
+    func fetchInstructors(for studentID: String) async throws -> [AppUser] {
+        // 1. Fetch the student's AppUser document
+        let studentDoc = try await usersCollection.document(studentID).getDocument()
+        guard let student = try? studentDoc.data(as: AppUser.self) else {
+            print("Could not find student AppUser.")
+            return []
+        }
+        
+        // 2. Get the array of approved instructor IDs
+        // We look for 'instructorIDs' which is on the AppUser model
+        guard let instructorIDs = student.instructorIDs, !instructorIDs.isEmpty else {
+            print("Student has no approved instructors.")
+            return []
+        }
+        
+        // 3. Fetch all user documents where the ID is in our instructorIDs array
+        let instructorQuery = try await usersCollection
+            .whereField(FieldPath.documentID(), in: instructorIDs)
+            .getDocuments()
+            
+        // 4. Map the documents to AppUser objects
+        // --- *** THIS IS THE TYPO FIX *** ---
+        return instructorQuery.documents.compactMap { doc in
+            try? doc.data(as: AppUser.self) // Was AppAppUser
+        }
+        // --- *** END OF FIX *** ---
+    }
+    // --- *** END OF NEW FUNCTION *** ---
+    
     func getStudentName(for studentID: String) -> String {
-        // This function was synchronous and relied on a mock cache.
-        // It should be replaced with an async function.
         return "Unknown Student"
     }
 }

@@ -1,68 +1,107 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/MessagingView.swift
-// --- FULL REBUILD of the chat system ---
+// --- UPDATED: Removed the redeclared AppUser, UserRole, etc. ---
 
 import SwiftUI
 import Combine
 
-// Flow Item 24: Messaging / Chat
+// This is a "normalized" model so we can show
+// either Students or Instructors in the same list.
+struct ChatContact: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let photoURL: String?
+    let userRole: UserRole
+    
+    let appUser: AppUser
+    
+    // Manually conform to Hashable and Equatable
+    static func == (lhs: ChatContact, rhs: ChatContact) -> Bool {
+        lhs.id == rhs.id
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}
+
 struct MessagingView: View {
     @EnvironmentObject var authManager: AuthManager
-    @EnvironmentObject var chatManager: ChatManager
+    @EnvironmentObject var dataService: DataService
+    
+    @State private var contacts: [ChatContact] = []
+    @State private var isLoading = true
     
     var body: some View {
         NavigationView {
-            // The list now reads from the ChatManager's published array
             List {
-                if chatManager.conversations.isEmpty {
-                    Text("No messages yet. Once an instructor approves you, your chat will appear here.")
+                if isLoading {
+                    ProgressView()
+                } else if contacts.isEmpty {
+                    Text(authManager.user?.role == .instructor ? "No approved students yet." : "No approved instructors yet.")
                         .foregroundColor(.textLight)
                         .padding()
                 } else {
-                    ForEach(chatManager.conversations) { convo in
+                    ForEach(contacts) { contact in
                         NavigationLink {
-                            // Pass the real conversation object
-                            ChatView(conversation: convo)
+                            // Go to the loading view first
+                            ChatLoadingView(otherUser: contact.appUser)
                         } label: {
-                            ConversationRow(conversation: convo)
+                            ChatContactRow(contact: contact)
                         }
-                        .listRowSeparator(.hidden)
                     }
                 }
             }
             .listStyle(.plain)
-            .navigationTitle("Messages")
+            .navigationTitle("Start a Chat")
             .task {
-                // Tell the manager to start listening for conversations
-                guard let userID = authManager.user?.id else { return }
-                await chatManager.listenForConversations(for: userID)
-            }
-            .onDisappear {
-                // You might want to remove the listener here,
-                // or in AuthManager on logout
+                await fetchContacts()
             }
         }
     }
+    
+    func fetchContacts() async {
+        guard let user = authManager.user, let userID = user.id else { return }
+        isLoading = true
+        
+        do {
+            var fetchedContacts: [ChatContact] = []
+            
+            if user.role == .instructor {
+                // Instructors see their list of Students
+                let students = try await dataService.fetchStudents(for: userID)
+                fetchedContacts = students.map { student in
+                    // Convert Student to a minimal AppUser for the chat loader
+                    var appUser = AppUser(id: student.id ?? "", email: student.email, name: student.name, role: .student)
+                    appUser.photoURL = student.photoURL
+                    
+                    return ChatContact(id: student.id ?? "", name: student.name, photoURL: student.photoURL, userRole: .student, appUser: appUser)
+                }
+                
+            } else if user.role == .student {
+                // Students see their list of Instructors
+                let instructors = try await dataService.fetchInstructors(for: userID)
+                fetchedContacts = instructors.map { instructor in
+                    ChatContact(id: instructor.id ?? "", name: instructor.name ?? "Instructor", photoURL: instructor.photoURL, userRole: .instructor, appUser: instructor)
+                }
+            }
+            
+            self.contacts = fetchedContacts
+            
+        } catch {
+            print("Failed to fetch contacts: \(error.localizedDescription)")
+        }
+        
+        isLoading = false
+    }
 }
 
-// This view row now intelligently finds the "other person"
-struct ConversationRow: View {
-    @EnvironmentObject var authManager: AuthManager
-    let conversation: Conversation
-    
-    // Get the ID, Name, and Photo of the *other* user in the chat
-    private var otherParticipantID: String {
-        conversation.participantIDs.first { $0 != authManager.user?.id } ?? "unknown"
-    }
-    private var otherParticipantName: String {
-        conversation.participantNames[otherParticipantID] ?? "Chat"
-    }
-    private var otherParticipantPhotoURL: String? {
-        conversation.participantPhotoURLs[otherParticipantID] ?? nil
-    }
+// Renamed to ChatContactRow to avoid compiler error
+struct ChatContactRow: View {
+    let contact: ChatContact
     
     var body: some View {
-        HStack {
-            AsyncImage(url: URL(string: otherParticipantPhotoURL ?? "")) { phase in
+        HStack(spacing: 12) {
+            AsyncImage(url: URL(string: contact.photoURL ?? "")) { phase in
                 if let image = phase.image {
                     image.resizable().scaledToFill()
                 } else {
@@ -71,33 +110,20 @@ struct ConversationRow: View {
                         .foregroundColor(.primaryBlue)
                 }
             }
-            .frame(width: 45, height: 45)
+            .frame(width: 50, height: 50)
             .clipShape(Circle())
             
-            VStack(alignment: .leading) {
-                Text(otherParticipantName)
-                    .font(.headline)
-                Text(conversation.lastMessage ?? "No messages yet")
-                    .font(.subheadline)
-                    .foregroundColor(conversation.unreadCount > 0 ? .textDark : .textLight)
-                    .lineLimit(1)
-            }
-            Spacer()
+            Text(contact.name)
+                .font(.headline)
             
-            if conversation.unreadCount > 0 {
-                Text("\(conversation.unreadCount)")
-                    .font(.caption).bold()
-                    .padding(8)
-                    .background(Color.warningRed)
-                    .foregroundColor(.white)
-                    .clipShape(Circle())
-            }
+            Spacer()
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 8)
     }
 }
 
-// Individual Chat View
+// MARK: - Chat Message View (Unchanged from before)
+
 struct ChatView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var chatManager: ChatManager
@@ -110,67 +136,65 @@ struct ChatView: View {
         return conversation.participantNames[otherID] ?? "Chat"
     }
     
+    private var otherParticipantPhotoURL: String? {
+        let otherID = conversation.participantIDs.first { $0 != authManager.user?.id } ?? "unknown"
+        return conversation.participantPhotoURLs[otherID] ?? nil
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
-                List {
-                    // The list now reads from the manager's published messages
-                    if chatManager.messages.isEmpty {
-                        Text("This is the beginning of your conversation with \(otherParticipantName).")
-                            .foregroundColor(.textLight)
-                            .listRowSeparator(.hidden)
-                    } else {
-                        ForEach(chatManager.messages) { message in
-                            ChatBubble(message: message)
-                                .id(message.id)
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        if chatManager.messages.isEmpty {
+                            Text("This is the beginning of your conversation with \(otherParticipantName).")
+                                .foregroundColor(.textLight)
+                                .padding()
+                        } else {
+                            ForEach(chatManager.messages) { message in
+                                ChatBubble(message: message, otherUserPhotoURL: otherParticipantPhotoURL)
+                                    .id(message.id)
+                            }
                         }
                     }
+                    .padding(.horizontal)
+                    .padding(.top, 10)
                 }
-                .listStyle(.plain)
+                .background(Color(.systemGroupedBackground))
+                .onTapGesture {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
                 .task {
-                    // Start listening for messages in this specific chat
                     guard let convoID = conversation.id else { return }
                     await chatManager.listenForMessages(conversationID: convoID)
                 }
                 .onChange(of: chatManager.messages) {
-                    // When a new message appears, scroll to bottom
                     if let lastMessage = chatManager.messages.last {
-                        withAnimation {
+                        withAnimation(.spring) {
                             proxy.scrollTo(lastMessage.id, anchor: .bottom)
                         }
                     }
                 }
             }
             
-            // Input Box
-            HStack(alignment: .bottom) {
-                // Attach Menu (Quick actions: Book, Pay Now, Share Progress)
-                Menu {
-                    Button("Book Lesson") { print("Book Lesson pressed") }
-                    Button("Pay Now") { print("Pay Now pressed") }
-                    Button("Share Lesson Summary") { print("Share Summary pressed") }
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title)
-                        .foregroundColor(.primaryBlue)
-                }
-                
+            HStack(spacing: 12) {
                 TextField("Message...", text: $messageText, axis: .vertical)
-                    .padding(10)
-                    .background(Color.secondaryGray)
-                    .clipShape(RoundedRectangle(cornerRadius: 15))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color(.systemGray5))
+                    .clipShape(Capsule())
                 
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.largeTitle)
-                        .foregroundColor(.primaryBlue)
+                        .font(.system(size: 32))
+                        .foregroundColor(messageText.isEmpty ? .secondaryGray : .primaryBlue)
                 }
                 .disabled(messageText.isEmpty)
             }
-            .padding([.horizontal, .bottom])
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .background(Color(.systemBackground))
+            .border(width: 1, edges: [.top], color: Color(.systemGray4))
         }
         .navigationTitle(otherParticipantName)
         .navigationBarTitleDisplayMode(.inline)
@@ -180,7 +204,7 @@ struct ChatView: View {
         guard let convoID = conversation.id, let senderID = authManager.user?.id else { return }
         
         let textToSend = messageText
-        messageText = "" // Clear text field immediately
+        messageText = ""
         
         Task {
             do {
@@ -191,34 +215,110 @@ struct ChatView: View {
                 )
             } catch {
                 print("Failed to send message: \(error)")
-                messageText = textToSend // Put text back if send failed
+                messageText = textToSend
             }
         }
     }
 }
 
-// This view now compares the message's senderID to the logged-in user's ID
 struct ChatBubble: View {
     @EnvironmentObject var authManager: AuthManager
     let message: ChatMessage
+    let otherUserPhotoURL: String?
     
     private var isFromCurrentUser: Bool {
         message.senderID == authManager.user?.id
     }
     
     var body: some View {
-        HStack {
-            if isFromCurrentUser { Spacer() }
+        HStack(alignment: .bottom, spacing: 8) {
+            
+            if isFromCurrentUser {
+                Spacer()
+            } else {
+                AsyncImage(url: URL(string: otherUserPhotoURL ?? "")) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "person.circle.fill")
+                            .resizable()
+                            .foregroundColor(.secondaryGray)
+                    }
+                }
+                .frame(width: 30, height: 30)
+                .clipShape(Circle())
+            }
             
             Text(message.text)
-                .padding(12)
-                .background(isFromCurrentUser ? Color.primaryBlue : Color(.systemGray4))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(isFromCurrentUser ? Color.primaryBlue : Color(.systemGray5))
                 .foregroundColor(isFromCurrentUser ? .white : .textDark)
                 .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                .shadow(color: .black.opacity(0.05), radius: 2)
             
-            if !isFromCurrentUser { Spacer() }
+            if !isFromCurrentUser {
+                Spacer()
+            }
         }
-        .padding(.horizontal, 4)
     }
 }
+
+// --- Helpers (Unchanged) ---
+extension View {
+    func border(width: CGFloat, edges: [Edge], color: Color) -> some View {
+        overlay(EdgeBorder(width: width, edges: edges).foregroundColor(color))
+    }
+}
+struct EdgeBorder: Shape {
+    var width: CGFloat
+    var edges: [Edge]
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        for edge in edges {
+            var x: CGFloat {
+                switch edge {
+                case .top, .bottom, .leading: return rect.minX
+                case .trailing: return rect.maxX - width
+                }
+            }
+            var y: CGFloat {
+                switch edge {
+                case .top, .leading, .trailing: return rect.minY
+                case .bottom: return rect.maxY - width
+                }
+            }
+            var w: CGFloat {
+                switch edge {
+                case .top, .bottom: return rect.width
+                case .leading, .trailing: return self.width
+                }
+            }
+            var h: CGFloat {
+                switch edge {
+                case .top, .bottom: return self.width
+                case .leading, .trailing: return rect.height
+                }
+            }
+            path.addPath(Path(CGRect(x: x, y: y, width: w, height: h)))
+        }
+        return path
+    }
+}
+extension Date {
+    func compactTimeAgo() -> String {
+        if Calendar.current.isDateInToday(self) {
+            return self.formatted(.dateTime.hour().minute())
+        }
+        if Calendar.current.isDateInYesterday(self) {
+            return "Yesterday"
+        }
+        if let
+            sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()),
+            self >= sevenDaysAgo {
+            return self.formatted(.dateTime.weekday())
+        }
+        return self.formatted(.dateTime.day().month())
+    }
+}
+
+// --- *** ALL HELPER MODELS HAVE BEEN REMOVED TO FIX THE ERRORS *** ---

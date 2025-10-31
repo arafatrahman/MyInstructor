@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/RootView.swift
-// --- UPDATED: Added "Messages" tab for both roles ---
+// --- THIS IS THE CORRECT, CLEAN FILE ---
 
 import SwiftUI
 
@@ -22,7 +22,6 @@ struct RootView: View {
                 })
             } else if !hasSeenOnboarding {
                 OnboardingView(onComplete: {
-                    // Action when onboarding is complete (Skip or Get Started clicked)
                     withAnimation {
                         self.hasSeenOnboarding = true
                     }
@@ -115,9 +114,7 @@ struct MainTabView: View {
                 CommunityFeedView()
                     .tabItem { Label("Community", systemImage: "person.3.fill") }
                 
-                // --- *** NEW TAB FOR INSTRUCTOR *** ---
-                MessagingView()
-                    .tabItem { Label("Messages", systemImage: "message.fill") }
+                // --- MESSAGES TAB REMOVED ---
                 
                 // Flow 11: Students
                 StudentsListView()
@@ -139,11 +136,9 @@ struct MainTabView: View {
                 // Flow 18: Community
                 CommunityFeedView()
                     .tabItem { Label("Community", systemImage: "person.3.fill") }
-                
-                // --- *** NEW TAB FOR STUDENT *** ---
-                MessagingView()
-                    .tabItem { Label("Messages", systemImage: "message.fill") }
 
+                // --- MESSAGES TAB REMOVED ---
+                
                 // The "My Instructors" tab
                 MyInstructorsView()
                     .tabItem { Label("My Instructors", systemImage: "person.crop.rectangle.stack.fill") }

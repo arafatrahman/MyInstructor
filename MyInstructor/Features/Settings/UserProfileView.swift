@@ -1,9 +1,5 @@
-//
-//  UserProfileView.swift
-//  MyInstructor
-//
-//  Exact iOS-style replica of the HTML/CSS version
-//
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/UserProfileView.swift
+// --- UPDATED: Removed 'private' from ContactRow to fix redeclaration error ---
 
 import SwiftUI
 
@@ -11,7 +7,6 @@ struct UserProfileView: View {
     @EnvironmentObject var authManager: AuthManager
     @Environment(\.colorScheme) var colorScheme
 
-    // Get the primaryBlue color from your app's custom color palette
     private var appBlue: Color {
         return Color.primaryBlue
     }
@@ -19,30 +14,24 @@ struct UserProfileView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // Profile Header Card
                 ProfileHeaderCard()
                     .padding(.horizontal)
-                    .padding(.top, 16) // Add padding at the top
+                    .padding(.top, 16)
 
-                // Contact Card
                 ContactCard()
                     .padding(.horizontal)
 
-                // Hourly Rate Card
                 if authManager.role == .instructor {
                     RateHighlightCard()
                         .padding(.horizontal)
                 }
 
-                // Education Card (Uses updated struct)
                 EducationCard(education: authManager.user?.education)
                     .padding(.horizontal)
 
-                // About Card
                 AboutCard(aboutText: authManager.user?.aboutMe)
                     .padding(.horizontal)
 
-                // Expertise Card (Hidden for students)
                 if authManager.role == .instructor {
                     ExpertiseCard(skills: authManager.user?.expertise)
                         .padding(.horizontal)
@@ -54,22 +43,20 @@ struct UserProfileView: View {
         }
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
-        .background(Color(.systemBackground)) // Use white background
+        .background(Color(.systemBackground))
         .toolbar {
-            // --- Edit Profile Button (Colorful Text) ---
             ToolbarItem(placement: .navigationBarTrailing) {
                 NavigationLink(destination: ProfileView()) {
                     Text("Edit Profile")
                         .bold()
-                        .foregroundColor(appBlue) // Use the app's primary color
+                        .foregroundColor(appBlue)
                 }
             }
         }
-        // Default back button will now show
     }
 }
 
-// MARK: - Profile Header Card (exact match)
+// MARK: - Profile Header Card (private)
 private struct ProfileHeaderCard: View {
     @EnvironmentObject var authManager: AuthManager
 
@@ -101,7 +88,7 @@ private struct ProfileHeaderCard: View {
             .frame(width: 100, height: 100)
             .background(Color(.systemGray5))
             .clipShape(Circle())
-            .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3)) // Use app color
+            .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
             .padding(.top, 20)
 
             Text(authManager.user?.name ?? "User Name")
@@ -117,7 +104,7 @@ private struct ProfileHeaderCard: View {
                 Text(locationString)
             }
             .font(.system(size: 14))
-            .foregroundColor(Color.primaryBlue) // Use app color
+            .foregroundColor(Color.primaryBlue)
             .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity)
@@ -127,7 +114,7 @@ private struct ProfileHeaderCard: View {
     }
 }
 
-// MARK: - Contact Card
+// MARK: - Contact Card (private)
 private struct ContactCard: View {
     @EnvironmentObject var authManager: AuthManager
 
@@ -152,7 +139,11 @@ private struct ContactCard: View {
     }
 }
 
-private struct ContactRow: View {
+// --- *** THIS IS THE FIX *** ---
+// 'private' has been removed. This struct is now 'internal'
+// and can be seen by InstructorPublicProfileView.
+struct ContactRow: View {
+// --- *** END OF FIX *** ---
     let icon: String
     let label: String
     let value: String
@@ -162,7 +153,7 @@ private struct ContactRow: View {
             Image(systemName: icon)
                 .font(.system(size: 16))
                 .frame(width: 32, height: 32)
-                .background(Color.primaryBlue) // Use app color
+                .background(Color.primaryBlue)
                 .foregroundColor(.white)
                 .cornerRadius(8)
 
@@ -182,7 +173,7 @@ private struct ContactRow: View {
     }
 }
 
-// MARK: - Hourly Rate Highlight
+// MARK: - Hourly Rate Highlight (private)
 private struct RateHighlightCard: View {
     @EnvironmentObject var authManager: AuthManager
 
@@ -214,13 +205,12 @@ private struct RateHighlightCard: View {
     }
 }
 
-// MARK: - Education Card
+// MARK: - Education Card (private)
 private struct EducationCard: View {
-    let education: [EducationEntry]? // <-- Accepts updated struct
+    let education: [EducationEntry]?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Label is always visible
             Text("EDUCATION OR CERTIFICATION")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.secondary)
@@ -233,7 +223,6 @@ private struct EducationCard: View {
             if let education = education, !education.isEmpty {
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(education) { entry in
-                        // Uses updated EduRow
                         EduRow(title: entry.title, subtitle: entry.subtitle, years: entry.years)
                         if entry.id != education.last?.id {
                             Divider().padding(.horizontal, 16)
@@ -254,7 +243,7 @@ private struct EducationCard: View {
     }
 }
 
-// Uses updated struct fields
+// MARK: - EduRow (private)
 private struct EduRow: View {
     let title: String
     let subtitle: String
@@ -267,7 +256,7 @@ private struct EduRow: View {
                 .foregroundColor(.primary)
             Text(subtitle)
                 .font(.system(size: 15))
-                .foregroundColor(Color.primaryBlue) // Use app color
+                .foregroundColor(Color.primaryBlue)
             Text(years)
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
@@ -276,13 +265,12 @@ private struct EduRow: View {
     }
 }
 
-// MARK: - About Card
+// MARK: - About Card (private)
 private struct AboutCard: View {
     let aboutText: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Label is always visible
             Text("ABOUT")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.secondary)
@@ -312,13 +300,12 @@ private struct AboutCard: View {
     }
 }
 
-// MARK: - Expertise Card
+// MARK: - Expertise Card (private)
 private struct ExpertiseCard: View {
     let skills: [String]?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Label is always visible
             Text("EXPERTISE")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.secondary)
@@ -355,7 +342,7 @@ private struct ExpertiseCard: View {
     }
 }
 
-// MARK: - Helper: FlowLayout (for skills)
+// MARK: - FlowLayout (private)
 private struct FlowLayout: Layout {
     var alignment: Alignment
     var spacing: CGFloat
@@ -406,34 +393,5 @@ private struct FlowLayout: Layout {
             lineHeight = max(lineHeight, sizes[index].height)
             x += sizes[index].width + spacing
         }
-    }
-}
-
-// MARK: - Preview
-struct UserProfileView_Previews: PreviewProvider {
-    static var mockAuthManager: AuthManager {
-        let manager = AuthManager()
-        manager.user = AppUser(id: "123", email: "emma.richardson@edu.com", name: "Emma Richardson", role: .instructor)
-        manager.user?.phone = "+1 (555) 123-4567"
-        manager.user?.address = "123 Education St, SF"
-        manager.user?.hourlyRate = 85.0
-        manager.user?.aboutMe = "Passionate driving instructor with 8+ years of experience."
-        manager.user?.education = [EducationEntry(title: "ADI Certified", subtitle: "Approved Driving Instructor", years: "2018")]
-        manager.user?.expertise = ["Nervous Drivers", "Parallel Parking", "Test Prep"]
-        return manager
-    }
-
-    static var previews: some View {
-        NavigationView {
-            UserProfileView()
-                .environmentObject(mockAuthManager)
-        }
-        .preferredColorScheme(.light)
-
-        NavigationView {
-            UserProfileView()
-                .environmentObject(mockAuthManager)
-        }
-        .preferredColorScheme(.dark)
     }
 }

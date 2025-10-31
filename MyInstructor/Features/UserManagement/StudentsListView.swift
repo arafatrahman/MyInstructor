@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
-// --- UPDATED to show Pending Requests and Approved Students ---
+// --- UPDATED: Added "Message" button and navigation to chat ---
 
 import SwiftUI
 
@@ -7,21 +7,25 @@ import SwiftUI
 struct StudentsListView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var dataService: DataService
-    @EnvironmentObject var communityManager: CommunityManager // --- ADDED ---
+    @EnvironmentObject var communityManager: CommunityManager
+    @EnvironmentObject var chatManager: ChatManager // --- ADDED ---
     
-    @State private var approvedStudents: [Student] = [] // --- RENAMED ---
-    @State private var pendingRequests: [StudentRequest] = [] // --- ADDED ---
+    @State private var approvedStudents: [Student] = []
+    @State private var pendingRequests: [StudentRequest] = []
     
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var filterMode: StudentFilter = .active
+    
+    // --- NEW: For chat navigation ---
+    @State private var conversationToPush: Conversation? = nil
     
     // Computed property for filtering *approved* students only
     var filteredApprovedStudents: [Student] {
         let list = approvedStudents.filter { student in
             switch filterMode {
             case .all: return true
-            case .active: return student.averageProgress < 1.0 // Active if not 100%
+            case .active: return student.averageProgress < 1.0
             case .completed: return student.averageProgress >= 1.0
             }
         }
@@ -36,7 +40,15 @@ struct StudentsListView: View {
     var body: some View {
         NavigationView {
             VStack {
-                // Top: Search bar + Filter
+                // --- NEW: Background NavigationLink for chat ---
+                if let conversation = conversationToPush {
+                    NavigationLink(
+                        destination: ChatView(conversation: conversation),
+                        isActive: .constant(true),
+                        label: { EmptyView() }
+                    )
+                }
+                
                 HStack {
                     SearchBar(text: $searchText, placeholder: "Search students by name")
                     
@@ -55,14 +67,13 @@ struct StudentsListView: View {
                     ProgressView("Loading Students...")
                         .padding(.top, 50)
                 } else if pendingRequests.isEmpty && approvedStudents.isEmpty {
-                    // Show empty state if both lists are empty
                     EmptyStateView(
                         icon: "person.3.fill",
                         message: "No students or requests yet. Students can find and request you from the Community Directory."
                     )
                 } else {
                     List {
-                        // --- SECTION 1: PENDING REQUESTS ---
+                        // SECTION 1: PENDING REQUESTS
                         if !pendingRequests.isEmpty {
                             Section(header: Text("Pending Requests").font(.headline).foregroundColor(.accentGreen)) {
                                 ForEach(pendingRequests) { request in
@@ -77,17 +88,20 @@ struct StudentsListView: View {
                             }
                         }
                         
-                        // --- SECTION 2: APPROVED STUDENTS ---
-                        // Only show this section if search is not active, or if search results exist
+                        // SECTION 2: APPROVED STUDENTS
                         if searchText.isEmpty || !filteredApprovedStudents.isEmpty {
                             Section("Approved Students (\(filteredApprovedStudents.count))") {
                                 ForEach(filteredApprovedStudents) { student in
-                                    NavigationLink {
-                                        StudentProfileView(student: student) // Navigate to Flow 12
-                                    } label: {
-                                        StudentListCard(student: student)
+                                    StudentListCard(student: student)
+                                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                        // --- NEW "MESSAGE" BUTTON ---
+                                        Button {
+                                            Task { await startChat(with: student) }
+                                        } label: {
+                                            Label("Message", systemImage: "message.fill")
+                                        }
+                                        .tint(.primaryBlue)
                                     }
-                                    // --- ADDED SWIPE ACTION ---
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                         Button(role: .destructive) {
                                             Task { await removeStudent(student) }
@@ -95,34 +109,38 @@ struct StudentsListView: View {
                                             Label("Remove", systemImage: "trash.fill")
                                         }
                                     }
+                                    .listRowSeparator(.hidden)
+                                    .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                                    // Make card tappable for profile view
+                                    .background(
+                                        NavigationLink {
+                                            StudentProfileView(student: student)
+                                        } label: { EmptyView() }
+                                        .opacity(0)
+                                    )
                                 }
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                             }
                         }
                     }
-                    .listStyle(.insetGrouped) // Changed to grouped for better sectioning
+                    .listStyle(.insetGrouped)
                 }
             }
             .navigationTitle("Your Students")
-            .toolbar {
-                // Toolbar is now clean
-            }
             .task {
-                await fetchData() // --- RENAMED ---
+                await fetchData()
             }
             .refreshable {
-                await fetchData() // --- RENAMED ---
+                await fetchData()
             }
         }
     }
     
-    // --- UPDATED FUNCTION ---
+    // --- UPDATED FUNCTIONS ---
+    
     func fetchData() async {
         guard let instructorID = authManager.user?.id else { return }
         isLoading = true
         
-        // Fetch both lists in parallel
         async let studentsTask = dataService.fetchStudents(for: instructorID)
         async let requestsTask = communityManager.fetchRequests(for: instructorID)
         
@@ -135,7 +153,6 @@ struct StudentsListView: View {
         isLoading = false
     }
     
-    // --- NEW FUNCTION ---
     func handleRequest(_ request: StudentRequest, approve: Bool) async {
         do {
             if approve {
@@ -149,7 +166,6 @@ struct StudentsListView: View {
         }
     }
     
-    // --- NEW FUNCTION ---
     func removeStudent(_ student: Student) async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
         
@@ -160,21 +176,42 @@ struct StudentsListView: View {
             print("Failed to remove student: \(error)")
         }
     }
+    
+    // --- NEW FUNCTION TO START CHAT ---
+    func startChat(with student: Student) async {
+        guard let currentUser = authManager.user else { return }
+        
+        // We need an AppUser object for the student, not a Student object.
+        // We must fetch them from DataService first.
+        do {
+            guard let otherUser = try await dataService.fetchUser(withId: student.id ?? "") else {
+                print("Error: Could not fetch student AppUser to start chat")
+                return
+            }
+            
+            let conversation = try await chatManager.getOrCreateConversation(
+                currentUser: currentUser,
+                otherUser: otherUser
+            )
+            
+            // Set the state variable to trigger navigation
+            self.conversationToPush = conversation
+            
+        } catch {
+            print("Error starting chat: \(error.localizedDescription)")
+        }
+    }
 }
 
 enum StudentFilter: String {
     case all, active, completed
 }
 
-// (StudentListCard is unchanged, but we must add RequestRow)
-
-// --- COPIED FROM NOTIFICATIONSVIEW.SWIFT ---
-// This is the card for pending requests
+// (RequestRow and StudentListCard are unchanged)
 struct RequestRow: View {
     let request: StudentRequest
     let onApprove: () -> Void
     let onDeny: () -> Void
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
@@ -189,7 +226,6 @@ struct RequestRow: View {
                 }
                 .frame(width: 50, height: 50)
                 .clipShape(Circle())
-                
                 VStack(alignment: .leading) {
                     Text(request.studentName)
                         .font(.headline)
@@ -199,17 +235,14 @@ struct RequestRow: View {
                 }
                 Spacer()
             }
-            
             Text("\"I would like to request you as my instructor.\"")
                 .font(.subheadline)
                 .italic()
                 .padding(.leading, 62)
-                
             HStack(spacing: 10) {
                 Button("Deny", role: .destructive, action: onDeny)
                     .buttonStyle(.secondaryDrivingApp)
                     .frame(maxWidth: .infinity)
-                    
                 Button("Approve", action: onApprove)
                     .buttonStyle(.primaryDrivingApp)
                     .frame(maxWidth: .infinity)
@@ -221,18 +254,13 @@ struct RequestRow: View {
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 }
-
-
-// (StudentListCard is unchanged)
 struct StudentListCard: View {
     let student: Student
-    
     var progressColor: Color {
         if student.averageProgress > 0.8 { return .accentGreen }
         if student.averageProgress > 0.5 { return .orange }
         return .warningRed
     }
-    
     var nextLessonTimeString: String {
         if let nextLesson = student.nextLessonTime {
             let formatter = DateFormatter()
@@ -241,7 +269,6 @@ struct StudentListCard: View {
         }
         return "Not Scheduled"
     }
-
     var body: some View {
         HStack {
             CircularProgressView(progress: student.averageProgress, color: progressColor, size: 50)
@@ -259,11 +286,9 @@ struct StudentListCard: View {
                     .clipShape(Circle())
                 )
                 .frame(width: 50, height: 50)
-            
             VStack(alignment: .leading) {
                 Text(student.name)
                     .font(.headline)
-                
                 HStack {
                     Image(systemName: student.nextLessonTime != nil ? "clock.fill" : "calendar.badge.exclamationmark")
                         .font(.caption)
@@ -272,14 +297,11 @@ struct StudentListCard: View {
                 }
                 .foregroundColor(.textLight)
             }
-            
             Spacer()
-            
             VStack(alignment: .trailing) {
                 Text("\(Int(student.averageProgress * 100))%")
                     .font(.title3).bold()
                     .foregroundColor(progressColor)
-                
                 Text("Mastery")
                     .font(.caption)
                     .foregroundColor(.textLight)

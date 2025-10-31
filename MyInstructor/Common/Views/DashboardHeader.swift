@@ -1,4 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Common/Views/DashboardHeader.swift
+// --- THIS IS THE CORRECT, CLEAN FILE ---
+
 import SwiftUI
 
 // Shared Header for Instructor and Student Dashboards (Flow 5 & 6)
@@ -31,8 +33,7 @@ struct DashboardHeader: View {
 
             Spacer()
             
-            // --- *** NEW BUTTON ADDED HERE *** ---
-            // Show "Find Instructor" button ONLY for students
+            // "Find Instructor" button ONLY for students
             if authManager.role == .student {
                 NavigationLink(destination: InstructorDirectoryView()) {
                     ZStack {
@@ -43,7 +44,19 @@ struct DashboardHeader: View {
                     .padding(.trailing, 8) // Add spacing between this and the bell
                 }
             }
-            // --- *** END OF NEW BUTTON *** ---
+
+            // --- NEW MESSAGES BUTTON ---
+            NavigationLink(destination: MessagingView()) {
+                ZStack {
+                    Image(systemName: "message.fill")
+                        .font(.title2)
+                        .foregroundColor(.textDark)
+                    
+                    // TODO: Add a badge for unread messages
+                }
+            }
+            .padding(.trailing, 10) // Add some spacing
+            // --- END OF NEW BUTTON ---
 
             // Notifications Bell (Flow 14)
             NavigationLink(destination: NotificationsView()) {
@@ -53,7 +66,6 @@ struct DashboardHeader: View {
                         .foregroundColor(.textDark)
 
                     // Placeholder for badge count
-                    // TODO: Replace with actual count logic if needed
                     Circle()
                         .fill(Color.warningRed)
                         .frame(width: 10, height: 10)
@@ -64,18 +76,14 @@ struct DashboardHeader: View {
             .padding(.trailing, 10) // Add some spacing
 
             // --- Profile Avatar/Settings (Flow 15 - Updated) ---
-            // THIS IS THE MODIFIED LINE:
             NavigationLink(destination: UserProfileView()) {
-                // Use AsyncImage if URL exists, otherwise fallback
                 if let url = profileImageURL {
                     AsyncImage(url: url) { phase in
                         switch phase {
                         case .empty:
-                            // Placeholder while loading
                             ProgressView()
                                 .frame(width: 35, height: 35)
                         case .success(let image):
-                            // Display loaded image
                             image
                                 .resizable()
                                 .scaledToFill() // Fill the circle frame
@@ -83,14 +91,12 @@ struct DashboardHeader: View {
                                 .clipShape(Circle()) // Make it circular
                                 .overlay(Circle().stroke(Color.primaryBlue.opacity(0.3), lineWidth: 1)) // Optional border
                         case .failure:
-                            // Fallback icon if loading fails
                             Image(systemName: "person.crop.circle.fill")
                                 .resizable()
                                 .scaledToFit()
                                 .frame(width: 35, height: 35)
                                 .foregroundColor(.primaryBlue) // Use accent color for fallback
                         @unknown default:
-                            // Fallback icon for future cases
                             Image(systemName: "person.crop.circle.fill")
                                 .resizable()
                                 .scaledToFit()
@@ -99,7 +105,6 @@ struct DashboardHeader: View {
                         }
                     }
                 } else {
-                    // Default icon if no photoURL
                     Image(systemName: "person.crop.circle.fill")
                         .resizable()
                         .scaledToFit() // Use scaledToFit for system icons
@@ -107,7 +112,6 @@ struct DashboardHeader: View {
                         .foregroundColor(.primaryBlue)
                 }
             }
-            // --- End of Profile Avatar Update ---
         }
         .padding(.horizontal)
         .padding(.top, 10) // Adjust top padding as needed for safe area

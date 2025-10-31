@@ -1,15 +1,14 @@
 // File: Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED with popup, button logic, and cancel feature ---
+// --- UPDATED: Removed the duplicate 'ContactRow' struct ---
 
 import SwiftUI
 import FirebaseFirestore
 
-// --- NEW ENUM for button state ---
 enum RequestButtonState {
-    case idle // "Become a Student"
-    case pending // "Cancel Request"
-    case approved // "Approved"
-    case denied // "Re-apply"
+    case idle
+    case pending
+    case approved
+    case denied
 }
 
 struct InstructorPublicProfileView: View {
@@ -21,7 +20,6 @@ struct InstructorPublicProfileView: View {
     @State private var instructor: AppUser?
     @State private var isLoading = true
     
-    // --- NEW STATE PROPERTIES ---
     @State private var requestState: RequestButtonState = .idle
     @State private var currentRequestID: String? = nil
     @State private var showSuccessAlert = false
@@ -35,7 +33,6 @@ struct InstructorPublicProfileView: View {
         ScrollView {
             VStack(spacing: 16) {
                 if let user = instructor {
-                    // Profile Cards...
                     ProfileHeaderCard(user: user)
                         .padding(.horizontal)
                         .padding(.top, 16)
@@ -54,7 +51,6 @@ struct InstructorPublicProfileView: View {
                             .padding(.horizontal)
                     }
                     
-                    // Show an error message if one occurs
                     if let alertMessage, !showSuccessAlert {
                         Text(alertMessage)
                             .font(.caption)
@@ -78,23 +74,19 @@ struct InstructorPublicProfileView: View {
         .toolbar {
             if authManager.role == .student {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    // --- *** NEW DYNAMIC BUTTON *** ---
                     Button(action: handleRequestButtonTap) {
                         Text(buttonText)
                             .bold()
                     }
                     .disabled(buttonIsDisabled)
                     .tint(requestState == .pending ? .red : appBlue)
-                    // --- *** END NEW BUTTON *** ---
                 }
             }
         }
         .background(Color(.systemBackground))
         .task {
-            // Load instructor and check request status
             await loadData()
         }
-        // --- NEW SUCCESS ALERT (POPUP) ---
         .alert("Success", isPresented: $showSuccessAlert, presenting: alertMessage) { message in
             Button("OK") { }
         } message: { message in
@@ -114,7 +106,6 @@ struct InstructorPublicProfileView: View {
     }
     
     var buttonIsDisabled: Bool {
-        // Disable if request is approved or we are in a loading state
         return requestState == .approved || isLoading
     }
     
@@ -124,12 +115,12 @@ struct InstructorPublicProfileView: View {
             alertMessage = nil
             
             switch requestState {
-            case .idle, .denied: // Both "Become a Student" and "Re-apply" call sendRequest
+            case .idle, .denied:
                 await sendRequest()
             case .pending:
                 await cancelRequest()
             case .approved:
-                break // Button is disabled
+                break
             }
             isLoading = false
         }
@@ -142,12 +133,10 @@ struct InstructorPublicProfileView: View {
         guard let studentID = authManager.user?.id else { return }
         
         do {
-            // Fetch instructor data
             let doc = try await Firestore.firestore().collection("users")
                                     .document(instructorID).getDocument()
             self.instructor = try doc.data(as: AppUser.self)
             
-            // Fetch request status
             let requests = try await communityManager.fetchSentRequests(for: studentID)
             if let existingRequest = requests.first(where: { $0.instructorID == instructorID }) {
                 self.currentRequestID = existingRequest.id
@@ -160,7 +149,6 @@ struct InstructorPublicProfileView: View {
                     self.requestState = .denied
                 }
             } else {
-                // No request exists
                 self.requestState = .idle
                 self.currentRequestID = nil
             }
@@ -175,17 +163,11 @@ struct InstructorPublicProfileView: View {
         guard let currentUser = authManager.user else { return }
         do {
             try await communityManager.sendRequest(from: currentUser, to: instructorID)
-            
-            // --- SET POPUP MESSAGE ---
             self.alertMessage = "Your request has been successfully sent!"
             self.showSuccessAlert = true
-            
-            // Manually update state
-            await loadData() // Re-fetch to get new status and ID
-            
+            await loadData()
         } catch let error as RequestError {
             self.alertMessage = error.localizedDescription
-            // If it failed because it's already pending/approved, update UI to match
             self.requestState = (error == .alreadyPending) ? .pending : .approved
         } catch {
             self.alertMessage = error.localizedDescription
@@ -194,22 +176,16 @@ struct InstructorPublicProfileView: View {
     
     func cancelRequest() async {
         guard let requestID = currentRequestID else {
-            // This case shouldn't happen if state is .pending
-            self.requestState = .idle // Reset button
+            self.requestState = .idle
             return
         }
         
         do {
             try await communityManager.cancelRequest(requestID: requestID)
-            
-            // --- SET POPUP MESSAGE ---
             self.alertMessage = "Your request has been cancelled."
             self.showSuccessAlert = true
-            
-            // Manually update state
             self.requestState = .idle
             self.currentRequestID = nil
-            
         } catch {
             self.alertMessage = error.localizedDescription
         }
@@ -217,8 +193,9 @@ struct InstructorPublicProfileView: View {
 }
 
 
-// MARK: - Re-usable Profile Sub-views
-// (These are unchanged)
+// MARK: - Re-usable Profile Sub-views (private)
+// (These are all fine)
+
 private struct ProfileHeaderCard: View {
     let user: AppUser
     private var profileImageURL: URL? {
@@ -265,6 +242,7 @@ private struct ProfileHeaderCard: View {
         .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
+
 private struct ContactCard: View {
     let user: AppUser
     var body: some View {
@@ -276,6 +254,7 @@ private struct ContactCard: View {
                 .padding(.top, 12)
                 .padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
+            // This now uses the shared ContactRow
             ContactRow(icon: "envelope.fill", label: "Email", value: user.email)
             ContactRow(icon: "phone.fill", label: "Phone", value: user.phone ?? "Not provided")
             ContactRow(icon: "mappin.and.ellipse", label: "Address", value: user.address ?? "Not provided")
@@ -285,33 +264,10 @@ private struct ContactCard: View {
         .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
-private struct ContactRow: View {
-    let icon: String
-    let label: String
-    let value: String
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 16))
-                .frame(width: 32, height: 32)
-                .background(Color.primaryBlue)
-                .foregroundColor(.white)
-                .cornerRadius(8)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-                Text(value)
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(.primary)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color(.systemBackground))
-    }
-}
+
+// --- *** THE DUPLICATE ContactRow HAS BEEN DELETED *** ---
+
+
 private struct RateHighlightCard: View {
     let user: AppUser
     var body: some View {
@@ -339,6 +295,7 @@ private struct RateHighlightCard: View {
         .shadow(color: Color.primaryBlue.opacity(0.4), radius: 8, y: 4)
     }
 }
+
 private struct EducationCard: View {
     let education: [EducationEntry]?
     var body: some View {
@@ -372,6 +329,7 @@ private struct EducationCard: View {
         .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
+
 private struct EduRow: View {
     let title: String
     let subtitle: String
@@ -391,6 +349,7 @@ private struct EduRow: View {
         .padding(.horizontal, 16)
     }
 }
+
 private struct AboutCard: View {
     let aboutText: String?
     var body: some View {
@@ -421,6 +380,7 @@ private struct AboutCard: View {
         .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
+
 private struct ExpertiseCard: View {
     let skills: [String]?
     var body: some View {
@@ -458,6 +418,7 @@ private struct ExpertiseCard: View {
         .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
+
 private struct FlowLayout: Layout {
     var alignment: Alignment
     var spacing: CGFloat

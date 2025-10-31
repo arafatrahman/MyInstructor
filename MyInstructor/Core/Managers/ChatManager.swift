@@ -1,5 +1,5 @@
 // File: MyInstructor/Core/Managers/ChatManager.swift
-// (This is a NEW file)
+// --- UPDATED: Added getOrCreateConversation ---
 
 import Foundation
 import Combine
@@ -19,7 +19,6 @@ class ChatManager: ObservableObject {
     
     // MARK: - Conversation List
     
-    /// Sets up a real-time listener for all conversations for a user
     @MainActor
     func listenForConversations(for userID: String) {
         conversationsListener?.remove() // Remove old listener
@@ -33,62 +32,93 @@ class ChatManager: ObservableObject {
                 print("Error fetching conversations: \(error.localizedDescription)")
                 return
             }
-            
             guard let documents = snapshot?.documents else { return }
-            
-            self.conversations = documents.compactMap {
-                try? $0.data(as: Conversation.self)
-            }
+            self.conversations = documents.compactMap { try? $0.data(as: Conversation.self) }
             print("ChatManager: Fetched \(self.conversations.count) conversations")
         }
     }
     
     // MARK: - Chat Message View
     
-    /// Sets up a real-time listener for messages within one conversation
     @MainActor
     func listenForMessages(conversationID: String) {
         messagesListener?.remove() // Remove old listener
         
         let query = conversationsCollection.document(conversationID)
             .collection("messages")
-            .order(by: "timestamp", descending: false) // Show oldest first
+            .order(by: "timestamp", descending: false)
             
         self.messagesListener = query.addSnapshotListener { snapshot, error in
             if let error {
                 print("Error fetching messages: \(error.localizedDescription)")
                 return
             }
-            
             guard let documents = snapshot?.documents else { return }
-            
-            self.messages = documents.compactMap {
-                try? $0.data(as: ChatMessage.self)
-            }
+            self.messages = documents.compactMap { try? $0.data(as: ChatMessage.self) }
             print("ChatManager: Fetched \(self.messages.count) messages")
         }
     }
     
-    /// Sends a new message and updates the conversation's last message
     func sendMessage(conversationID: String, senderID: String, text: String) async throws {
-        // 1. Create the new message
         let message = ChatMessage(senderID: senderID, text: text)
         
-        // 2. Add message to sub-collection
         try await conversationsCollection.document(conversationID)
             .collection("messages")
             .addDocument(from: message)
             
-        // 3. Update the conversation's 'lastMessage' preview
         try await conversationsCollection.document(conversationID).updateData([
             "lastMessage": text,
             "lastMessageTimestamp": FieldValue.serverTimestamp()
         ])
     }
+
+    // --- *** NEW FUNCTION *** ---
+    // This is the new function to start a chat
+    func getOrCreateConversation(currentUser: AppUser, otherUser: AppUser) async throws -> Conversation {
+        guard let currentUserID = currentUser.id, let otherUserID = otherUser.id else {
+            throw NSError(domain: "ChatManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid user IDs"])
+        }
+        
+        // 1. Check if a conversation already exists
+        let query = conversationsCollection
+            .whereField("participantIDs", arrayContains: currentUserID)
+        
+        let snapshot = try await query.getDocuments()
+        
+        for doc in snapshot.documents {
+            let participantIDs = doc.data()["participantIDs"] as? [String] ?? []
+            if participantIDs.contains(otherUserID) {
+                // A conversation already exists, return it
+                print("ChatManager: Found existing conversation.")
+                return try doc.data(as: Conversation.self)
+            }
+        }
+        
+        // 2. No conversation exists. Create a new one.
+        print("ChatManager: Creating new conversation...")
+        let newConversation = Conversation(
+            participantIDs: [currentUserID, otherUserID],
+            participantNames: [
+                currentUserID: currentUser.name ?? "Me",
+                otherUserID: otherUser.name ?? "User"
+            ],
+            participantPhotoURLs: [
+                currentUserID: currentUser.photoURL,
+                otherUserID: otherUser.photoURL
+            ],
+            lastMessage: "You are now connected!",
+            lastMessageTimestamp: Date()
+        )
+        
+        let newDocRef = try conversationsCollection.addDocument(from: newConversation)
+        let newDoc = try await newDocRef.getDocument()
+        return try newDoc.data(as: Conversation.self)
+    }
+    // --- *** END NEW FUNCTION *** ---
+
     
     // MARK: - Cleanup
     
-    /// Call this to remove listeners when logging out
     func removeAllListeners() {
         conversationsListener?.remove()
         messagesListener?.remove()

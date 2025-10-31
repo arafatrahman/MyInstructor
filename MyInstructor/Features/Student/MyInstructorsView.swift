@@ -1,5 +1,5 @@
 // File: MyInstructor/Features/Student/MyInstructorsView.swift
-// --- UPDATED: Now syncs approved instructors with AuthManager ---
+// --- UPDATED: Added swipe-to-remove instructor ---
 
 import SwiftUI
 
@@ -69,8 +69,17 @@ struct MyInstructorsView: View {
                                 Section("Approved Instructors") {
                                     ForEach(approvedRequests) { request in
                                         NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
-                                            MyInstructorRow(request: request, onCancel: nil)
+                                            MyInstructorRow(request: request)
                                         }
+                                        // --- *** NEW SWIPE TO REMOVE *** ---
+                                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                            Button(role: .destructive) {
+                                                Task { await removeInstructor(request) }
+                                            } label: {
+                                                Label("Remove", systemImage: "trash.fill")
+                                            }
+                                        }
+                                        // --- *** END OF NEW FEATURE *** ---
                                     }
                                 }
                             }
@@ -87,9 +96,14 @@ struct MyInstructorsView: View {
                                 if !pendingRequests.isEmpty {
                                     Section("Pending Requests") {
                                         ForEach(pendingRequests) { request in
-                                            MyInstructorRow(request: request, onCancel: {
-                                                Task { await cancelRequest(request) }
-                                            })
+                                            MyInstructorRow(request: request)
+                                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                                    Button(role: .destructive) {
+                                                        Task { await cancelRequest(request) }
+                                                    } label: {
+                                                        Label("Cancel", systemImage: "xmark.fill")
+                                                    }
+                                                }
                                         }
                                     }
                                 }
@@ -97,7 +111,7 @@ struct MyInstructorsView: View {
                                     Section("Denied Requests") {
                                         ForEach(deniedRequests) { request in
                                             NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
-                                                MyInstructorRow(request: request, onCancel: nil)
+                                                MyInstructorRow(request: request)
                                             }
                                         }
                                     }
@@ -124,12 +138,9 @@ struct MyInstructorsView: View {
         do {
             self.sentRequests = try await communityManager.fetchSentRequests(for: studentID)
             
-            // --- *** THIS IS THE NEW LOGIC *** ---
-            // After loading, get all approved IDs
+            // --- SYNC LOCAL PROFILE ---
             let approvedIDs = self.approvedRequests.map { $0.instructorID }
-            // Tell AuthManager to sync this list with the student's profile
             await authManager.syncApprovedInstructors(approvedInstructorIDs: approvedIDs)
-            // --- *** END OF NEW LOGIC *** ---
             
         } catch {
             print("Failed to fetch sent requests: \(error)")
@@ -139,7 +150,6 @@ struct MyInstructorsView: View {
     
     private func cancelRequest(_ request: StudentRequest) async {
         guard let requestID = request.id else { return }
-        
         do {
             try await communityManager.cancelRequest(requestID: requestID)
             sentRequests.removeAll(where: { $0.id == requestID })
@@ -147,59 +157,56 @@ struct MyInstructorsView: View {
             print("Failed to cancel request: \(error.localizedDescription)")
         }
     }
+    
+    // --- *** NEW REMOVE FUNCTION *** ---
+    private func removeInstructor(_ request: StudentRequest) async {
+        guard let studentID = authManager.user?.id else { return }
+        do {
+            try await communityManager.removeInstructor(instructorID: request.instructorID, studentID: studentID)
+            sentRequests.removeAll(where: { $0.id == request.id })
+        } catch {
+            print("Failed to remove instructor: \(error.localizedDescription)")
+        }
+    }
 }
 
-// This helper view loads the instructor's details
+// REDESIGNED ROW
 struct MyInstructorRow: View {
     @EnvironmentObject var dataService: DataService
     let request: StudentRequest
     
-    var onCancel: (() -> Void)?
-    
     @State private var instructor: AppUser?
     
     var body: some View {
-        VStack(alignment: .leading) {
-            NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
-                HStack(spacing: 12) {
-                    AsyncImage(url: URL(string: instructor?.photoURL ?? "")) { phase in
-                        if let image = phase.image {
-                            image.resizable().scaledToFill()
-                        } else {
-                            Image(systemName: "person.circle.fill")
-                                .resizable()
-                                .foregroundColor(.primaryBlue)
-                        }
-                    }
-                    .frame(width: 45, height: 45)
-                    .clipShape(Circle())
-
-                    VStack(alignment: .leading) {
-                        if let instructor {
-                            Text(instructor.name ?? "Instructor")
-                                .font(.headline)
-                        } else {
-                            ProgressView()
-                                .frame(maxWidth: 100)
-                        }
-                        Text(request.timestamp, style: .date)
-                            .font(.caption)
-                            .foregroundColor(.textLight)
-                    }
-                    
-                    Spacer()
-                    
-                    StatusBadge(status: request.status)
+        HStack(spacing: 12) {
+            AsyncImage(url: URL(string: instructor?.photoURL ?? "")) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    Image(systemName: "person.circle.fill")
+                        .resizable()
+                        .foregroundColor(.primaryBlue)
                 }
             }
-            .disabled(request.status == .pending) // Disable nav link for pending
-            
-            if request.status == .pending, let onCancel {
-                Button("Cancel Request", role: .destructive, action: onCancel)
+            .frame(width: 45, height: 45)
+            .clipShape(Circle())
+
+            VStack(alignment: .leading) {
+                if let instructor {
+                    Text(instructor.name ?? "Instructor")
+                        .font(.headline)
+                } else {
+                    ProgressView()
+                        .frame(maxWidth: 100)
+                }
+                Text(request.timestamp, style: .date)
                     .font(.caption)
-                    .padding(.top, 8)
-                    .buttonStyle(BorderlessButtonStyle())
+                    .foregroundColor(.textLight)
             }
+            
+            Spacer()
+            
+            StatusBadge(status: request.status)
         }
         .padding(.vertical, 6)
         .task {

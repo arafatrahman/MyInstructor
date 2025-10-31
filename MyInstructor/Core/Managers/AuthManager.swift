@@ -292,7 +292,7 @@ class AuthManager: ObservableObject {
         print("UpdateProfile: Update process finished.")
     }
 
-    // --- *** ADD THIS NEW FUNCTION *** ---
+    // --- *** THIS IS THE NEW FUNCTION *** ---
     /// Syncs the local AppUser's instructorIDs based on approved requests.
     /// This is called by the student's "MyInstructorsView".
     func syncApprovedInstructors(approvedInstructorIDs: [String]) async {

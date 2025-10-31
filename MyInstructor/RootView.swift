@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/RootView.swift
-// --- THIS IS THE CORRECT, CLEAN FILE ---
+// --- UPDATED: Removed "Messages" tab from TabView ---
 
 import SwiftUI
 
@@ -22,6 +22,7 @@ struct RootView: View {
                 })
             } else if !hasSeenOnboarding {
                 OnboardingView(onComplete: {
+                    // Action when onboarding is complete (Skip or Get Started clicked)
                     withAnimation {
                         self.hasSeenOnboarding = true
                     }

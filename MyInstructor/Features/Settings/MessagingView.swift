@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/MessagingView.swift
-// --- UPDATED: Removed the redeclared AppUser, UserRole, etc. ---
+// --- FULL REDESIGN: Fixes compiler errors and implements new UI ---
 
 import SwiftUI
 import Combine
@@ -32,30 +32,31 @@ struct MessagingView: View {
     @State private var isLoading = true
     
     var body: some View {
-        NavigationView {
-            List {
-                if isLoading {
-                    ProgressView()
-                } else if contacts.isEmpty {
-                    Text(authManager.user?.role == .instructor ? "No approved students yet." : "No approved instructors yet.")
-                        .foregroundColor(.textLight)
-                        .padding()
-                } else {
-                    ForEach(contacts) { contact in
-                        NavigationLink {
-                            // Go to the loading view first
-                            ChatLoadingView(otherUser: contact.appUser)
-                        } label: {
-                            ChatContactRow(contact: contact)
-                        }
+        // --- THIS FIXES THE "TWO BACK BUTTONS" BUG ---
+        // The NavigationView is removed from here.
+        // It's already provided by the Dashboard.
+        List {
+            if isLoading {
+                ProgressView()
+            } else if contacts.isEmpty {
+                Text(authManager.user?.role == .instructor ? "No approved students yet." : "No approved instructors yet.")
+                    .foregroundColor(.textLight)
+                    .padding()
+            } else {
+                ForEach(contacts) { contact in
+                    NavigationLink {
+                        // Go to the loading view first
+                        ChatLoadingView(otherUser: contact.appUser)
+                    } label: {
+                        ChatContactRow(contact: contact)
                     }
                 }
             }
-            .listStyle(.plain)
-            .navigationTitle("Start a Chat")
-            .task {
-                await fetchContacts()
-            }
+        }
+        .listStyle(.plain)
+        .navigationTitle("Start a Chat")
+        .task {
+            await fetchContacts()
         }
     }
     
@@ -70,10 +71,8 @@ struct MessagingView: View {
                 // Instructors see their list of Students
                 let students = try await dataService.fetchStudents(for: userID)
                 fetchedContacts = students.map { student in
-                    // Convert Student to a minimal AppUser for the chat loader
                     var appUser = AppUser(id: student.id ?? "", email: student.email, name: student.name, role: .student)
                     appUser.photoURL = student.photoURL
-                    
                     return ChatContact(id: student.id ?? "", name: student.name, photoURL: student.photoURL, userRole: .student, appUser: appUser)
                 }
                 
@@ -84,13 +83,10 @@ struct MessagingView: View {
                     ChatContact(id: instructor.id ?? "", name: instructor.name ?? "Instructor", photoURL: instructor.photoURL, userRole: .instructor, appUser: instructor)
                 }
             }
-            
             self.contacts = fetchedContacts
-            
         } catch {
             print("Failed to fetch contacts: \(error.localizedDescription)")
         }
-        
         isLoading = false
     }
 }
@@ -98,7 +94,6 @@ struct MessagingView: View {
 // Renamed to ChatContactRow to avoid compiler error
 struct ChatContactRow: View {
     let contact: ChatContact
-    
     var body: some View {
         HStack(spacing: 12) {
             AsyncImage(url: URL(string: contact.photoURL ?? "")) { phase in
@@ -112,19 +107,18 @@ struct ChatContactRow: View {
             }
             .frame(width: 50, height: 50)
             .clipShape(Circle())
-            
             Text(contact.name)
                 .font(.headline)
-            
             Spacer()
         }
         .padding(.vertical, 8)
     }
 }
 
-// MARK: - Chat Message View (Unchanged from before)
+// MARK: - Chat Message View (Redesigned)
 
 struct ChatView: View {
+    @Environment(\.dismiss) var dismiss
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var chatManager: ChatManager
     let conversation: Conversation
@@ -145,7 +139,7 @@ struct ChatView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: 4) { // Reduced spacing
                         if chatManager.messages.isEmpty {
                             Text("This is the beginning of your conversation with \(otherParticipantName).")
                                 .foregroundColor(.textLight)
@@ -157,10 +151,10 @@ struct ChatView: View {
                             }
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, 10)
                     .padding(.top, 10)
                 }
-                .background(Color(.systemGroupedBackground))
+                .background(Color(.systemGroupedBackground)) // Fixes "black screen"
                 .onTapGesture {
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
@@ -177,17 +171,21 @@ struct ChatView: View {
                 }
             }
             
+            // --- *** NEW PROFESSIONAL INPUT BAR *** ---
             HStack(spacing: 12) {
                 TextField("Message...", text: $messageText, axis: .vertical)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(Color(.systemGray5))
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 
                 Button(action: sendMessage) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundColor(messageText.isEmpty ? .secondaryGray : .primaryBlue)
+                    Image(systemName: "arrow.up")
+                        .font(.headline.weight(.bold))
+                        .foregroundColor(.white)
+                        .frame(width: 36, height: 36)
+                        .background(messageText.isEmpty ? Color.secondaryGray : Color.primaryBlue)
+                        .clipShape(Circle())
                 }
                 .disabled(messageText.isEmpty)
             }
@@ -195,9 +193,45 @@ struct ChatView: View {
             .padding(.vertical, 8)
             .background(Color(.systemBackground))
             .border(width: 1, edges: [.top], color: Color(.systemGray4))
+            // --- *** END OF NEW INPUT BAR *** ---
         }
         .navigationTitle(otherParticipantName)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            // --- *** NEW CUSTOM TOOLBAR (matches image_9acd99.png) *** ---
+            ToolbarItem(placement: .navigationBarLeading) {
+                HStack(spacing: 8) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.headline.weight(.bold))
+                    }
+                    
+                    AsyncImage(url: URL(string: otherParticipantPhotoURL ?? "")) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            Image(systemName: "person.circle.fill")
+                                .resizable()
+                                .foregroundColor(.secondaryGray)
+                        }
+                    }
+                    .frame(width: 30, height: 30)
+                    .clipShape(Circle())
+                    
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(otherParticipantName)
+                            .font(.headline)
+                        Text("Online") // Placeholder
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .toolbar(.hidden, for: .tabBar) // Hide the tab bar
     }
     
     private func sendMessage() {
@@ -221,6 +255,7 @@ struct ChatView: View {
     }
 }
 
+// --- *** NEW REDESIGNED CHAT BUBBLE *** ---
 struct ChatBubble: View {
     @EnvironmentObject var authManager: AuthManager
     let message: ChatMessage
@@ -231,33 +266,31 @@ struct ChatBubble: View {
     }
     
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            
+        // This outer H-Stack pushes the bubble left or right
+        HStack {
             if isFromCurrentUser {
-                Spacer()
-            } else {
-                AsyncImage(url: URL(string: otherUserPhotoURL ?? "")) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        Image(systemName: "person.circle.fill")
-                            .resizable()
-                            .foregroundColor(.secondaryGray)
-                    }
-                }
-                .frame(width: 30, height: 30)
-                .clipShape(Circle())
+                Spacer(minLength: 50)
             }
             
-            Text(message.text)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(isFromCurrentUser ? Color.primaryBlue : Color(.systemGray5))
-                .foregroundColor(isFromCurrentUser ? .white : .textDark)
-                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            // This V-Stack holds the bubble and the timestamp
+            VStack(alignment: isFromCurrentUser ? .trailing : .leading, spacing: 3) {
+                Text(message.text)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(isFromCurrentUser ? Color.primaryBlue : Color(.systemGray5))
+                    .foregroundColor(isFromCurrentUser ? .white : .textDark)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                
+                if let timestamp = message.timestamp {
+                    Text(timestamp.formatted(.dateTime.hour().minute()))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 5)
+                }
+            }
             
             if !isFromCurrentUser {
-                Spacer()
+                Spacer(minLength: 50)
             }
         }
     }
@@ -320,5 +353,3 @@ extension Date {
         return self.formatted(.dateTime.day().month())
     }
 }
-
-// --- *** ALL HELPER MODELS HAVE BEEN REMOVED TO FIX THE ERRORS *** ---

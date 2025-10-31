@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Common/Views/DashboardHeader.swift
-// --- THIS IS THE CORRECT, CLEAN FILE ---
+// --- UPDATED: Added Messages icon link ---
 
 import SwiftUI
 
@@ -33,7 +33,8 @@ struct DashboardHeader: View {
 
             Spacer()
             
-            // "Find Instructor" button ONLY for students
+            // --- *** THIS IS THE FIX *** ---
+            // Show "Find Instructor" button ONLY for students
             if authManager.role == .student {
                 NavigationLink(destination: InstructorDirectoryView()) {
                     ZStack {
@@ -44,8 +45,9 @@ struct DashboardHeader: View {
                     .padding(.trailing, 8) // Add spacing between this and the bell
                 }
             }
+            // --- *** END OF FIX *** ---
 
-            // --- NEW MESSAGES BUTTON ---
+            // --- *** NEW MESSAGES BUTTON *** ---
             NavigationLink(destination: MessagingView()) {
                 ZStack {
                     Image(systemName: "message.fill")
@@ -56,7 +58,7 @@ struct DashboardHeader: View {
                 }
             }
             .padding(.trailing, 10) // Add some spacing
-            // --- END OF NEW BUTTON ---
+            // --- *** END OF NEW BUTTON *** ---
 
             // Notifications Bell (Flow 14)
             NavigationLink(destination: NotificationsView()) {
@@ -66,6 +68,7 @@ struct DashboardHeader: View {
                         .foregroundColor(.textDark)
 
                     // Placeholder for badge count
+                    // TODO: Replace with actual count logic if needed
                     Circle()
                         .fill(Color.warningRed)
                         .frame(width: 10, height: 10)

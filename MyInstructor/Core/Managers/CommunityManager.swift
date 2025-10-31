@@ -1,11 +1,10 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
-// --- UPDATED to create a chat channel on approve ---
+// --- UPDATED with 'removeInstructor' function ---
 
 import Combine
 import Foundation
 import FirebaseFirestore
 
-// --- NEW: Define custom errors for the UI ---
 enum RequestError: Error, LocalizedError {
     case alreadyPending
     case alreadyApproved
@@ -32,13 +31,11 @@ class CommunityManager: ObservableObject {
     private var requestsCollection: CollectionReference {
         db.collection("student_requests")
     }
-    
-    // --- *** ADD THIS *** ---
     private var conversationsCollection: CollectionReference {
         db.collection("conversations")
     }
 
-    // Fetches recent community posts based on filters
+    // Fetches recent community posts
     func fetchPosts(filter: String) async throws -> [Post] {
         let snapshot = try await postsCollection
             .order(by: "timestamp", descending: true)
@@ -80,7 +77,6 @@ class CommunityManager: ObservableObject {
     
     // MARK: - --- STUDENT REQUEST FUNCTIONS ---
     
-    // --- 1. Called by Student (FIXED) ---
     func sendRequest(from student: AppUser, to instructorID: String) async throws {
         guard let studentID = student.id else { throw URLError(.badServerResponse) }
         
@@ -121,7 +117,6 @@ class CommunityManager: ObservableObject {
         print("New request sent successfully.")
     }
 
-    // --- 2. Called by Instructor (StudentsListView) ---
     func fetchRequests(for instructorID: String) async throws -> [StudentRequest] {
         let snapshot = try await requestsCollection
             .whereField("instructorID", isEqualTo: instructorID)
@@ -132,18 +127,14 @@ class CommunityManager: ObservableObject {
         return snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
     }
     
-    // --- 3. Called by Instructor (Approve Button) ---
-    // --- *** THIS FUNCTION IS NOW UPDATED *** ---
     func approveRequest(_ request: StudentRequest) async throws {
         guard let requestID = request.id else { throw URLError(.badServerResponse) }
         
-        // --- 1. Get Instructor's user data for the chat ---
         let instructorDoc = try await usersCollection.document(request.instructorID).getDocument()
         guard let instructor = try? instructorDoc.data(as: AppUser.self) else {
-            throw URLError(.cannotFindHost) // Can't find instructor
+            throw URLError(.cannotFindHost)
         }
 
-        // --- 2. Create the new Conversation object ---
         let newConversation = Conversation(
             participantIDs: [request.studentID, request.instructorID],
             participantNames: [
@@ -158,37 +149,40 @@ class CommunityManager: ObservableObject {
             lastMessageTimestamp: Date()
         )
         
-        // --- 3. Use a batch write to do everything at once ---
         let batch = db.batch()
         
-        // 3a. Update the request status
         let requestRef = requestsCollection.document(requestID)
         batch.updateData(["status": RequestStatus.approved.rawValue], forDocument: requestRef)
         
-        // 3b. Add studentID to instructor's 'studentIDs' array
         let instructorRef = usersCollection.document(request.instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayUnion([request.studentID])], forDocument: instructorRef)
         
-        // 3c. Create the new conversation document
+        // --- ADD STUDENT TO INSTRUCTOR ID LIST (FOR STUDENT'S APP) ---
+        let studentRef = usersCollection.document(request.studentID)
+        batch.updateData(["instructorIDs": FieldValue.arrayUnion([request.instructorID])], forDocument: studentRef)
+        // --- END OF CHANGE ---
+        
         let conversationRef = conversationsCollection.document()
         try batch.setData(from: newConversation, forDocument: conversationRef)
         
-        // 3d. Commit the batch
         try await batch.commit()
     }
     
-    // --- 4. Called by Instructor (Deny Button) ---
     func denyRequest(_ request: StudentRequest) async throws {
         guard let requestID = request.id else { throw URLError(.badServerResponse) }
         try await requestsCollection.document(requestID).updateData(["status": RequestStatus.denied.rawValue])
     }
     
-    // --- 5. Called by Instructor ("Remove" button) ---
     func removeStudent(studentID: String, instructorID: String) async throws {
         let batch = db.batch()
         
         let instructorRef = usersCollection.document(instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayRemove([studentID])], forDocument: instructorRef)
+        
+        // --- ADDED: Also remove instructor from student's list ---
+        let studentRef = usersCollection.document(studentID)
+        batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
+        // --- END OF CHANGE ---
         
         let requestQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
@@ -200,12 +194,35 @@ class CommunityManager: ObservableObject {
             batch.updateData(["status": RequestStatus.denied.rawValue], forDocument: doc.reference)
         }
         
-        // TODO: You may also want to delete the 'conversation' document here
+        try await batch.commit()
+    }
+    
+    // --- *** NEW FUNCTION: Called by Student "Remove" button *** ---
+    func removeInstructor(instructorID: String, studentID: String) async throws {
+        let batch = db.batch()
+        
+        // 1. Remove instructor from student's list
+        let studentRef = usersCollection.document(studentID)
+        batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
+        
+        // 2. Remove student from instructor's list
+        let instructorRef = usersCollection.document(instructorID)
+        batch.updateData(["studentIDs": FieldValue.arrayRemove([studentID])], forDocument: instructorRef)
+        
+        // 3. Find and update the request to 'denied'
+        let requestQuery = try await requestsCollection
+            .whereField("studentID", isEqualTo: studentID)
+            .whereField("instructorID", isEqualTo: instructorID)
+            .whereField("status", isEqualTo: RequestStatus.approved.rawValue)
+            .getDocuments()
+        
+        for doc in requestQuery.documents {
+            batch.updateData(["status": RequestStatus.denied.rawValue], forDocument: doc.reference)
+        }
         
         try await batch.commit()
     }
     
-    // --- 6. Called by Student (MyInstructorsView) ---
     func fetchSentRequests(for studentID: String) async throws -> [StudentRequest] {
         let snapshot = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
@@ -215,7 +232,6 @@ class CommunityManager: ObservableObject {
         return snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
     }
     
-    // --- 7. Called by Student "Cancel" button ---
     func cancelRequest(requestID: String) async throws {
         try await requestsCollection.document(requestID).delete()
     }

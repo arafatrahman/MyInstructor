@@ -1,23 +1,26 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/MessagingView.swift
+// --- FULL REBUILD of the chat system ---
+
 import SwiftUI
 import Combine
 
 // Flow Item 24: Messaging / Chat
 struct MessagingView: View {
-    
-    // Mock list of recent conversations
-    @State private var conversations: [Conversation] = []
+    @EnvironmentObject var authManager: AuthManager
+    @EnvironmentObject var chatManager: ChatManager
     
     var body: some View {
         NavigationView {
+            // The list now reads from the ChatManager's published array
             List {
-                if conversations.isEmpty {
-                    Text("No messages yet.")
+                if chatManager.conversations.isEmpty {
+                    Text("No messages yet. Once an instructor approves you, your chat will appear here.")
                         .foregroundColor(.textLight)
                         .padding()
                 } else {
-                    // List: Recent conversations
-                    ForEach(conversations) { convo in
+                    ForEach(chatManager.conversations) { convo in
                         NavigationLink {
+                            // Pass the real conversation object
                             ChatView(conversation: convo)
                         } label: {
                             ConversationRow(conversation: convo)
@@ -29,39 +32,52 @@ struct MessagingView: View {
             .listStyle(.plain)
             .navigationTitle("Messages")
             .task {
-                await fetchConversations()
+                // Tell the manager to start listening for conversations
+                guard let userID = authManager.user?.id else { return }
+                await chatManager.listenForConversations(for: userID)
+            }
+            .onDisappear {
+                // You might want to remove the listener here,
+                // or in AuthManager on logout
             }
         }
     }
-    
-    private func fetchConversations() async {
-        // TODO: Call a manager to fetch real conversations
-        print("Fetching conversations...")
-    }
 }
 
-struct Conversation: Identifiable {
-    let id = UUID()
-    let name: String
-    let lastMessage: String
-    var unreadCount: Int
-    let isInstructor: Bool
-}
-
+// This view row now intelligently finds the "other person"
 struct ConversationRow: View {
+    @EnvironmentObject var authManager: AuthManager
     let conversation: Conversation
+    
+    // Get the ID, Name, and Photo of the *other* user in the chat
+    private var otherParticipantID: String {
+        conversation.participantIDs.first { $0 != authManager.user?.id } ?? "unknown"
+    }
+    private var otherParticipantName: String {
+        conversation.participantNames[otherParticipantID] ?? "Chat"
+    }
+    private var otherParticipantPhotoURL: String? {
+        conversation.participantPhotoURLs[otherParticipantID] ?? nil
+    }
     
     var body: some View {
         HStack {
-            Image(systemName: conversation.isInstructor ? "person.fill.viewfinder" : "person.crop.circle.fill")
-                .resizable()
-                .frame(width: 45, height: 45)
-                .foregroundColor(conversation.isInstructor ? .primaryBlue : .accentGreen)
+            AsyncImage(url: URL(string: otherParticipantPhotoURL ?? "")) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    Image(systemName: "person.circle.fill")
+                        .resizable()
+                        .foregroundColor(.primaryBlue)
+                }
+            }
+            .frame(width: 45, height: 45)
+            .clipShape(Circle())
             
             VStack(alignment: .leading) {
-                Text(conversation.name)
+                Text(otherParticipantName)
                     .font(.headline)
-                Text(conversation.lastMessage)
+                Text(conversation.lastMessage ?? "No messages yet")
                     .font(.subheadline)
                     .foregroundColor(conversation.unreadCount > 0 ? .textDark : .textLight)
                     .lineLimit(1)
@@ -83,23 +99,28 @@ struct ConversationRow: View {
 
 // Individual Chat View
 struct ChatView: View {
+    @EnvironmentObject var authManager: AuthManager
+    @EnvironmentObject var chatManager: ChatManager
     let conversation: Conversation
     
     @State private var messageText: String = ""
     
-    // Removed mock chat bubbles
-    @State private var messages: [ChatMessage] = []
+    private var otherParticipantName: String {
+        let otherID = conversation.participantIDs.first { $0 != authManager.user?.id } ?? "unknown"
+        return conversation.participantNames[otherID] ?? "Chat"
+    }
     
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 List {
-                    if messages.isEmpty {
-                        Text("This is the beginning of your conversation with \(conversation.name).")
+                    // The list now reads from the manager's published messages
+                    if chatManager.messages.isEmpty {
+                        Text("This is the beginning of your conversation with \(otherParticipantName).")
                             .foregroundColor(.textLight)
                             .listRowSeparator(.hidden)
                     } else {
-                        ForEach(messages) { message in
+                        ForEach(chatManager.messages) { message in
                             ChatBubble(message: message)
                                 .id(message.id)
                                 .listRowSeparator(.hidden)
@@ -108,13 +129,18 @@ struct ChatView: View {
                     }
                 }
                 .listStyle(.plain)
-                .onAppear {
-                    if let last = messages.last {
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                    }
-                }
                 .task {
-                    await fetchMessages()
+                    // Start listening for messages in this specific chat
+                    guard let convoID = conversation.id else { return }
+                    await chatManager.listenForMessages(conversationID: convoID)
+                }
+                .onChange(of: chatManager.messages) {
+                    // When a new message appears, scroll to bottom
+                    if let lastMessage = chatManager.messages.last {
+                        withAnimation {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        }
+                    }
                 }
             }
             
@@ -135,13 +161,8 @@ struct ChatView: View {
                     .padding(10)
                     .background(Color.secondaryGray)
                     .clipShape(RoundedRectangle(cornerRadius: 15))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 15).stroke(Color.primaryBlue.opacity(0.3), lineWidth: 1)
-                    )
                 
-                Button {
-                    sendMessage()
-                } label: {
+                Button(action: sendMessage) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.largeTitle)
                         .foregroundColor(.primaryBlue)
@@ -149,47 +170,55 @@ struct ChatView: View {
                 .disabled(messageText.isEmpty)
             }
             .padding([.horizontal, .bottom])
+            .background(Color(.systemBackground))
         }
-        .navigationTitle(conversation.name)
-    }
-    
-    private func fetchMessages() async {
-        // TODO: Call a manager to fetch messages for this conversation
-        print("Fetching messages for \(conversation.id)")
+        .navigationTitle(otherParticipantName)
+        .navigationBarTitleDisplayMode(.inline)
     }
     
     private func sendMessage() {
-        let newMessage = ChatMessage(text: messageText, isFromUser: true)
-        // TODO: Call a manager to send this message to the backend
+        guard let convoID = conversation.id, let senderID = authManager.user?.id else { return }
         
-        // Optimistically add to UI
-        messages.append(newMessage)
-        messageText = ""
+        let textToSend = messageText
+        messageText = "" // Clear text field immediately
+        
+        Task {
+            do {
+                try await chatManager.sendMessage(
+                    conversationID: convoID,
+                    senderID: senderID,
+                    text: textToSend
+                )
+            } catch {
+                print("Failed to send message: \(error)")
+                messageText = textToSend // Put text back if send failed
+            }
+        }
     }
 }
 
-// Global scope structs for the ChatView to reference
-struct ChatMessage: Identifiable {
-    let id = UUID()
-    let text: String
-    let isFromUser: Bool // Blue = you, Grey = them
-}
-
+// This view now compares the message's senderID to the logged-in user's ID
 struct ChatBubble: View {
+    @EnvironmentObject var authManager: AuthManager
     let message: ChatMessage
+    
+    private var isFromCurrentUser: Bool {
+        message.senderID == authManager.user?.id
+    }
     
     var body: some View {
         HStack {
-            if message.isFromUser { Spacer() }
+            if isFromCurrentUser { Spacer() }
             
             Text(message.text)
                 .padding(12)
-                .background(message.isFromUser ? Color.primaryBlue : Color(.systemGray4))
-                .foregroundColor(message.isFromUser ? .white : .textDark)
+                .background(isFromCurrentUser ? Color.primaryBlue : Color(.systemGray4))
+                .foregroundColor(isFromCurrentUser ? .white : .textDark)
                 .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
                 .shadow(color: .black.opacity(0.05), radius: 2)
             
-            if !message.isFromUser { Spacer() }
+            if !isFromCurrentUser { Spacer() }
         }
+        .padding(.horizontal, 4)
     }
 }

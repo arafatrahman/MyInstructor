@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
-// --- UPDATED with fixed 'sendRequest' (delete-then-create) and 'cancelRequest' ---
+// --- UPDATED to create a chat channel on approve ---
 
 import Combine
 import Foundation
@@ -31,6 +31,11 @@ class CommunityManager: ObservableObject {
     }
     private var requestsCollection: CollectionReference {
         db.collection("student_requests")
+    }
+    
+    // --- *** ADD THIS *** ---
+    private var conversationsCollection: CollectionReference {
+        db.collection("conversations")
     }
 
     // Fetches recent community posts based on filters
@@ -84,7 +89,6 @@ class CommunityManager: ObservableObject {
             .whereField("instructorID", isEqualTo: instructorID)
             .getDocuments()
 
-        // --- UPDATED LOGIC TO THROW ERRORS and "DELETE THEN CREATE" ---
         for doc in existingQuery.documents {
             if let status = doc.data()["status"] as? String {
                 if status == RequestStatus.pending.rawValue {
@@ -95,21 +99,13 @@ class CommunityManager: ObservableObject {
                     print("Student is already approved by this instructor.")
                     throw RequestError.alreadyApproved
                 }
-                // --- THIS IS THE FIX ---
-                // Find a "denied" request
                 if status == RequestStatus.denied.rawValue {
                     print("Found a denied request. Deleting it to re-apply...")
-                    // A student IS allowed to delete their own request per your rules.
                     try await doc.reference.delete()
                     print("Old request deleted.")
                 }
-                // --- END OF FIX ---
             }
         }
-        
-        // If we are here, any old 'denied' requests are gone,
-        // and no 'pending' or 'approved' requests exist.
-        // We can now create a new one.
         
         print("Creating new request...")
         let newRequest = StudentRequest(
@@ -137,17 +133,47 @@ class CommunityManager: ObservableObject {
     }
     
     // --- 3. Called by Instructor (Approve Button) ---
+    // --- *** THIS FUNCTION IS NOW UPDATED *** ---
     func approveRequest(_ request: StudentRequest) async throws {
         guard let requestID = request.id else { throw URLError(.badServerResponse) }
         
+        // --- 1. Get Instructor's user data for the chat ---
+        let instructorDoc = try await usersCollection.document(request.instructorID).getDocument()
+        guard let instructor = try? instructorDoc.data(as: AppUser.self) else {
+            throw URLError(.cannotFindHost) // Can't find instructor
+        }
+
+        // --- 2. Create the new Conversation object ---
+        let newConversation = Conversation(
+            participantIDs: [request.studentID, request.instructorID],
+            participantNames: [
+                request.studentID: request.studentName,
+                request.instructorID: instructor.name ?? "Instructor"
+            ],
+            participantPhotoURLs: [
+                request.studentID: request.studentPhotoURL,
+                request.instructorID: instructor.photoURL
+            ],
+            lastMessage: "You are now connected!",
+            lastMessageTimestamp: Date()
+        )
+        
+        // --- 3. Use a batch write to do everything at once ---
         let batch = db.batch()
         
+        // 3a. Update the request status
         let requestRef = requestsCollection.document(requestID)
         batch.updateData(["status": RequestStatus.approved.rawValue], forDocument: requestRef)
         
+        // 3b. Add studentID to instructor's 'studentIDs' array
         let instructorRef = usersCollection.document(request.instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayUnion([request.studentID])], forDocument: instructorRef)
         
+        // 3c. Create the new conversation document
+        let conversationRef = conversationsCollection.document()
+        try batch.setData(from: newConversation, forDocument: conversationRef)
+        
+        // 3d. Commit the batch
         try await batch.commit()
     }
     
@@ -161,21 +187,20 @@ class CommunityManager: ObservableObject {
     func removeStudent(studentID: String, instructorID: String) async throws {
         let batch = db.batch()
         
-        // 1. Remove student from instructor's list
         let instructorRef = usersCollection.document(instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayRemove([studentID])], forDocument: instructorRef)
         
-        // 2. Find and update the original request document to 'denied'
         let requestQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
             .whereField("instructorID", isEqualTo: instructorID)
-            .whereField("status", isEqualTo: RequestStatus.approved.rawValue) // Only find the approved one
+            .whereField("status", isEqualTo: RequestStatus.approved.rawValue)
             .getDocuments()
         
-        // Should only be one, but we loop just in case
         for doc in requestQuery.documents {
             batch.updateData(["status": RequestStatus.denied.rawValue], forDocument: doc.reference)
         }
+        
+        // TODO: You may also want to delete the 'conversation' document here
         
         try await batch.commit()
     }
@@ -190,10 +215,8 @@ class CommunityManager: ObservableObject {
         return snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
     }
     
-    // --- 7. NEW FUNCTION (Called by Student "Cancel" button) ---
+    // --- 7. Called by Student "Cancel" button ---
     func cancelRequest(requestID: String) async throws {
-        // Your Firebase rule allows this:
-        // allow delete: if request.auth != null && request.auth.uid == resource.data.studentID;
         try await requestsCollection.document(requestID).delete()
     }
 }

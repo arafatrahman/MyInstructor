@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/MessagingView.swift
-// --- UPDATED: Added context menu (long press) for Edit/Delete on ChatBubble ---
+// --- UPDATED: Increased top padding on ChatView custom header ---
 
 import SwiftUI
 import Combine
@@ -180,8 +180,6 @@ struct ChatView: View {
     let conversation: Conversation
     
     @State private var messageText: String = ""
-    
-    // --- *** NEW STATE FOR EDITING *** ---
     @State private var messageToEdit: ChatMessage? = nil
     
     private var otherParticipantName: String {
@@ -231,7 +229,7 @@ struct ChatView: View {
             }
             .padding(.horizontal)
             .padding(.bottom, 10)
-            .padding(.top, 50)
+            .padding(.top, 70) // --- *** THIS IS THE FIX *** ---
             .background(Color.primaryBlue)
             
             ScrollViewReader { proxy in
@@ -246,7 +244,6 @@ struct ChatView: View {
                                 ChatBubble(
                                     message: message,
                                     otherUserPhotoURL: otherParticipantPhotoURL,
-                                    // --- *** PASS ACTIONS TO BUBBLE *** ---
                                     onEdit: { msg in
                                         self.messageToEdit = msg
                                         self.messageText = msg.text
@@ -280,7 +277,6 @@ struct ChatView: View {
                 }
             }
             
-            // --- *** EDITING INDICATOR *** ---
             if let messageToEdit {
                 HStack {
                     VStack(alignment: .leading) {
@@ -306,7 +302,6 @@ struct ChatView: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             
-            // --- *** INPUT BAR *** ---
             HStack(spacing: 12) {
                 TextField("Type a message...", text: $messageText, axis: .vertical)
                     .padding(.horizontal, 12)
@@ -316,7 +311,7 @@ struct ChatView: View {
                             .stroke(Color(.systemGray4), lineWidth: 1)
                     )
                 
-                Button(action: sendOrUpdateMessage) { // --- *** ACTION CHANGED *** ---
+                Button(action: sendOrUpdateMessage) {
                     Image(systemName: "arrow.right")
                         .font(.headline.weight(.bold))
                         .foregroundColor(.white)
@@ -330,13 +325,12 @@ struct ChatView: View {
             .padding(.vertical, 8)
             .background(Color(.systemBackground))
         }
-        .animation(.default, value: messageToEdit) // Animate the edit bar
+        .animation(.default, value: messageToEdit)
         .navigationBarHidden(true)
         .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .tabBar)
     }
     
-    // --- *** NEW FUNCTION: Handles both Send and Edit *** ---
     private func sendOrUpdateMessage() {
         guard let convoID = conversation.id, let senderID = authManager.user?.id else { return }
         
@@ -344,20 +338,17 @@ struct ChatView: View {
         messageText = ""
         
         if let messageToEdit = self.messageToEdit, let messageID = messageToEdit.id {
-            // This is an edit/update
-            self.messageToEdit = nil // Clear edit state
+            self.messageToEdit = nil
             Task {
                 do {
                     try await chatManager.updateMessage(conversationID: convoID, messageID: messageID, newText: textToSend)
                 } catch {
                     print("Failed to update message: \(error)")
-                    // Restore text if failed
                     self.messageText = textToSend
                     self.messageToEdit = messageToEdit
                 }
             }
         } else {
-            // This is a new message
             Task {
                 do {
                     try await chatManager.sendMessage(
@@ -373,7 +364,6 @@ struct ChatView: View {
         }
     }
     
-    // --- *** NEW FUNCTION: Handles Delete *** ---
     private func handleDelete(_ message: ChatMessage) {
         guard let convoID = conversation.id, let messageID = message.id else { return }
         Task {
@@ -386,13 +376,11 @@ struct ChatView: View {
     }
 }
 
-// --- *** CHAT BUBBLE (UPDATED) *** ---
 struct ChatBubble: View {
     @EnvironmentObject var authManager: AuthManager
     let message: ChatMessage
     let otherUserPhotoURL: String?
     
-    // --- *** NEW ACTIONS *** ---
     let onEdit: (ChatMessage) -> Void
     let onDelete: (ChatMessage) -> Void
     
@@ -407,16 +395,14 @@ struct ChatBubble: View {
             }
             
             VStack(alignment: isFromCurrentUser ? .trailing : .leading, spacing: 3) {
-                // --- *** NEW: Show different text if deleted *** ---
                 Text(message.isDeleted == true ? "This message was deleted." : message.text)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(isFromCurrentUser ? Color.primaryBlue : Color(.systemGray5))
                     .foregroundColor(isFromCurrentUser ? .white : (message.isDeleted == true ? .textLight : .textDark))
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .italic(message.isDeleted == true) // Italicize deleted message
+                    .italic(message.isDeleted == true)
                 
-                // --- *** NEW: Show timestamp and (edited) flag *** ---
                 if let timestamp = message.timestamp, message.isDeleted != true {
                     HStack(spacing: 4) {
                         if message.isEdited == true {
@@ -429,7 +415,6 @@ struct ChatBubble: View {
                     .padding(.horizontal, 5)
                 }
             }
-            // --- *** NEW: Add context menu for long press *** ---
             .contextMenu {
                 if isFromCurrentUser && message.isDeleted != true {
                     Button {

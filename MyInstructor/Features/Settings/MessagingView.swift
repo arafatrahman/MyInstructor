@@ -1,9 +1,10 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/MessagingView.swift
-// --- UPDATED: Added a background color to the VStack to fix the transparent navigation bar ---
+// --- UPDATED: Added context menu (long press) for Edit/Delete on ChatBubble ---
 
 import SwiftUI
 import Combine
 
+// --- (MessagingView and ConversationRow are unchanged) ---
 struct MessagingView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var chatManager: ChatManager
@@ -29,8 +30,6 @@ struct MessagingView: View {
     
     var body: some View {
         
-        // This NavigationLink is hidden, but it activates
-        // as soon as 'conversationToPush' is set.
         if let conversation = conversationToPush {
             NavigationLink(
                 destination: ChatView(conversation: conversation),
@@ -46,7 +45,6 @@ struct MessagingView: View {
         }
         
         VStack(spacing: 0) {
-            // --- *** SEARCH BAR (from screenshot) *** ---
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(Color(.systemGray2))
@@ -57,10 +55,9 @@ struct MessagingView: View {
             .background(Color(.systemGray6))
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
-            .background(Color(.systemBackground)) // Match list background
+            .background(Color(.systemBackground))
             .border(width: 1, edges: [.bottom], color: Color(.systemGray5))
             
-            // --- *** UPDATED LIST (to show conversations) *** ---
             List {
                 if chatManager.conversations.isEmpty {
                     Text("You have no active conversations.")
@@ -83,10 +80,7 @@ struct MessagingView: View {
             }
             .listStyle(.plain)
         }
-        // --- *** THIS IS THE FIX *** ---
-        // Set the background for the entire view to white.
         .background(Color(.systemBackground))
-        // --- *** END OF FIX *** ---
         .navigationTitle("Start a Chat")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -104,7 +98,6 @@ struct MessagingView: View {
     }
 }
 
-// --- *** CONVERSATION ROW (Unchanged) *** ---
 struct ConversationRow: View {
     @EnvironmentObject var authManager: AuthManager
     let conversation: Conversation
@@ -126,7 +119,7 @@ struct ConversationRow: View {
         } else if let name = names.first {
             return "\(name.first ?? " ")"
         }
-        return "JD" // Default
+        return "JD"
     }
     
     private var lastMessagePreview: String {
@@ -178,7 +171,7 @@ struct ConversationRow: View {
 }
 
 
-// MARK: - Chat Message View (Unchanged)
+// MARK: - Chat Message View (Redesigned)
 
 struct ChatView: View {
     @Environment(\.dismiss) var dismiss
@@ -187,6 +180,9 @@ struct ChatView: View {
     let conversation: Conversation
     
     @State private var messageText: String = ""
+    
+    // --- *** NEW STATE FOR EDITING *** ---
+    @State private var messageToEdit: ChatMessage? = nil
     
     private var otherParticipantName: String {
         let otherID = conversation.participantIDs.first { $0 != authManager.user?.id } ?? "unknown"
@@ -201,7 +197,7 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             
-            // --- *** CUSTOM HEADER (This is correct for this screen) *** ---
+            // --- *** CUSTOM HEADER *** ---
             HStack(spacing: 8) {
                 Button {
                     chatManager.removeAllListeners()
@@ -247,8 +243,19 @@ struct ChatView: View {
                                 .padding()
                         } else {
                             ForEach(chatManager.messages) { message in
-                                ChatBubble(message: message, otherUserPhotoURL: otherParticipantPhotoURL)
-                                    .id(message.id)
+                                ChatBubble(
+                                    message: message,
+                                    otherUserPhotoURL: otherParticipantPhotoURL,
+                                    // --- *** PASS ACTIONS TO BUBBLE *** ---
+                                    onEdit: { msg in
+                                        self.messageToEdit = msg
+                                        self.messageText = msg.text
+                                    },
+                                    onDelete: { msg in
+                                        handleDelete(msg)
+                                    }
+                                )
+                                .id(message.id)
                             }
                         }
                     }
@@ -273,7 +280,33 @@ struct ChatView: View {
                 }
             }
             
-            // --- *** INPUT BAR (This is correct for this screen) *** ---
+            // --- *** EDITING INDICATOR *** ---
+            if let messageToEdit {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Editing Message")
+                            .font(.caption.bold())
+                            .foregroundColor(.primaryBlue)
+                        Text(messageToEdit.text)
+                            .font(.caption)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Button {
+                        self.messageToEdit = nil
+                        self.messageText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(Color.secondaryGray)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+            
+            // --- *** INPUT BAR *** ---
             HStack(spacing: 12) {
                 TextField("Type a message...", text: $messageText, axis: .vertical)
                     .padding(.horizontal, 12)
@@ -283,7 +316,7 @@ struct ChatView: View {
                             .stroke(Color(.systemGray4), lineWidth: 1)
                     )
                 
-                Button(action: sendMessage) {
+                Button(action: sendOrUpdateMessage) { // --- *** ACTION CHANGED *** ---
                     Image(systemName: "arrow.right")
                         .font(.headline.weight(.bold))
                         .foregroundColor(.white)
@@ -297,37 +330,71 @@ struct ChatView: View {
             .padding(.vertical, 8)
             .background(Color(.systemBackground))
         }
+        .animation(.default, value: messageToEdit) // Animate the edit bar
         .navigationBarHidden(true)
         .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .tabBar)
     }
     
-    private func sendMessage() {
+    // --- *** NEW FUNCTION: Handles both Send and Edit *** ---
+    private func sendOrUpdateMessage() {
         guard let convoID = conversation.id, let senderID = authManager.user?.id else { return }
         
         let textToSend = messageText
         messageText = ""
         
+        if let messageToEdit = self.messageToEdit, let messageID = messageToEdit.id {
+            // This is an edit/update
+            self.messageToEdit = nil // Clear edit state
+            Task {
+                do {
+                    try await chatManager.updateMessage(conversationID: convoID, messageID: messageID, newText: textToSend)
+                } catch {
+                    print("Failed to update message: \(error)")
+                    // Restore text if failed
+                    self.messageText = textToSend
+                    self.messageToEdit = messageToEdit
+                }
+            }
+        } else {
+            // This is a new message
+            Task {
+                do {
+                    try await chatManager.sendMessage(
+                        conversationID: convoID,
+                        senderID: senderID,
+                        text: textToSend
+                    )
+                } catch {
+                    print("Failed to send message: \(error)")
+                    messageText = textToSend
+                }
+            }
+        }
+    }
+    
+    // --- *** NEW FUNCTION: Handles Delete *** ---
+    private func handleDelete(_ message: ChatMessage) {
+        guard let convoID = conversation.id, let messageID = message.id else { return }
         Task {
             do {
-                try await chatManager.sendMessage(
-                    conversationID: convoID,
-                    senderID: senderID,
-                    text: textToSend
-                )
+                try await chatManager.deleteMessage(conversationID: convoID, messageID: messageID)
             } catch {
-                print("Failed to send message: \(error)")
-                messageText = textToSend
+                print("Failed to delete message: \(error)")
             }
         }
     }
 }
 
-// --- *** CHAT BUBBLE (Unchanged) *** ---
+// --- *** CHAT BUBBLE (UPDATED) *** ---
 struct ChatBubble: View {
     @EnvironmentObject var authManager: AuthManager
     let message: ChatMessage
     let otherUserPhotoURL: String?
+    
+    // --- *** NEW ACTIONS *** ---
+    let onEdit: (ChatMessage) -> Void
+    let onDelete: (ChatMessage) -> Void
     
     private var isFromCurrentUser: Bool {
         message.senderID == authManager.user?.id
@@ -340,18 +407,42 @@ struct ChatBubble: View {
             }
             
             VStack(alignment: isFromCurrentUser ? .trailing : .leading, spacing: 3) {
-                Text(message.text)
+                // --- *** NEW: Show different text if deleted *** ---
+                Text(message.isDeleted == true ? "This message was deleted." : message.text)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(isFromCurrentUser ? Color.primaryBlue : Color(.systemGray5))
-                    .foregroundColor(isFromCurrentUser ? .white : .textDark)
+                    .foregroundColor(isFromCurrentUser ? .white : (message.isDeleted == true ? .textLight : .textDark))
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .italic(message.isDeleted == true) // Italicize deleted message
                 
-                if let timestamp = message.timestamp {
-                    Text(timestamp.formatted(.dateTime.hour().minute()))
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 5)
+                // --- *** NEW: Show timestamp and (edited) flag *** ---
+                if let timestamp = message.timestamp, message.isDeleted != true {
+                    HStack(spacing: 4) {
+                        if message.isEdited == true {
+                            Text("(edited)")
+                        }
+                        Text(timestamp.formatted(.dateTime.hour().minute()))
+                    }
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 5)
+                }
+            }
+            // --- *** NEW: Add context menu for long press *** ---
+            .contextMenu {
+                if isFromCurrentUser && message.isDeleted != true {
+                    Button {
+                        onEdit(message)
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    
+                    Button(role: .destructive) {
+                        onDelete(message)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                 }
             }
             

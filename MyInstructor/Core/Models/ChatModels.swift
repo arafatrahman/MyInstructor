@@ -1,5 +1,5 @@
 // File: MyInstructor/Core/Models/ChatModels.swift
-// (This is a NEW file)
+// --- UPDATED: Added isEdited and isDeleted flags ---
 
 import Foundation
 import FirebaseFirestore
@@ -27,6 +27,10 @@ struct ChatMessage: Identifiable, Codable, Hashable {
     @DocumentID var id: String?
     
     let senderID: String
-    let text: String
+    var text: String // Changed to 'var' so it can be updated
     @ServerTimestamp var timestamp: Date?
+    
+    // --- NEWLY ADDED FLAGS ---
+    var isEdited: Bool? = false
+    var isDeleted: Bool? = false
 }

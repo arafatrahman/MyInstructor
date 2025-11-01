@@ -1,5 +1,5 @@
 // File: MyInstructor/Core/Managers/ChatManager.swift
-// --- UPDATED: Added getOrCreateConversation ---
+// --- UPDATED: Added deleteMessage and updateMessage functions ---
 
 import Foundation
 import Combine
@@ -62,6 +62,9 @@ class ChatManager: ObservableObject {
     func sendMessage(conversationID: String, senderID: String, text: String) async throws {
         let message = ChatMessage(senderID: senderID, text: text)
         
+        // --- This logic is now handled by the sendOrUpdate function in ChatView ---
+        // We still need this function for sending *new* messages
+        
         try await conversationsCollection.document(conversationID)
             .collection("messages")
             .addDocument(from: message)
@@ -71,9 +74,38 @@ class ChatManager: ObservableObject {
             "lastMessageTimestamp": FieldValue.serverTimestamp()
         ])
     }
+    
+    // --- *** NEW FUNCTION: Called on "Delete" *** ---
+    func deleteMessage(conversationID: String, messageID: String) async throws {
+        let messageRef = conversationsCollection.document(conversationID)
+            .collection("messages")
+            .document(messageID)
+            
+        try await messageRef.updateData([
+            "text": "This message was deleted.",
+            "isDeleted": true
+        ])
+        
+        // TODO: Also check if this was the *last* message
+        // and update the conversation's 'lastMessage' field if so.
+    }
+    
+    // --- *** NEW FUNCTION: Called on "Edit" *** ---
+    func updateMessage(conversationID: String, messageID: String, newText: String) async throws {
+        let messageRef = conversationsCollection.document(conversationID)
+            .collection("messages")
+            .document(messageID)
+            
+        try await messageRef.updateData([
+            "text": newText,
+            "isEdited": true
+        ])
+        
+        // TODO: Also check if this was the *last* message
+        // and update the conversation's 'lastMessage' field if so.
+    }
 
-    // --- *** NEW FUNCTION *** ---
-    // This is the new function to start a chat
+    // --- *** (getOrCreateConversation is unchanged) *** ---
     func getOrCreateConversation(currentUser: AppUser, otherUser: AppUser) async throws -> Conversation {
         guard let currentUserID = currentUser.id, let otherUserID = otherUser.id else {
             throw NSError(domain: "ChatManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid user IDs"])
@@ -114,7 +146,6 @@ class ChatManager: ObservableObject {
         let newDoc = try await newDocRef.getDocument()
         return try newDoc.data(as: Conversation.self)
     }
-    // --- *** END NEW FUNCTION *** ---
 
     
     // MARK: - Cleanup

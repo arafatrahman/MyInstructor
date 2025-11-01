@@ -1,5 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/MessagingView.swift
 // --- FULL REDESIGN: Fixes compiler errors and implements new UI ---
+// --- UPDATED: Embedded chat loading logic to remove ChatLoadingView from the navigation stack ---
 
 import SwiftUI
 import Combine
@@ -27,14 +28,34 @@ struct ChatContact: Identifiable, Hashable {
 struct MessagingView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var dataService: DataService
+    @EnvironmentObject var chatManager: ChatManager // <-- ADDED
     
     @State private var contacts: [ChatContact] = []
     @State private var isLoading = true
     
+    // --- ADDED for direct navigation ---
+    @State private var conversationToPush: Conversation? = nil
+    @State private var isOpeningChat = false
+    @State private var selectedContact: ChatContact? = nil
+    
     var body: some View {
-        // --- THIS FIXES THE "TWO BACK BUTTONS" BUG ---
-        // The NavigationView is removed from here.
-        // It's already provided by the Dashboard.
+        
+        // This NavigationLink is hidden, but it activates
+        // as soon as 'conversationToPush' is set.
+        if let conversation = conversationToPush {
+            NavigationLink(
+                destination: ChatView(conversation: conversation),
+                isActive: .init(
+                    get: { conversationToPush != nil },
+                    set: { isActive in
+                        if !isActive { conversationToPush = nil }
+                    }
+                ),
+                label: { EmptyView() }
+            )
+            .hidden()
+        }
+        
         List {
             if isLoading {
                 ProgressView()
@@ -43,13 +64,30 @@ struct MessagingView: View {
                     .foregroundColor(.textLight)
                     .padding()
             } else {
+                // --- REPLACED NavigationLink with Button ---
                 ForEach(contacts) { contact in
-                    NavigationLink {
-                        // Go to the loading view first
-                        ChatLoadingView(otherUser: contact.appUser)
-                    } label: {
-                        ChatContactRow(contact: contact)
+                    Button(action: {
+                        self.selectedContact = contact
+                        self.isOpeningChat = true
+                        Task {
+                            await openChat(with: contact)
+                        }
+                    }) {
+                        HStack {
+                            ChatContactRow(contact: contact)
+                            Spacer()
+                            if isOpeningChat && selectedContact == contact {
+                                ProgressView()
+                                    .frame(width: 20)
+                            } else {
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundColor(Color(.systemGray3))
+                            }
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .disabled(isOpeningChat)
                 }
             }
         }
@@ -58,6 +96,41 @@ struct MessagingView: View {
         .task {
             await fetchContacts()
         }
+        // This resets the navigation state when the view appears,
+        // so you don't get stuck in a navigation loop.
+        .onAppear {
+            if conversationToPush != nil {
+                conversationToPush = nil
+            }
+            if isOpeningChat {
+                isOpeningChat = false
+                selectedContact = nil
+            }
+        }
+    }
+    
+    // --- ADDED FUNCTION ---
+    func openChat(with contact: ChatContact) async {
+        guard let currentUser = authManager.user else {
+            isOpeningChat = false
+            selectedContact = nil
+            return
+        }
+        
+        do {
+            let conversation = try await chatManager.getOrCreateConversation(
+                currentUser: currentUser,
+                otherUser: contact.appUser
+            )
+            self.conversationToPush = conversation // This triggers the NavigationLink
+        } catch {
+            print("Error getting or creating conversation: \(error)")
+            // TODO: Show an error alert
+            isOpeningChat = false
+            selectedContact = nil
+        }
+        
+        // Note: isOpeningChat is reset in onAppear
     }
     
     func fetchContacts() async {
@@ -137,6 +210,46 @@ struct ChatView: View {
     
     var body: some View {
         VStack(spacing: 0) {
+            
+            // --- *** CUSTOM HEADER (from screenshot) *** ---
+            HStack(spacing: 8) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.headline.weight(.bold))
+                        .foregroundColor(.white)
+                }
+                
+                // Screenshot shows a white circle placeholder
+                AsyncImage(url: URL(string: otherParticipantPhotoURL ?? "")) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        // White circle placeholder
+                        Circle().fill(Color.white)
+                    }
+                }
+                .frame(width: 30, height: 30)
+                .background(Color.white) // Ensure background is white
+                .clipShape(Circle())
+                
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(otherParticipantName)
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    Text("Online") // Placeholder
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.8))
+                }
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 10)
+            .padding(.top, 50) // Manual safe area padding
+            .background(Color.primaryBlue)
+            // --- *** END OF CUSTOM HEADER *** ---
+            
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 4) { // Reduced spacing
@@ -154,7 +267,7 @@ struct ChatView: View {
                     .padding(.horizontal, 10)
                     .padding(.top, 10)
                 }
-                .background(Color(.systemGroupedBackground)) // Fixes "black screen"
+                .background(Color(.systemBackground)) // --- *** CHANGED (to white) *** ---
                 .onTapGesture {
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
@@ -171,16 +284,19 @@ struct ChatView: View {
                 }
             }
             
-            // --- *** NEW PROFESSIONAL INPUT BAR *** ---
+            // --- *** PROFESSIONAL INPUT BAR (from screenshot) *** ---
             HStack(spacing: 12) {
-                TextField("Message...", text: $messageText, axis: .vertical)
+                TextField("Type a message...", text: $messageText, axis: .vertical) // --- *** CHANGED PLACEHOLDER *** ---
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(Color(.systemGray5))
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .background(
+                        // --- *** CHANGED (from fill to border) *** ---
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color(.systemGray4), lineWidth: 1)
+                    )
                 
                 Button(action: sendMessage) {
-                    Image(systemName: "arrow.up")
+                    Image(systemName: "arrow.right") // --- *** CHANGED ICON *** ---
                         .font(.headline.weight(.bold))
                         .foregroundColor(.white)
                         .frame(width: 36, height: 36)
@@ -192,45 +308,10 @@ struct ChatView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(Color(.systemBackground))
-            .border(width: 1, edges: [.top], color: Color(.systemGray4))
             // --- *** END OF NEW INPUT BAR *** ---
         }
-        .navigationTitle(otherParticipantName)
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            // --- *** NEW CUSTOM TOOLBAR (matches image_9acd99.png) *** ---
-            ToolbarItem(placement: .navigationBarLeading) {
-                HStack(spacing: 8) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.headline.weight(.bold))
-                    }
-                    
-                    AsyncImage(url: URL(string: otherParticipantPhotoURL ?? "")) { phase in
-                        if let image = phase.image {
-                            image.resizable().scaledToFill()
-                        } else {
-                            Image(systemName: "person.circle.fill")
-                                .resizable()
-                                .foregroundColor(.secondaryGray)
-                        }
-                    }
-                    .frame(width: 30, height: 30)
-                    .clipShape(Circle())
-                    
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(otherParticipantName)
-                            .font(.headline)
-                        Text("Online") // Placeholder
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-        }
+        .navigationBarHidden(true) // Hide the default navigation bar
+        .ignoresSafeArea(edges: .top) // Allow blue header to fill safe area
         .toolbar(.hidden, for: .tabBar) // Hide the tab bar
     }
     
@@ -255,7 +336,7 @@ struct ChatView: View {
     }
 }
 
-// --- *** NEW REDESIGNED CHAT BUBBLE *** ---
+// --- *** CHAT BUBBLE (No changes were needed) *** ---
 struct ChatBubble: View {
     @EnvironmentObject var authManager: AuthManager
     let message: ChatMessage

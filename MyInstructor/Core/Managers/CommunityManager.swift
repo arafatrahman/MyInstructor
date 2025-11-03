@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
-// --- UPDATED with 'removeInstructor' function ---
+// --- UPDATED: Removed the line that caused the permissions error ---
 
 import Combine
 import Foundation
@@ -117,10 +117,22 @@ class CommunityManager: ObservableObject {
         print("New request sent successfully.")
     }
 
+    // Fetches PENDING requests
     func fetchRequests(for instructorID: String) async throws -> [StudentRequest] {
         let snapshot = try await requestsCollection
             .whereField("instructorID", isEqualTo: instructorID)
             .whereField("status", isEqualTo: RequestStatus.pending.rawValue)
+            .order(by: "timestamp", descending: true)
+            .getDocuments()
+            
+        return snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
+    }
+    
+    // Fetches DENIED requests
+    func fetchDeniedRequests(for instructorID: String) async throws -> [StudentRequest] {
+        let snapshot = try await requestsCollection
+            .whereField("instructorID", isEqualTo: instructorID)
+            .whereField("status", isEqualTo: RequestStatus.denied.rawValue)
             .order(by: "timestamp", descending: true)
             .getDocuments()
             
@@ -151,20 +163,24 @@ class CommunityManager: ObservableObject {
         
         let batch = db.batch()
         
+        // 1. Update the request to "approved"
         let requestRef = requestsCollection.document(requestID)
         batch.updateData(["status": RequestStatus.approved.rawValue], forDocument: requestRef)
         
+        // 2. Add student ID to instructor's "studentIDs" array
         let instructorRef = usersCollection.document(request.instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayUnion([request.studentID])], forDocument: instructorRef)
         
-        // --- ADD STUDENT TO INSTRUCTOR ID LIST (FOR STUDENT'S APP) ---
-        let studentRef = usersCollection.document(request.studentID)
-        batch.updateData(["instructorIDs": FieldValue.arrayUnion([request.instructorID])], forDocument: studentRef)
-        // --- END OF CHANGE ---
+        // --- THIS WAS THE FAILING LINE (REMOVED) ---
+        // let studentRef = usersCollection.document(request.studentID)
+        // batch.updateData(["instructorIDs": FieldValue.arrayUnion([request.instructorID])], forDocument: studentRef)
+        // --- END OF FIX ---
         
+        // 3. Create the new conversation
         let conversationRef = conversationsCollection.document()
         try batch.setData(from: newConversation, forDocument: conversationRef)
         
+        // 4. Commit the batch
         try await batch.commit()
     }
     
@@ -179,10 +195,8 @@ class CommunityManager: ObservableObject {
         let instructorRef = usersCollection.document(instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayRemove([studentID])], forDocument: instructorRef)
         
-        // --- ADDED: Also remove instructor from student's list ---
         let studentRef = usersCollection.document(studentID)
         batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
-        // --- END OF CHANGE ---
         
         let requestQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
@@ -197,19 +211,15 @@ class CommunityManager: ObservableObject {
         try await batch.commit()
     }
     
-    // --- *** NEW FUNCTION: Called by Student "Remove" button *** ---
     func removeInstructor(instructorID: String, studentID: String) async throws {
         let batch = db.batch()
         
-        // 1. Remove instructor from student's list
         let studentRef = usersCollection.document(studentID)
         batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
         
-        // 2. Remove student from instructor's list
         let instructorRef = usersCollection.document(instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayRemove([studentID])], forDocument: instructorRef)
         
-        // 3. Find and update the request to 'denied'
         let requestQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
             .whereField("instructorID", isEqualTo: instructorID)

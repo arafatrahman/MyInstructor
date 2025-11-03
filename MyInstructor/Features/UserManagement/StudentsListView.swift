@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
-// --- REDESIGNED: 'RequestRow' is now compact ---
+// --- UPDATED: Removed duplicate StatusBadge struct ---
 
 import SwiftUI
 
@@ -11,20 +11,23 @@ struct StudentsListView: View {
     
     @State private var approvedStudents: [Student] = []
     @State private var pendingRequests: [StudentRequest] = []
+    @State private var deniedRequests: [StudentRequest] = []
     
     @State private var isLoading = true
     @State private var searchText = ""
-    @State private var filterMode: StudentFilter = .active
+    @State private var filterMode: StudentFilter = .pending
     
     @State private var conversationToPush: Conversation? = nil
     
     var filteredApprovedStudents: [Student] {
-        let list = approvedStudents.filter { student in
-            switch filterMode {
-            case .all: return true
-            case .active: return student.averageProgress < 1.0
-            case .completed: return student.averageProgress >= 1.0
-            }
+        // This filter logic is now separate from the main filter
+        let list: [Student]
+        if filterMode == .active {
+            list = approvedStudents.filter { $0.averageProgress < 1.0 }
+        } else if filterMode == .completed {
+            list = approvedStudents.filter { $0.averageProgress >= 1.0 }
+        } else {
+            list = approvedStudents // for .all
         }
         
         if searchText.isEmpty {
@@ -34,6 +37,20 @@ struct StudentsListView: View {
         }
     }
     
+    var filteredPendingRequests: [StudentRequest] {
+        if searchText.isEmpty {
+            return pendingRequests
+        }
+        return pendingRequests.filter { $0.studentName.localizedCaseInsensitiveContains(searchText) }
+    }
+    
+    var filteredDeniedRequests: [StudentRequest] {
+        if searchText.isEmpty {
+            return deniedRequests
+        }
+        return deniedRequests.filter { $0.studentName.localizedCaseInsensitiveContains(searchText) }
+    }
+
     var body: some View {
         NavigationView {
             VStack {
@@ -49,9 +66,11 @@ struct StudentsListView: View {
                     SearchBar(text: $searchText, placeholder: "Search students by name")
                     
                     Picker("Filter", selection: $filterMode) {
-                        Text("All").tag(StudentFilter.all)
+                        Text("Pending").tag(StudentFilter.pending)
                         Text("Active").tag(StudentFilter.active)
                         Text("Completed").tag(StudentFilter.completed)
+                        Text("Denied").tag(StudentFilter.denied)
+                        Text("All Students").tag(StudentFilter.all)
                     }
                     .pickerStyle(.menu)
                     .frame(width: 110)
@@ -62,18 +81,19 @@ struct StudentsListView: View {
                 if isLoading {
                     ProgressView("Loading Students...")
                         .padding(.top, 50)
-                } else if pendingRequests.isEmpty && approvedStudents.isEmpty {
+                } else if pendingRequests.isEmpty && approvedStudents.isEmpty && deniedRequests.isEmpty {
                     EmptyStateView(
                         icon: "person.3.fill",
                         message: "No students or requests yet. Students can find and request you from the Community Directory."
                     )
                 } else {
                     List {
-                        // --- SECTION 1: PENDING REQUESTS ---
-                        if !pendingRequests.isEmpty {
-                            Section(header: Text("Pending Requests").font(.headline).foregroundColor(.accentGreen)) {
-                                ForEach(pendingRequests) { request in
-                                    // --- USE NEW REDESIGNED ROW ---
+                        switch filterMode {
+                            
+                        case .pending:
+                            Section(header: Text("Pending Requests (\(filteredPendingRequests.count))").font(.headline).foregroundColor(.accentGreen)) {
+                                if filteredPendingRequests.isEmpty { Text("No pending requests found.").foregroundColor(.textLight) }
+                                ForEach(filteredPendingRequests) { request in
                                     CompactRequestRow(request: request, onApprove: {
                                         Task { await handleRequest(request, approve: true) }
                                     }, onDeny: {
@@ -83,41 +103,38 @@ struct StudentsListView: View {
                             }
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-                        }
-                        
-                        // --- SECTION 2: APPROVED STUDENTS ---
-                        if searchText.isEmpty || !filteredApprovedStudents.isEmpty {
-                            Section("Approved Students (\(filteredApprovedStudents.count))") {
+
+                        case .active, .completed, .all:
+                            Section("\(filterMode.rawValue.capitalized) Students (\(filteredApprovedStudents.count))") {
+                                if filteredApprovedStudents.isEmpty { Text("No students match this filter.").foregroundColor(.textLight) }
                                 ForEach(filteredApprovedStudents) { student in
                                     StudentListCard(student: student)
                                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                        Button {
-                                            Task { await startChat(with: student) }
-                                        } label: {
-                                            Label("Message", systemImage: "message.fill")
-                                        }
+                                        Button { Task { await startChat(with: student) } } label: { Label("Message", systemImage: "message.fill") }
                                         .tint(.primaryBlue)
                                     }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                        Button(role: .destructive) {
-                                            Task { await removeStudent(student) }
-                                        } label: {
-                                            Label("Remove", systemImage: "trash.fill")
-                                        }
+                                        Button(role: .destructive) { Task { await removeStudent(student) } } label: { Label("Remove", systemImage: "trash.fill") }
                                     }
                                     .listRowSeparator(.hidden)
                                     .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-                                    .background(
-                                        NavigationLink {
-                                            StudentProfileView(student: student)
-                                        } label: { EmptyView() }
-                                        .opacity(0)
-                                    )
+                                    .background(NavigationLink { StudentProfileView(student: student) } label: { EmptyView() }.opacity(0))
                                 }
                             }
+
+                        case .denied:
+                            Section(header: Text("Denied Requests (\(filteredDeniedRequests.count))").font(.headline).foregroundColor(.warningRed)) {
+                                if filteredDeniedRequests.isEmpty { Text("No denied requests found.").foregroundColor(.textLight) }
+                                ForEach(filteredDeniedRequests) { request in
+                                    CompactRequestRow(request: request, onApprove: {}, onDeny: {}, showButtons: false)
+                                }
+                            }
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                         }
                     }
                     .listStyle(.insetGrouped)
+                    .animation(.default, value: filterMode)
                 }
             }
             .navigationTitle("Your Students")
@@ -136,10 +153,12 @@ struct StudentsListView: View {
         
         async let studentsTask = dataService.fetchStudents(for: instructorID)
         async let requestsTask = communityManager.fetchRequests(for: instructorID)
+        async let deniedTask = communityManager.fetchDeniedRequests(for: instructorID) // This will now work
         
         do {
             self.approvedStudents = try await studentsTask
             self.pendingRequests = try await requestsTask
+            self.deniedRequests = try await deniedTask
         } catch {
             print("Failed to fetch data: \(error)")
         }
@@ -153,7 +172,7 @@ struct StudentsListView: View {
             } else {
                 try await communityManager.denyRequest(request)
             }
-            await fetchData() // Refresh both lists
+            await fetchData()
         } catch {
             print("Failed to handle request: \(error)")
         }
@@ -164,7 +183,7 @@ struct StudentsListView: View {
         
         do {
             try await communityManager.removeStudent(studentID: studentID, instructorID: instructorID)
-            await fetchData() // Refresh both lists
+            await fetchData()
         } catch {
             print("Failed to remove student: \(error)")
         }
@@ -190,14 +209,18 @@ struct StudentsListView: View {
 }
 
 enum StudentFilter: String {
-    case all, active, completed
+    case pending = "Pending"
+    case active = "Active"
+    case completed = "Completed"
+    case denied = "Denied"
+    case all = "All Students"
 }
 
-// --- *** NEW REDESIGNED ROW *** ---
 struct CompactRequestRow: View {
     let request: StudentRequest
     let onApprove: () -> Void
     let onDeny: () -> Void
+    var showButtons: Bool = true
     
     var body: some View {
         HStack {
@@ -223,21 +246,25 @@ struct CompactRequestRow: View {
             
             Spacer()
             
-            // Buttons
-            HStack(spacing: 8) {
-                Button(action: onDeny) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.warningRed)
+            if showButtons {
+                HStack(spacing: 8) {
+                    Button(action: onDeny) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.warningRed)
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+                    
+                    Button(action: onApprove) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.accentGreen)
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
                 }
-                .buttonStyle(BorderlessButtonStyle()) // Make button tappable in list
-                
-                Button(action: onApprove) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.accentGreen)
-                }
-                .buttonStyle(BorderlessButtonStyle())
+            } else {
+                // Use the StatusBadge that is defined in MyInstructorsView.swift
+                StatusBadge(status: request.status)
             }
         }
         .padding(10)
@@ -246,7 +273,6 @@ struct CompactRequestRow: View {
         .shadow(color: Color.textDark.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 }
-// --- *** END OF NEW ROW *** ---
 
 
 struct StudentListCard: View {
@@ -316,3 +342,5 @@ struct StudentListCard: View {
         .shadow(color: Color.textDark.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 }
+
+// --- DUPLICATE StatusBadge STRUCT REMOVED ---

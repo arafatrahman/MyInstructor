@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
-// --- UPDATED: No code changes needed, this file is correct and will no longer be ambiguous ---
+// --- UPDATED: Default filter is now "All Categories", showing all sections ---
 
 import SwiftUI
 
@@ -16,27 +16,25 @@ struct StudentsListView: View {
     
     @State private var isLoading = true
     @State private var searchText = ""
-    @State private var filterMode: StudentFilter = .pending
+    // --- THIS IS THE CHANGE ---
+    @State private var filterMode: StudentFilter = .allCategories // New default
     
     @State private var conversationToPush: Conversation? = nil
+    @State private var chatErrorAlert: (isPresented: Bool, message: String) = (false, "")
     
-    var filteredApprovedStudents: [Student] {
-        // This filter logic is now separate from the main filter
-        let list: [Student]
-        if filterMode == .active {
-            list = approvedStudents.filter { $0.averageProgress < 1.0 }
-        } else if filterMode == .completed {
-            list = approvedStudents.filter { $0.averageProgress >= 1.0 }
-        } else {
-            list = approvedStudents // for .all
-        }
-        
-        if searchText.isEmpty {
-            return list
-        } else {
-            return list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
-        }
+    // --- UPDATED: Split 'filteredApprovedStudents' into two new properties ---
+    var activeStudents: [Student] {
+        let list = approvedStudents.filter { $0.averageProgress < 1.0 }
+        if searchText.isEmpty { return list }
+        return list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
+    
+    var completedStudents: [Student] {
+        let list = approvedStudents.filter { $0.averageProgress >= 1.0 }
+        if searchText.isEmpty { return list }
+        return list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+    // --- END OF CHANGE ---
     
     var filteredPendingRequests: [StudentRequest] {
         if searchText.isEmpty {
@@ -73,13 +71,14 @@ struct StudentsListView: View {
                 HStack {
                     SearchBar(text: $searchText, placeholder: "Search students by name")
                     
+                    // --- UPDATED PICKER ---
                     Picker("Filter", selection: $filterMode) {
+                        Text("All Categories").tag(StudentFilter.allCategories)
                         Text("Pending").tag(StudentFilter.pending)
                         Text("Active").tag(StudentFilter.active)
                         Text("Completed").tag(StudentFilter.completed)
                         Text("Denied").tag(StudentFilter.denied)
                         Text("Blocked").tag(StudentFilter.blocked)
-                        Text("All Students").tag(StudentFilter.all)
                     }
                     .pickerStyle(.menu)
                     .frame(width: 110)
@@ -96,27 +95,28 @@ struct StudentsListView: View {
                         message: "No students or requests yet. Students can find and request you from the Community Directory."
                     )
                 } else {
+                    // --- UPDATED: Removed 'switch' and now use 'if' to show sections ---
                     List {
-                        switch filterMode {
-                            
-                        case .pending:
+                        
+                        if filterMode == .allCategories || filterMode == .pending {
                             Section(header: Text("Pending Requests (\(filteredPendingRequests.count))").font(.headline).foregroundColor(.accentGreen)) {
                                 if filteredPendingRequests.isEmpty { Text("No pending requests found.").foregroundColor(.textLight) }
                                 ForEach(filteredPendingRequests) { request in
-                                    CompactRequestRow(request: request, onApprove: {
+                                    CompactRequestRow(request: request, filterMode: .pending, onApprove: {
                                         Task { await handleRequest(request, approve: true) }
                                     }, onDeny: {
                                         Task { await handleRequest(request, approve: false) }
-                                    })
+                                    }, onUnblock: {})
                                 }
                             }
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                        }
 
-                        case .active, .completed, .all:
-                            Section("\(filterMode.rawValue.capitalized) Students (\(filteredApprovedStudents.count))") {
-                                if filteredApprovedStudents.isEmpty { Text("No students match this filter.").foregroundColor(.textLight) }
-                                ForEach(filteredApprovedStudents) { student in
+                        if filterMode == .allCategories || filterMode == .active {
+                            Section(header: Text("Active Students (\(activeStudents.count))").font(.headline)) {
+                                if activeStudents.isEmpty { Text("No active students found.").foregroundColor(.textLight) }
+                                ForEach(activeStudents) { student in
                                     StudentListCard(student: student)
                                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                         Button { Task { await startChat(with: student) } } label: { Label("Message", systemImage: "message.fill") }
@@ -130,22 +130,47 @@ struct StudentsListView: View {
                                     .background(NavigationLink { StudentProfileView(student: student) } label: { EmptyView() }.opacity(0))
                                 }
                             }
+                        }
+                        
+                        if filterMode == .allCategories || filterMode == .completed {
+                            Section(header: Text("Completed Students (\(completedStudents.count))").font(.headline).foregroundColor(.textLight)) {
+                                if completedStudents.isEmpty { Text("No completed students found.").foregroundColor(.textLight) }
+                                ForEach(completedStudents) { student in
+                                    StudentListCard(student: student)
+                                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                        Button { Task { await startChat(with: student) } } label: { Label("Message", systemImage: "message.fill") }
+                                        .tint(.primaryBlue)
+                                    }
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        Button(role: .destructive) { Task { await removeStudent(student) } } label: { Label("Remove", systemImage: "trash.fill") }
+                                    }
+                                    .listRowSeparator(.hidden)
+                                    .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                                    .background(NavigationLink { StudentProfileView(student: student) } label: { EmptyView() }.opacity(0))
+                                }
+                            }
+                        }
 
-                        case .denied:
+                        if filterMode == .allCategories || filterMode == .denied {
                             Section(header: Text("Denied Requests (\(filteredDeniedRequests.count))").font(.headline).foregroundColor(.warningRed)) {
                                 if filteredDeniedRequests.isEmpty { Text("No denied requests found.").foregroundColor(.textLight) }
                                 ForEach(filteredDeniedRequests) { request in
-                                    CompactRequestRow(request: request, onApprove: {}, onDeny: {}, showButtons: false)
+                                    CompactRequestRow(request: request, filterMode: .denied, onApprove: {
+                                        Task { await handleRequest(request, approve: true) }
+                                    }, onDeny: {}, onUnblock: {})
                                 }
                             }
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                        }
                             
-                        case .blocked:
+                        if filterMode == .allCategories || filterMode == .blocked {
                             Section(header: Text("Blocked Students (\(filteredBlockedRequests.count))").font(.headline).foregroundColor(Color.black)) {
                                 if filteredBlockedRequests.isEmpty { Text("No blocked students found.").foregroundColor(.textLight) }
                                 ForEach(filteredBlockedRequests) { request in
-                                    CompactRequestRow(request: request, onApprove: {}, onDeny: {}, showButtons: false)
+                                    CompactRequestRow(request: request, filterMode: .blocked, onApprove: {}, onDeny: {}, onUnblock: {
+                                        Task { await unblockStudent(request) }
+                                    })
                                 }
                             }
                             .listRowSeparator(.hidden)
@@ -163,6 +188,12 @@ struct StudentsListView: View {
             .refreshable {
                 await fetchData()
             }
+            // Alert for chat errors (like being blocked)
+            .alert("Cannot Start Chat", isPresented: $chatErrorAlert.isPresented, actions: {
+                Button("OK") { }
+            }, message: {
+                Text(chatErrorAlert.message)
+            })
         }
     }
     
@@ -210,6 +241,16 @@ struct StudentsListView: View {
         }
     }
     
+    func unblockStudent(_ request: StudentRequest) async {
+        guard let instructorID = authManager.user?.id else { return }
+        do {
+            try await communityManager.unblockStudent(studentID: request.studentID, instructorID: instructorID)
+            await fetchData() // Refresh all lists
+        } catch {
+            print("Failed to unblock student: \(error)")
+        }
+    }
+    
     func startChat(with student: Student) async {
         guard let currentUser = authManager.user else { return }
         do {
@@ -223,27 +264,32 @@ struct StudentsListView: View {
                 otherUser: otherUser
             )
             self.conversationToPush = conversation
+        } catch let error as ChatError {
+             print("Chat blocked: \(error.localizedDescription)")
+             self.chatErrorAlert = (true, error.localizedDescription)
         } catch {
             print("Error starting chat: \(error.localizedDescription)")
+            self.chatErrorAlert = (true, error.localizedDescription)
         }
     }
 }
 
 // --- UPDATED ENUM ---
 enum StudentFilter: String {
+    case allCategories = "All"
     case pending = "Pending"
     case active = "Active"
     case completed = "Completed"
     case denied = "Denied"
     case blocked = "Blocked"
-    case all = "All Students"
 }
 
 struct CompactRequestRow: View {
     let request: StudentRequest
+    let filterMode: StudentFilter
     let onApprove: () -> Void
     let onDeny: () -> Void
-    var showButtons: Bool = true
+    let onUnblock: () -> Void
     
     var body: some View {
         HStack {
@@ -269,7 +315,8 @@ struct CompactRequestRow: View {
             
             Spacer()
             
-            if showButtons {
+            switch filterMode {
+            case .pending:
                 HStack(spacing: 8) {
                     Button(action: onDeny) {
                         Image(systemName: "xmark.circle.fill")
@@ -285,9 +332,32 @@ struct CompactRequestRow: View {
                     }
                     .buttonStyle(BorderlessButtonStyle())
                 }
-            } else {
-                // This will no longer be ambiguous
-                StatusBadge(status: request.status)
+            case .blocked:
+                Button(action: onUnblock) {
+                    Text("Unblock")
+                        .font(.caption).bold()
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.accentGreen.opacity(0.15))
+                        .foregroundColor(.accentGreen)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(BorderlessButtonStyle())
+            
+            case .denied:
+                Button(action: onApprove) {
+                    Text("Approve")
+                        .font(.caption).bold()
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.accentGreen.opacity(0.15))
+                        .foregroundColor(.accentGreen)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(BorderlessButtonStyle())
+                
+            default:
+                EmptyView()
             }
         }
         .padding(10)

@@ -1,4 +1,6 @@
 // File: Core/Models/StudentRequest.swift
+// --- UPDATED: Added .blocked status ---
+
 import Foundation
 import FirebaseFirestore
 
@@ -16,5 +18,5 @@ enum RequestStatus: String, Codable {
     case pending
     case approved
     case denied
-    case blocked // --- NEW ---
+    case blocked // --- ADDED ---
 }

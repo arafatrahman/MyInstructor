@@ -70,7 +70,7 @@ struct StudentProfileView: View {
                     Text("Remove Student")
                     // --- REMOVED: .font() and .padding() modifiers ---
                 }
-                .buttonStyle(SecondaryDrivingAppButtonStyle()) // This will now work
+                .buttonStyle(RemoveDestructiveDrivingAppButtonStyle()) // This will now work
                 .padding(.horizontal)
 
                 Button(role: .destructive) {
@@ -342,6 +342,22 @@ struct DestructiveDrivingAppButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .background(Color.warningRed) // Use red
             .foregroundColor(.white)
+            .cornerRadius(12)
+            .shadow(color: Color.warningRed.opacity(0.3), radius: configuration.isPressed ? 3 : 8, x: 0, y: configuration.isPressed ? 2 : 5)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .opacity(configuration.isPressed ? 0.9 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+struct RemoveDestructiveDrivingAppButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity)
+            .background(Color.secondaryGray) // Use red
+            .foregroundColor(.black)
             .cornerRadius(12)
             .shadow(color: Color.warningRed.opacity(0.3), radius: configuration.isPressed ? 3 : 8, x: 0, y: configuration.isPressed ? 2 : 5)
             .scaleEffect(configuration.isPressed ? 0.98 : 1.0)

@@ -1,5 +1,5 @@
 // File: MyInstructor/Core/Managers/ChatManager.swift
-// --- UPDATED: Added deleteMessage and updateMessage functions ---
+// --- UPDATED: Added block check to getOrCreateConversation ---
 
 import Foundation
 import Combine
@@ -9,6 +9,11 @@ class ChatManager: ObservableObject {
     private let db = Firestore.firestore()
     private var conversationsCollection: CollectionReference {
         db.collection("conversations")
+    }
+    
+    // --- ADDED: A reference to the requests collection for checking blocks ---
+    private var requestsCollection: CollectionReference {
+        db.collection("student_requests")
     }
     
     @Published var conversations = [Conversation]()
@@ -62,9 +67,6 @@ class ChatManager: ObservableObject {
     func sendMessage(conversationID: String, senderID: String, text: String) async throws {
         let message = ChatMessage(senderID: senderID, text: text)
         
-        // --- This logic is now handled by the sendOrUpdate function in ChatView ---
-        // We still need this function for sending *new* messages
-        
         try await conversationsCollection.document(conversationID)
             .collection("messages")
             .addDocument(from: message)
@@ -75,7 +77,6 @@ class ChatManager: ObservableObject {
         ])
     }
     
-    // --- *** NEW FUNCTION: Called on "Delete" *** ---
     func deleteMessage(conversationID: String, messageID: String) async throws {
         let messageRef = conversationsCollection.document(conversationID)
             .collection("messages")
@@ -85,12 +86,8 @@ class ChatManager: ObservableObject {
             "text": "This message was deleted.",
             "isDeleted": true
         ])
-        
-        // TODO: Also check if this was the *last* message
-        // and update the conversation's 'lastMessage' field if so.
     }
     
-    // --- *** NEW FUNCTION: Called on "Edit" *** ---
     func updateMessage(conversationID: String, messageID: String, newText: String) async throws {
         let messageRef = conversationsCollection.document(conversationID)
             .collection("messages")
@@ -100,18 +97,32 @@ class ChatManager: ObservableObject {
             "text": newText,
             "isEdited": true
         ])
-        
-        // TODO: Also check if this was the *last* message
-        // and update the conversation's 'lastMessage' field if so.
     }
 
-    // --- *** (getOrCreateConversation is unchanged) *** ---
     func getOrCreateConversation(currentUser: AppUser, otherUser: AppUser) async throws -> Conversation {
         guard let currentUserID = currentUser.id, let otherUserID = otherUser.id else {
             throw NSError(domain: "ChatManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid user IDs"])
         }
         
-        // 1. Check if a conversation already exists
+        // 1. Determine who is the student and who is the instructor
+        let (studentID, instructorID) = (currentUser.role == .student) ?
+            (currentUserID, otherUserID) : (otherUserID, currentUserID)
+
+        // 2. Check if a 'blocked' request exists
+        let blockQuery = try await requestsCollection
+            .whereField("studentID", isEqualTo: studentID)
+            .whereField("instructorID", isEqualTo: instructorID)
+            .whereField("status", isEqualTo: RequestStatus.blocked.rawValue)
+            .limit(to: 1)
+            .getDocuments()
+
+        // 3. If a block exists, throw an error
+        if !blockQuery.isEmpty {
+            print("!!! ChatManager: Blocked. Chat cannot be initiated.")
+            throw ChatError.blocked // This relies on ChatModels.swift
+        }
+        
+        // 4. Check if a conversation already exists
         let query = conversationsCollection
             .whereField("participantIDs", arrayContains: currentUserID)
         
@@ -120,13 +131,12 @@ class ChatManager: ObservableObject {
         for doc in snapshot.documents {
             let participantIDs = doc.data()["participantIDs"] as? [String] ?? []
             if participantIDs.contains(otherUserID) {
-                // A conversation already exists, return it
                 print("ChatManager: Found existing conversation.")
                 return try doc.data(as: Conversation.self)
             }
         }
         
-        // 2. No conversation exists. Create a new one.
+        // 5. No conversation exists. Create a new one.
         print("ChatManager: Creating new conversation...")
         let newConversation = Conversation(
             participantIDs: [currentUserID, otherUserID],

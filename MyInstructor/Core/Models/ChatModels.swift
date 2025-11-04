@@ -1,5 +1,5 @@
 // File: MyInstructor/Core/Models/ChatModels.swift
-// --- UPDATED: Added isEdited and isDeleted flags ---
+// --- UPDATED: Added ChatError enum ---
 
 import Foundation
 import FirebaseFirestore
@@ -18,7 +18,7 @@ struct Conversation: Identifiable, Codable, Hashable {
     // For the conversation list preview
     var lastMessage: String?
     var lastMessageTimestamp: Date?
-    var unreadCount: Int = 0 // You can implement this later
+    var unreadCount: Int = 0
 }
 
 // This document is for an individual message
@@ -30,7 +30,19 @@ struct ChatMessage: Identifiable, Codable, Hashable {
     var text: String // Changed to 'var' so it can be updated
     @ServerTimestamp var timestamp: Date?
     
-    // --- NEWLY ADDED FLAGS ---
     var isEdited: Bool? = false
     var isDeleted: Bool? = false
+}
+
+// --- *** NEW, CORRECT LOCATION FOR CHATERROR *** ---
+// Error to throw when a chat is initiated with a blocked user
+enum ChatError: Error, LocalizedError {
+    case blocked
+    
+    var errorDescription: String? {
+        switch self {
+        case .blocked:
+            return "This user cannot be messaged."
+        }
+    }
 }

@@ -1,11 +1,14 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Common/Views/DashboardHeader.swift
-// --- UPDATED: Added Messages icon link ---
+// --- UPDATED: To accept a real notification count ---
 
 import SwiftUI
 
 // Shared Header for Instructor and Student Dashboards (Flow 5 & 6)
 struct DashboardHeader: View {
     @EnvironmentObject var authManager: AuthManager
+
+    // --- *** THIS IS THE NEW LINE *** ---
+    let notificationCount: Int // This view now requires a count
 
     var userName: String {
         authManager.user?.name ?? (authManager.role == .instructor ? "Instructor" : "Student")
@@ -67,13 +70,13 @@ struct DashboardHeader: View {
                         .font(.title2)
                         .foregroundColor(.textDark)
 
-                    // Placeholder for badge count
-                    // TODO: Replace with actual count logic if needed
+                    // --- *** THIS IS THE FIX *** ---
+                    // Use the real notificationCount to show/hide the badge
                     Circle()
                         .fill(Color.warningRed)
                         .frame(width: 10, height: 10)
                         .offset(x: 8, y: -8)
-                        .opacity(3 > 0 ? 1 : 0) // Example: Show badge if count > 0
+                        .opacity(notificationCount > 0 ? 1 : 0) // Use the real count
                 }
             }
             .padding(.trailing, 10) // Add some spacing

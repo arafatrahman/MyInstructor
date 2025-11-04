@@ -1,11 +1,13 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/StudentDashboardView.swift
+// --- UPDATED: Notification count now includes .blocked status ---
+
 import SwiftUI
 
 // Flow Item 6: Student Dashboard
 struct StudentDashboardView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var dataService: DataService
-    
-    // Removed mock student ID
+    @EnvironmentObject var communityManager: CommunityManager // To fetch request status
     
     @State private var upcomingLesson: Lesson?
     @State private var progress: Double = 0.0 // Default to 0
@@ -13,11 +15,13 @@ struct StudentDashboardView: View {
     @State private var paymentDue: Bool = false
     @State private var isLoading = true
     
+    @State private var notificationCount: Int = 0 // State to hold the count
+    
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
-                    DashboardHeader() // Shared Component
+                    DashboardHeader(notificationCount: notificationCount) // Pass the count
                     
                     if isLoading {
                         ProgressView("Loading Dashboard...")
@@ -71,12 +75,25 @@ struct StudentDashboardView: View {
         }
         
         isLoading = true
+        
         do {
-            let data = try await dataService.fetchStudentDashboardData(for: studentID)
+            // Fetch dashboard data and notifications in parallel
+            async let dataTask = dataService.fetchStudentDashboardData(for: studentID)
+            async let notificationsTask = communityManager.fetchSentRequests(for: studentID)
+
+            // Process dashboard data
+            let data = try await dataTask
             self.upcomingLesson = data.upcomingLesson
             self.progress = data.progress
             self.latestFeedback = data.latestFeedback
             self.paymentDue = data.paymentDue
+            
+            // --- *** THIS IS THE FIX *** ---
+            // Process notification count (count denied OR blocked requests)
+            let requests = (try? await notificationsTask) ?? []
+            self.notificationCount = requests.filter { $0.status == .denied || $0.status == .blocked }.count
+            // --- *** END OF FIX *** ---
+
         } catch {
             print("Failed to fetch student data: \(error)")
         }
@@ -102,9 +119,6 @@ struct StudentUpcomingLessonContent: View {
                 .font(.callout)
                 .foregroundColor(.textLight)
                 
-                // Removed hardcoded instructor name.
-                // This data (instructor name) needs to be fetched
-                // separately using the lesson.instructorID.
                 HStack {
                     Image(systemName: "person.circle.fill")
                     Text("Instructor ID: \(lesson.instructorID.prefix(5))...") // Placeholder

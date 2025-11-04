@@ -1,5 +1,5 @@
 // File: MyInstructor/Features/Student/MyInstructorsView.swift
-// --- UPDATED: Added swipe-to-remove instructor ---
+// --- UPDATED: StatusBadge now handles 'blocked' ---
 
 import SwiftUI
 
@@ -28,12 +28,16 @@ struct MyInstructorsView: View {
         sentRequests.filter { $0.status == .denied }
     }
     
+    private var blockedRequests: [StudentRequest] {
+        sentRequests.filter { $0.status == .blocked }
+    }
+    
     var body: some View {
         NavigationView {
             VStack {
                 Picker("Request Status", selection: $selectedStatus) {
                     Text("My Instructors (\(approvedRequests.count))").tag(MyInstructorsFilter.approved)
-                    Text("Pending (\(pendingRequests.count))").tag(MyInstructorsFilter.pending)
+                    Text("Pending (\(pendingRequests.count + deniedRequests.count + blockedRequests.count))").tag(MyInstructorsFilter.pending) // Updated count
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
@@ -71,7 +75,6 @@ struct MyInstructorsView: View {
                                         NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
                                             MyInstructorRow(request: request)
                                         }
-                                        // --- *** NEW SWIPE TO REMOVE *** ---
                                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                             Button(role: .destructive) {
                                                 Task { await removeInstructor(request) }
@@ -79,17 +82,16 @@ struct MyInstructorsView: View {
                                                 Label("Remove", systemImage: "trash.fill")
                                             }
                                         }
-                                        // --- *** END OF NEW FEATURE *** ---
                                     }
                                 }
                             }
                             .listStyle(.insetGrouped)
                         }
                     } else {
-                        if pendingRequests.isEmpty && deniedRequests.isEmpty {
+                        if pendingRequests.isEmpty && deniedRequests.isEmpty && blockedRequests.isEmpty {
                             EmptyStateView(
                                 icon: "paperplane.fill",
-                                message: "You have no pending or denied requests."
+                                message: "You have no pending, denied, or blocked requests."
                             )
                         } else {
                             List {
@@ -113,6 +115,13 @@ struct MyInstructorsView: View {
                                             NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
                                                 MyInstructorRow(request: request)
                                             }
+                                        }
+                                    }
+                                }
+                                if !blockedRequests.isEmpty {
+                                    Section("Blocked Requests") {
+                                        ForEach(blockedRequests) { request in
+                                            MyInstructorRow(request: request)
                                         }
                                     }
                                 }
@@ -158,7 +167,6 @@ struct MyInstructorsView: View {
         }
     }
     
-    // --- *** NEW REMOVE FUNCTION *** ---
     private func removeInstructor(_ request: StudentRequest) async {
         guard let studentID = authManager.user?.id else { return }
         do {
@@ -218,5 +226,39 @@ struct MyInstructorRow: View {
                 }
             }
         }
+    }
+}
+
+
+// A simple badge to show the request status
+struct StatusBadge: View {
+    let status: RequestStatus
+    
+    var text: String {
+        switch status {
+        case .pending: return "Pending"
+        case .approved: return "Approved"
+        case .denied: return "Denied"
+        case .blocked: return "Blocked" // --- FIX: Added .blocked case ---
+        }
+    }
+    
+    var color: Color {
+        switch status {
+        case .pending: return .orange
+        case .approved: return .accentGreen
+        case .denied: return .warningRed
+        case .blocked: return .black // --- FIX: Added .blocked case ---
+        }
+    }
+    
+    var body: some View {
+        Text(text)
+            .font(.caption).bold()
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(color.opacity(0.15))
+            .foregroundColor(color)
+            .cornerRadius(8)
     }
 }

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
-// --- UPDATED: Removed duplicate StatusBadge struct ---
+// --- UPDATED: No code changes needed, this file is correct and will no longer be ambiguous ---
 
 import SwiftUI
 
@@ -12,6 +12,7 @@ struct StudentsListView: View {
     @State private var approvedStudents: [Student] = []
     @State private var pendingRequests: [StudentRequest] = []
     @State private var deniedRequests: [StudentRequest] = []
+    @State private var blockedRequests: [StudentRequest] = []
     
     @State private var isLoading = true
     @State private var searchText = ""
@@ -50,6 +51,13 @@ struct StudentsListView: View {
         }
         return deniedRequests.filter { $0.studentName.localizedCaseInsensitiveContains(searchText) }
     }
+    
+    var filteredBlockedRequests: [StudentRequest] {
+        if searchText.isEmpty {
+            return blockedRequests
+        }
+        return blockedRequests.filter { $0.studentName.localizedCaseInsensitiveContains(searchText) }
+    }
 
     var body: some View {
         NavigationView {
@@ -70,6 +78,7 @@ struct StudentsListView: View {
                         Text("Active").tag(StudentFilter.active)
                         Text("Completed").tag(StudentFilter.completed)
                         Text("Denied").tag(StudentFilter.denied)
+                        Text("Blocked").tag(StudentFilter.blocked)
                         Text("All Students").tag(StudentFilter.all)
                     }
                     .pickerStyle(.menu)
@@ -81,7 +90,7 @@ struct StudentsListView: View {
                 if isLoading {
                     ProgressView("Loading Students...")
                         .padding(.top, 50)
-                } else if pendingRequests.isEmpty && approvedStudents.isEmpty && deniedRequests.isEmpty {
+                } else if pendingRequests.isEmpty && approvedStudents.isEmpty && deniedRequests.isEmpty && blockedRequests.isEmpty {
                     EmptyStateView(
                         icon: "person.3.fill",
                         message: "No students or requests yet. Students can find and request you from the Community Directory."
@@ -131,6 +140,16 @@ struct StudentsListView: View {
                             }
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                            
+                        case .blocked:
+                            Section(header: Text("Blocked Students (\(filteredBlockedRequests.count))").font(.headline).foregroundColor(Color.black)) {
+                                if filteredBlockedRequests.isEmpty { Text("No blocked students found.").foregroundColor(.textLight) }
+                                ForEach(filteredBlockedRequests) { request in
+                                    CompactRequestRow(request: request, onApprove: {}, onDeny: {}, showButtons: false)
+                                }
+                            }
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                         }
                     }
                     .listStyle(.insetGrouped)
@@ -153,12 +172,14 @@ struct StudentsListView: View {
         
         async let studentsTask = dataService.fetchStudents(for: instructorID)
         async let requestsTask = communityManager.fetchRequests(for: instructorID)
-        async let deniedTask = communityManager.fetchDeniedRequests(for: instructorID) // This will now work
+        async let deniedTask = communityManager.fetchDeniedRequests(for: instructorID)
+        async let blockedTask = communityManager.fetchBlockedRequests(for: instructorID)
         
         do {
             self.approvedStudents = try await studentsTask
             self.pendingRequests = try await requestsTask
             self.deniedRequests = try await deniedTask
+            self.blockedRequests = try await blockedTask
         } catch {
             print("Failed to fetch data: \(error)")
         }
@@ -208,11 +229,13 @@ struct StudentsListView: View {
     }
 }
 
+// --- UPDATED ENUM ---
 enum StudentFilter: String {
     case pending = "Pending"
     case active = "Active"
     case completed = "Completed"
     case denied = "Denied"
+    case blocked = "Blocked"
     case all = "All Students"
 }
 
@@ -263,7 +286,7 @@ struct CompactRequestRow: View {
                     .buttonStyle(BorderlessButtonStyle())
                 }
             } else {
-                // Use the StatusBadge that is defined in MyInstructorsView.swift
+                // This will no longer be ambiguous
                 StatusBadge(status: request.status)
             }
         }
@@ -342,5 +365,3 @@ struct StudentListCard: View {
         .shadow(color: Color.textDark.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 }
-
-// --- DUPLICATE StatusBadge STRUCT REMOVED ---

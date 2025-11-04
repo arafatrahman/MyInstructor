@@ -1,5 +1,6 @@
 // File: MyInstructor/Features/Student/StudentRequestsView.swift
 // (This is a NEW file)
+// --- UPDATED: Removed the duplicate StatusBadge struct ---
 
 import SwiftUI
 
@@ -162,33 +163,4 @@ struct StudentRequestRow: View {
     }
 }
 
-// A simple badge to show the request status
-struct StatusBadge: View {
-    let status: RequestStatus
-    
-    var text: String {
-        switch status {
-        case .pending: return "Pending"
-        case .approved: return "Approved"
-        case .denied: return "Denied"
-        }
-    }
-    
-    var color: Color {
-        switch status {
-        case .pending: return .orange
-        case .approved: return .accentGreen
-        case .denied: return .warningRed
-        }
-    }
-    
-    var body: some View {
-        Text(text)
-            .font(.caption).bold()
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(color.opacity(0.15))
-            .foregroundColor(color)
-            .cornerRadius(8)
-    }
-}
+// --- The duplicate StatusBadge struct has been REMOVED from here ---

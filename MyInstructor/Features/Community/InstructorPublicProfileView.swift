@@ -1,5 +1,5 @@
 // File: Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: Removed the duplicate 'ContactRow' struct ---
+// --- UPDATED: Fixed exhaustive switch error and added 'blocked' state logic ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -9,6 +9,7 @@ enum RequestButtonState {
     case pending
     case approved
     case denied
+    case blocked // --- ADDED ---
 }
 
 struct InstructorPublicProfileView: View {
@@ -79,7 +80,8 @@ struct InstructorPublicProfileView: View {
                             .bold()
                     }
                     .disabled(buttonIsDisabled)
-                    .tint(requestState == .pending ? .red : appBlue)
+                    // --- UPDATED: Change tint for pending or blocked ---
+                    .tint(requestState == .pending ? .red : (requestState == .blocked ? .gray : appBlue))
                 }
             }
         }
@@ -102,11 +104,13 @@ struct InstructorPublicProfileView: View {
         case .pending: return "Cancel Request"
         case .approved: return "Approved"
         case .denied: return "Re-apply"
+        case .blocked: return "Blocked" // --- ADDED ---
         }
     }
     
     var buttonIsDisabled: Bool {
-        return requestState == .approved || isLoading
+        // --- UPDATED: Disable if approved or blocked ---
+        return requestState == .approved || requestState == .blocked || isLoading
     }
     
     func handleRequestButtonTap() {
@@ -119,7 +123,7 @@ struct InstructorPublicProfileView: View {
                 await sendRequest()
             case .pending:
                 await cancelRequest()
-            case .approved:
+            case .approved, .blocked: // --- UPDATED ---
                 break
             }
             isLoading = false
@@ -140,6 +144,8 @@ struct InstructorPublicProfileView: View {
             let requests = try await communityManager.fetchSentRequests(for: studentID)
             if let existingRequest = requests.first(where: { $0.instructorID == instructorID }) {
                 self.currentRequestID = existingRequest.id
+                
+                // --- *** THIS IS THE FIX *** ---
                 switch existingRequest.status {
                 case .pending:
                     self.requestState = .pending
@@ -147,7 +153,11 @@ struct InstructorPublicProfileView: View {
                     self.requestState = .approved
                 case .denied:
                     self.requestState = .denied
+                case .blocked:
+                    self.requestState = .blocked
                 }
+                // --- *** END OF FIX *** ---
+                
             } else {
                 self.requestState = .idle
                 self.currentRequestID = nil
@@ -168,7 +178,10 @@ struct InstructorPublicProfileView: View {
             await loadData()
         } catch let error as RequestError {
             self.alertMessage = error.localizedDescription
-            self.requestState = (error == .alreadyPending) ? .pending : .approved
+            // Sync state based on error
+            if error == .alreadyPending { self.requestState = .pending }
+            if error == .alreadyApproved { self.requestState = .approved }
+            if error == .blocked { self.requestState = .blocked }
         } catch {
             self.alertMessage = error.localizedDescription
         }

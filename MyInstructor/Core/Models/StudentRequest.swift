@@ -16,4 +16,5 @@ enum RequestStatus: String, Codable {
     case pending
     case approved
     case denied
+    case blocked // --- NEW ---
 }

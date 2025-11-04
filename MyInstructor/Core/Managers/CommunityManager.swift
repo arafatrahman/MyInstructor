@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
-// --- UPDATED: Removed the line that caused the permissions error ---
+// --- UPDATED: Removed lines causing permissions errors ---
 
 import Combine
 import Foundation
@@ -8,6 +8,7 @@ import FirebaseFirestore
 enum RequestError: Error, LocalizedError {
     case alreadyPending
     case alreadyApproved
+    case blocked
     
     var errorDescription: String? {
         switch self {
@@ -15,6 +16,8 @@ enum RequestError: Error, LocalizedError {
             return "A request is already pending with this instructor."
         case .alreadyApproved:
             return "You are already an approved student of this instructor."
+        case .blocked:
+            return "You are not allowed to send a request to this instructor."
         }
     }
 }
@@ -87,6 +90,10 @@ class CommunityManager: ObservableObject {
 
         for doc in existingQuery.documents {
             if let status = doc.data()["status"] as? String {
+                if status == RequestStatus.blocked.rawValue {
+                    print("Student is blocked by this instructor.")
+                    throw RequestError.blocked
+                }
                 if status == RequestStatus.pending.rawValue {
                     print("Request already pending.")
                     throw RequestError.alreadyPending
@@ -139,6 +146,17 @@ class CommunityManager: ObservableObject {
         return snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
     }
     
+    // Fetches BLOCKED requests
+    func fetchBlockedRequests(for instructorID: String) async throws -> [StudentRequest] {
+        let snapshot = try await requestsCollection
+            .whereField("instructorID", isEqualTo: instructorID)
+            .whereField("status", isEqualTo: RequestStatus.blocked.rawValue)
+            .order(by: "timestamp", descending: true)
+            .getDocuments()
+            
+        return snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
+    }
+    
     func approveRequest(_ request: StudentRequest) async throws {
         guard let requestID = request.id else { throw URLError(.badServerResponse) }
         
@@ -171,11 +189,6 @@ class CommunityManager: ObservableObject {
         let instructorRef = usersCollection.document(request.instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayUnion([request.studentID])], forDocument: instructorRef)
         
-        // --- THIS WAS THE FAILING LINE (REMOVED) ---
-        // let studentRef = usersCollection.document(request.studentID)
-        // batch.updateData(["instructorIDs": FieldValue.arrayUnion([request.instructorID])], forDocument: studentRef)
-        // --- END OF FIX ---
-        
         // 3. Create the new conversation
         let conversationRef = conversationsCollection.document()
         try batch.setData(from: newConversation, forDocument: conversationRef)
@@ -189,14 +202,16 @@ class CommunityManager: ObservableObject {
         try await requestsCollection.document(requestID).updateData(["status": RequestStatus.denied.rawValue])
     }
     
+    // "Remove" - sets status to denied
     func removeStudent(studentID: String, instructorID: String) async throws {
         let batch = db.batch()
         
         let instructorRef = usersCollection.document(instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayRemove([studentID])], forDocument: instructorRef)
         
-        let studentRef = usersCollection.document(studentID)
-        batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
+        // --- THIS LINE WAS THE ERROR AND IS NOW REMOVED ---
+        // let studentRef = usersCollection.document(studentID)
+        // batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
         
         let requestQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
@@ -211,15 +226,68 @@ class CommunityManager: ObservableObject {
         try await batch.commit()
     }
     
-    func removeInstructor(instructorID: String, studentID: String) async throws {
+    // "Block" - sets status to blocked
+    func blockStudent(studentID: String, instructorID: String) async throws {
         let batch = db.batch()
         
-        let studentRef = usersCollection.document(studentID)
-        batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
-        
+        // 1. Remove from instructor's list
         let instructorRef = usersCollection.document(instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayRemove([studentID])], forDocument: instructorRef)
         
+        // --- THIS LINE WAS THE ERROR AND IS NOW REMOVED ---
+        // let studentRef = usersCollection.document(studentID)
+        // batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
+        
+        // 3. Find *any* request (approved, pending, or denied) and update it to 'blocked'
+        let requestQuery = try await requestsCollection
+            .whereField("studentID", isEqualTo: studentID)
+            .whereField("instructorID", isEqualTo: instructorID)
+            .getDocuments()
+        
+        if requestQuery.documents.isEmpty {
+            // No request exists, create a new one just to mark as blocked
+            print("No existing request, creating new 'blocked' record.")
+            
+            let studentDoc = try? await usersCollection.document(studentID).getDocument()
+            let studentName = (try? studentDoc?.data(as: AppUser.self))?.name ?? "Blocked User"
+            let studentPhoto = (try? studentDoc?.data(as: AppUser.self))?.photoURL
+            
+            let newBlockedRequest = StudentRequest(
+                studentID: studentID,
+                studentName: studentName,
+                studentPhotoURL: studentPhoto,
+                instructorID: instructorID,
+                status: .blocked,
+                timestamp: Date()
+            )
+            
+            let newReqRef = requestsCollection.document()
+            try batch.setData(from: newBlockedRequest, forDocument: newReqRef)
+            
+        } else {
+            // Request(s) exist, update them all to 'blocked'
+            print("Found \(requestQuery.documents.count) existing requests. Setting all to 'blocked'.")
+            for doc in requestQuery.documents {
+                batch.updateData(["status": RequestStatus.blocked.rawValue], forDocument: doc.reference)
+            }
+        }
+        
+        try await batch.commit()
+    }
+    
+    // "Remove Instructor" (Called by Student)
+    func removeInstructor(instructorID: String, studentID: String) async throws {
+        let batch = db.batch()
+        
+        // 1. Remove instructor from student's list
+        let studentRef = usersCollection.document(studentID)
+        batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
+        
+        // 2. Remove student from instructor's list
+        let instructorRef = usersCollection.document(instructorID)
+        batch.updateData(["studentIDs": FieldValue.arrayRemove([studentID])], forDocument: instructorRef)
+        
+        // 3. Find and update the request to 'denied'
         let requestQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
             .whereField("instructorID", isEqualTo: instructorID)

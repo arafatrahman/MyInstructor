@@ -1,20 +1,29 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
+// --- UPDATED: To fetch notification count and pass it to the header ---
+
 import SwiftUI
 
 // Flow Item 5: Instructor Dashboard
 struct InstructorDashboardView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var dataService: DataService
+    // --- *** ADD THIS LINE *** ---
+    @EnvironmentObject var communityManager: CommunityManager // Add this to fetch requests
     
     @State private var nextLesson: Lesson?
     @State private var weeklyEarnings: Double = 0
     @State private var avgStudentProgress: Double = 0
     @State private var isLoading = true
     
+    // --- *** ADD THIS LINE *** ---
+    @State private var notificationCount: Int = 0 // State to hold the count
+
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
-                    DashboardHeader() // Shared Component (Profile & Notifications)
+                    // --- *** UPDATE THIS LINE *** ---
+                    DashboardHeader(notificationCount: notificationCount) // Pass the count
                     
                     if isLoading {
                         ProgressView("Loading Dashboard...")
@@ -82,16 +91,27 @@ struct InstructorDashboardView: View {
     }
     
     func fetchData() async {
-        guard let instructorID = authManager.user?.id else { 
+        guard let instructorID = authManager.user?.id else {
             isLoading = false
-            return 
+            return
         }
         isLoading = true
+        
+        // --- *** THIS LOGIC IS UPDATED *** ---
+        // We fetch the dashboard data and the notification count at the same time
+        async let dashboardDataTask = dataService.fetchInstructorDashboardData(for: instructorID)
+        async let notificationCountTask = communityManager.fetchRequests(for: instructorID) // Fetches pending requests
+
         do {
-            let data = try await dataService.fetchInstructorDashboardData(for: instructorID)
+            // Get dashboard data
+            let data = try await dashboardDataTask
             self.nextLesson = data.nextLesson
             self.weeklyEarnings = data.earnings
             self.avgStudentProgress = data.avgProgress
+            
+            // Get the count from the notification task
+            self.notificationCount = (try await notificationCountTask).count
+            
         } catch {
             print("Failed to fetch instructor data: \(error)")
         }

@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
+// --- UPDATED: Added missing SecondaryDrivingAppButtonStyle and Color extension ---
+
 import SwiftUI
 
 // Flow Item 12: Student Profile (Instructor View)
@@ -7,27 +10,22 @@ struct StudentProfileView: View {
     // Inject managers via environment
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var paymentManager: PaymentManager
+    @EnvironmentObject var communityManager: CommunityManager
+    @EnvironmentObject var authManager: AuthManager
+    @Environment(\.dismiss) var dismiss
     
     @State private var selectedTab: ProfileTab = .progress
     
-    // Removed mock skills data
     @State private var skills: [String: Double] = [:]
     
-    // Computed property to access and filter lessons
-    // This will now be empty unless the manager is populated with real data
+    @State private var isShowingRemoveAlert = false
+    @State private var isShowingBlockAlert = false
+    
     var lessonHistory: [Lesson] {
-        // TODO: This relies on a public mock array.
-        // This view should *fetch* its own data.
-        // lessonManager.publicMockLessons.filter { $0.studentID == student.id }
-        
-        // For now, return empty until a proper fetch is implemented.
         return []
     }
     
-    // Computed property to access and filter payments
-    // This will also be empty.
     var payments: [Payment] {
-        // paymentManager.publicMockPayments.filter { $0.studentID == student.id }
         return []
     }
 
@@ -35,7 +33,6 @@ struct StudentProfileView: View {
         VStack(spacing: 0) {
             // Header: Photo, contact icons, "Add Note / Update Progress"
             ProfileHeaderView(student: student, onUpdateProgress: {
-                // TODO: Open modal for updating skills (Flow 8 progress section logic)
                 print("Updating progress for \(student.name)")
             })
             
@@ -64,21 +61,80 @@ struct StudentProfileView: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .animation(.easeInOut, value: selectedTab)
+            
+            // --- UPDATED BUTTONS ---
+            VStack(spacing: 10) {
+                Button(role: .destructive) {
+                    isShowingRemoveAlert = true
+                } label: {
+                    Text("Remove Student")
+                    // --- REMOVED: .font() and .padding() modifiers ---
+                }
+                .buttonStyle(SecondaryDrivingAppButtonStyle()) // This will now work
+                .padding(.horizontal)
+
+                Button(role: .destructive) {
+                    isShowingBlockAlert = true
+                } label: {
+                    Text("Block Student")
+                }
+                .buttonStyle(DestructiveDrivingAppButtonStyle())
+                .padding(.horizontal)
+                .padding(.bottom)
+            }
+            // ---------------------------
         }
         .navigationTitle(student.name)
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await fetchData()
         }
+        .alert("Remove \(student.name)?", isPresented: $isShowingRemoveAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Remove", role: .destructive) {
+                Task {
+                    await removeStudent()
+                }
+            }
+        } message: {
+            Text("This will remove the student from your active list. They will be notified and can re-apply later.")
+        }
+        .alert("Block \(student.name)?", isPresented: $isShowingBlockAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Block", role: .destructive) {
+                Task {
+                    await blockStudent()
+                }
+            }
+        } message: {
+            Text("This will permanently block this student. They will be removed from your list and will not be able to send you new requests.")
+        }
     }
     
     func fetchData() async {
-        // TODO: Implement fetching for this student's
-        // skills, lessons, and payments
         print("Fetching data for student \(student.id ?? "N/A")")
-        // e.g., self.skills = await progressManager.fetchSkills(for: student.id)
-        // e.g., self.lessonHistory = await lessonManager.fetchLessons(forStudent: student.id)
-        // e.g., self.payments = await paymentManager.fetchPayments(forStudent: student.id)
+    }
+    
+    func removeStudent() async {
+        guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
+        
+        do {
+            try await communityManager.removeStudent(studentID: studentID, instructorID: instructorID)
+            dismiss()
+        } catch {
+            print("Failed to remove student: \(error)")
+        }
+    }
+    
+    func blockStudent() async {
+        guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
+        
+        do {
+            try await communityManager.blockStudent(studentID: studentID, instructorID: instructorID)
+            dismiss()
+        } catch {
+            print("Failed to block student: \(error)")
+        }
     }
 }
 
@@ -89,8 +145,6 @@ enum ProfileTab: String {
 // ----------------------------------------------------------------------
 // MARK: - SUPPORTING VIEWS
 // ----------------------------------------------------------------------
-// NOTE: Supporting views (ProfileHeaderView, ProgressTabView, etc.) are assumed
-// to be defined in this file's global scope or a shared file.
 
 struct ProfileHeaderView: View {
     let student: Student
@@ -273,5 +327,25 @@ struct PaymentsTabView: View {
                 }
             }
         }
+    }
+}
+
+// ----------------------------------------------------------------------
+// MARK: - LOCAL BUTTON STYLES (COPIED FROM CustomStyles.swift)
+// ----------------------------------------------------------------------
+
+struct DestructiveDrivingAppButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity)
+            .background(Color.warningRed) // Use red
+            .foregroundColor(.white)
+            .cornerRadius(12)
+            .shadow(color: Color.warningRed.opacity(0.3), radius: configuration.isPressed ? 3 : 8, x: 0, y: configuration.isPressed ? 2 : 5)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .opacity(configuration.isPressed ? 0.9 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
 }

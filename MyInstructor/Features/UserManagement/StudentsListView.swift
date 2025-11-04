@@ -73,7 +73,7 @@ struct StudentsListView: View {
                     
                     // --- UPDATED PICKER ---
                     Picker("Filter", selection: $filterMode) {
-                        Text("All Categories").tag(StudentFilter.allCategories)
+                        Text("All").tag(StudentFilter.allCategories)
                         Text("Pending").tag(StudentFilter.pending)
                         Text("Active").tag(StudentFilter.active)
                         Text("Completed").tag(StudentFilter.completed)

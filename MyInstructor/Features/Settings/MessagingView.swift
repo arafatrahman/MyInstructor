@@ -1,10 +1,6 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/MessagingView.swift
-// --- UPDATED: Increased top padding on ChatView custom header ---
-
 import SwiftUI
 import Combine
 
-// --- (MessagingView and ConversationRow are unchanged) ---
 struct MessagingView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var chatManager: ChatManager
@@ -177,10 +173,17 @@ struct ChatView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var chatManager: ChatManager
+    // We need DataService to fetch the 'otherUser' object
+    @EnvironmentObject var dataService: DataService
+    
     let conversation: Conversation
     
     @State private var messageText: String = ""
     @State private var messageToEdit: ChatMessage? = nil
+    
+    // We must fetch the full AppUser object for the other participant
+    @State private var otherUser: AppUser? = nil
+    @State private var isLoadingOtherUser: Bool = true
     
     private var otherParticipantName: String {
         let otherID = conversation.participantIDs.first { $0 != authManager.user?.id } ?? "unknown"
@@ -195,7 +198,7 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             
-            // --- *** CUSTOM HEADER *** ---
+            // --- CUSTOM HEADER ---
             HStack(spacing: 8) {
                 Button {
                     chatManager.removeAllListeners()
@@ -221,15 +224,17 @@ struct ChatView: View {
                     Text(otherParticipantName)
                         .font(.headline)
                         .foregroundColor(.white)
-                    Text("Online")
+                    // Show connection status
+                    Text(chatManager.isConnectionActive ? "Online" : "Connection Removed")
                         .font(.caption2)
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundColor(.white.opacity(chatManager.isConnectionActive ? 0.8 : 1.0))
+                        .fontWeight(chatManager.isConnectionActive ? .regular : .bold)
                 }
                 Spacer()
             }
             .padding(.horizontal)
             .padding(.bottom, 10)
-            .padding(.top, 70) // --- *** THIS IS THE FIX *** ---
+            .padding(.top, 70) // Top padding for safe area
             .background(Color.primaryBlue)
             
             ScrollViewReader { proxy in
@@ -264,9 +269,30 @@ struct ChatView: View {
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
                 .task {
-                    guard let convoID = conversation.id else { return }
-                    chatManager.messages = []
+                    // This task now fetches the other user and starts all listeners
+                    guard let convoID = conversation.id, let currentUserID = authManager.user?.id else { return }
+                    
+                    isLoadingOtherUser = true
+                    
+                    // 1. Find other user's ID
+                    let otherUserID = conversation.participantIDs.first { $0 != currentUserID } ?? ""
+                    
+                    // 2. Fetch the full otherUser object
+                    self.otherUser = try? await dataService.fetchUser(withId: otherUserID)
+                    
+                    isLoadingOtherUser = false
+                    
+                    // 3. Start message listener
+                    chatManager.messages = [] // Clear messages
                     await chatManager.listenForMessages(conversationID: convoID)
+                    
+                    // 4. Start the new status listener
+                    if let currentUser = authManager.user, let otherUser = self.otherUser {
+                        await chatManager.listenForConnectionStatus(currentUser: currentUser, otherUser: otherUser)
+                    } else {
+                        // Failsafe: if we can't get user roles, disable the chat
+                        chatManager.isConnectionActive = false
+                    }
                 }
                 .onChange(of: chatManager.messages) {
                     if let lastMessage = chatManager.messages.last {
@@ -277,6 +303,18 @@ struct ChatView: View {
                 }
             }
             
+            // --- NEW WARNING BANNER ---
+            if !chatManager.isConnectionActive {
+                Text("You no longer have permission to send messages in this chat.")
+                    .font(.caption.bold())
+                    .foregroundColor(.white)
+                    .padding(8)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.warningRed)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+            
+            // Edit Message Banner
             if let messageToEdit {
                 HStack {
                     VStack(alignment: .leading) {
@@ -302,6 +340,7 @@ struct ChatView: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             
+            // --- MESSAGE INPUT BAR ---
             HStack(spacing: 12) {
                 TextField("Type a message...", text: $messageText, axis: .vertical)
                     .padding(.horizontal, 12)
@@ -310,22 +349,26 @@ struct ChatView: View {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .stroke(Color(.systemGray4), lineWidth: 1)
                     )
+                    // Disable if connection is lost
+                    .disabled(!chatManager.isConnectionActive || isLoadingOtherUser)
                 
                 Button(action: sendOrUpdateMessage) {
                     Image(systemName: "arrow.right")
                         .font(.headline.weight(.bold))
                         .foregroundColor(.white)
                         .frame(width: 36, height: 36)
-                        .background(messageText.isEmpty ? Color.secondaryGray : Color.primaryBlue)
+                        .background(messageText.isEmpty || !chatManager.isConnectionActive ? Color.secondaryGray : Color.primaryBlue)
                         .clipShape(Circle())
                 }
-                .disabled(messageText.isEmpty)
+                // Disable if connection is lost
+                .disabled(messageText.isEmpty || !chatManager.isConnectionActive || isLoadingOtherUser)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(Color(.systemBackground))
         }
         .animation(.default, value: messageToEdit)
+        .animation(.default, value: chatManager.isConnectionActive) // Animate the warning
         .navigationBarHidden(true)
         .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .tabBar)
@@ -356,9 +399,13 @@ struct ChatView: View {
                         senderID: senderID,
                         text: textToSend
                     )
+                } catch let error as ChatError {
+                    // This will be caught if the failsafe in sendMessage is triggered
+                    print("Chat blocked by manager: \(error.localizedDescription)")
+                    messageText = textToSend // Put text back
                 } catch {
                     print("Failed to send message: \(error)")
-                    messageText = textToSend
+                    messageText = textToSend // Put text back
                 }
             }
         }

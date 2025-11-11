@@ -1,5 +1,5 @@
 // File: MyInstructor/Core/Managers/ChatManager.swift
-// --- UPDATED: Added block check to getOrCreateConversation ---
+// --- UPDATED: To add a live connection status listener ---
 
 import Foundation
 import Combine
@@ -11,7 +11,6 @@ class ChatManager: ObservableObject {
         db.collection("conversations")
     }
     
-    // --- ADDED: A reference to the requests collection for checking blocks ---
     private var requestsCollection: CollectionReference {
         db.collection("student_requests")
     }
@@ -19,8 +18,16 @@ class ChatManager: ObservableObject {
     @Published var conversations = [Conversation]()
     @Published var messages = [ChatMessage]()
     
+    // --- *** NEW *** ---
+    // This will be true or false, and the UI will watch it
+    @Published var isConnectionActive: Bool = true
+    
     private var conversationsListener: ListenerRegistration?
     private var messagesListener: ListenerRegistration?
+    
+    // --- *** NEW *** ---
+    // A new listener to watch the student_requests status
+    private var statusListener: ListenerRegistration?
     
     // MARK: - Conversation List
     
@@ -63,8 +70,60 @@ class ChatManager: ObservableObject {
             print("ChatManager: Fetched \(self.messages.count) messages")
         }
     }
+
+    // --- *** NEW FUNCTION *** ---
+    /// Starts a live listener on the `student_requests` collection.
+    /// This sets `isConnectionActive` to false if a `.blocked` or `.denied` status is found.
+    @MainActor
+    func listenForConnectionStatus(currentUser: AppUser, otherUser: AppUser) {
+        guard let currentUserID = currentUser.id, let otherUserID = otherUser.id else {
+            self.isConnectionActive = false
+            return
+        }
+        
+        statusListener?.remove() // Remove old one
+        
+        // Determine who is student and instructor
+        let (studentID, instructorID) = (currentUser.role == .student) ?
+            (currentUserID, otherUserID) : (otherUserID, currentUserID)
+            
+        let deniedOrBlockedStatuses = [RequestStatus.blocked.rawValue, RequestStatus.denied.rawValue]
+        
+        // Query for a request that is .blocked OR .denied
+        let query = requestsCollection
+            .whereField("studentID", isEqualTo: studentID)
+            .whereField("instructorID", isEqualTo: instructorID)
+            .whereField("status", in: deniedOrBlockedStatuses)
+            .limit(to: 1)
+        
+        self.statusListener = query.addSnapshotListener { snapshot, error in
+            if let error {
+                print("Error listening for connection status: \(error.localizedDescription)")
+                // Default to active if there's an error
+                self.isConnectionActive = true
+                return
+            }
+            
+            // If we find any document, it means the connection is blocked or denied.
+            if let documents = snapshot?.documents, !documents.isEmpty {
+                print("!!! ChatManager Status: Connection is DENIED or BLOCKED.")
+                self.isConnectionActive = false
+            } else {
+                // No denied or blocked requests found.
+                print("ChatManager Status: Connection is Active.")
+                self.isConnectionActive = true
+            }
+        }
+    }
     
     func sendMessage(conversationID: String, senderID: String, text: String) async throws {
+        // --- *** NEW FAILSAFE *** ---
+        // Final check. If this is false, stop the message from being sent.
+        guard isConnectionActive else {
+            print("!!! ChatManager: sendMessage blocked. Connection is not active.")
+            throw ChatError.blocked
+        }
+        
         let message = ChatMessage(senderID: senderID, text: text)
         
         try await conversationsCollection.document(conversationID)
@@ -108,17 +167,19 @@ class ChatManager: ObservableObject {
         let (studentID, instructorID) = (currentUser.role == .student) ?
             (currentUserID, otherUserID) : (otherUserID, currentUserID)
 
-        // 2. Check if a 'blocked' request exists
+        // 2. Check if a 'blocked' or 'denied' request exists
+        let deniedOrBlockedStatuses = [RequestStatus.blocked.rawValue, RequestStatus.denied.rawValue]
+
         let blockQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
             .whereField("instructorID", isEqualTo: instructorID)
-            .whereField("status", isEqualTo: RequestStatus.blocked.rawValue)
+            .whereField("status", in: deniedOrBlockedStatuses) // <-- This is the fix from before
             .limit(to: 1)
             .getDocuments()
 
-        // 3. If a block exists, throw an error
+        // 3. If a block or denied request exists, throw an error
         if !blockQuery.isEmpty {
-            print("!!! ChatManager: Blocked. Chat cannot be initiated.")
+            print("!!! ChatManager: Blocked or Denied. Chat cannot be initiated.")
             throw ChatError.blocked // This relies on ChatModels.swift
         }
         
@@ -163,9 +224,19 @@ class ChatManager: ObservableObject {
     func removeAllListeners() {
         conversationsListener?.remove()
         messagesListener?.remove()
+        // --- *** NEW *** ---
+        statusListener?.remove()
+        
         conversationsListener = nil
         messagesListener = nil
+        // --- *** NEW *** ---
+        statusListener = nil
+        
         self.conversations = []
         self.messages = []
+        
+        // --- *** NEW *** ---
+        // Reset to default
+        self.isConnectionActive = true
     }
 }

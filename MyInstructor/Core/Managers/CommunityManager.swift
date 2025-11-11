@@ -1,6 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
-// --- THIS IS THE COMPLETE, CORRECTED FILE ---
-
 import Combine
 import Foundation
 import FirebaseFirestore
@@ -157,43 +154,68 @@ class CommunityManager: ObservableObject {
         return snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
     }
     
+    // --- *** THIS FUNCTION CONTAINS THE FIX *** ---
     func approveRequest(_ request: StudentRequest) async throws {
         guard let requestID = request.id else { throw URLError(.badServerResponse) }
         
-        let instructorDoc = try await usersCollection.document(request.instructorID).getDocument()
-        guard let instructor = try? instructorDoc.data(as: AppUser.self) else {
-            throw URLError(.cannotFindHost)
-        }
-
-        let newConversation = Conversation(
-            participantIDs: [request.studentID, request.instructorID],
-            participantNames: [
-                request.studentID: request.studentName,
-                request.instructorID: instructor.name ?? "Instructor"
-            ],
-            participantPhotoURLs: [
-                request.studentID: request.studentPhotoURL,
-                request.instructorID: instructor.photoURL
-            ],
-            lastMessage: "You are now connected!",
-            lastMessageTimestamp: Date()
-        )
+        // 1. Check if a conversation already exists (SECURE VERSION)
+        // We query for conversations the INSTRUCTOR is part of.
+        let query = conversationsCollection
+            .whereField("participantIDs", arrayContains: request.instructorID) // <-- THE FIX
         
+        let snapshot = try await query.getDocuments()
+        var conversationExists = false
+        
+        // Now loop through the instructor's (much smaller) list of chats
+        for doc in snapshot.documents {
+            let participantIDs = doc.data()["participantIDs"] as? [String] ?? []
+            // Check if this chat also contains the student
+            if participantIDs.contains(request.studentID) {
+                conversationExists = true
+                print("CommunityManager: Found existing conversation. Will not create a new one.")
+                break // Found it, stop looping
+            }
+        }
+        
+        // 2. Start batch
         let batch = db.batch()
         
-        // 1. Update the request to "approved"
+        // 3. Update the request to "approved"
         let requestRef = requestsCollection.document(requestID)
         batch.updateData(["status": RequestStatus.approved.rawValue], forDocument: requestRef)
         
-        // 2. Add student ID to instructor's "studentIDs" array
+        // 4. Add student ID to instructor's "studentIDs" array
         let instructorRef = usersCollection.document(request.instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayUnion([request.studentID])], forDocument: instructorRef)
         
-        // 3. Create the new conversation
-        let conversationRef = conversationsCollection.document()
-        try batch.setData(from: newConversation, forDocument: conversationRef)
+        // 5. Create a new conversation *only if* one doesn't exist
+        if !conversationExists {
+            print("CommunityManager: No existing chat. Creating a new one.")
+            // Need to fetch instructor data to get their name/photo
+            let instructorDoc = try await usersCollection.document(request.instructorID).getDocument()
+            guard let instructor = try? instructorDoc.data(as: AppUser.self) else {
+                throw URLError(.cannotFindHost) // Or some other appropriate error
+            }
+
+            let newConversation = Conversation(
+                participantIDs: [request.studentID, request.instructorID],
+                participantNames: [
+                    request.studentID: request.studentName,
+                    request.instructorID: instructor.name ?? "Instructor"
+                ],
+                participantPhotoURLs: [
+                    request.studentID: request.studentPhotoURL,
+                    request.instructorID: instructor.photoURL
+                ],
+                lastMessage: "You are now connected!",
+                lastMessageTimestamp: Date()
+            )
+            
+            let conversationRef = conversationsCollection.document()
+            try batch.setData(from: newConversation, forDocument: conversationRef)
+        }
         
-        // 4. Commit the batch
+        // 6. Commit the batch
         try await batch.commit()
     }
     

@@ -1,6 +1,4 @@
 // File: MyInstructor/Core/Models/ChatModels.swift
-// --- UPDATED: Added ChatError enum ---
-
 import Foundation
 import FirebaseFirestore
 
@@ -19,23 +17,26 @@ struct Conversation: Identifiable, Codable, Hashable {
     var lastMessage: String?
     var lastMessageTimestamp: Date?
     var unreadCount: Int = 0
+    
+    // --- *** THIS IS THE NEW FIELD *** ---
+    /// An array of user IDs who have "hidden" or "deleted" this chat from their view.
+    var hiddenFor: [String]?
 }
 
 // This document is for an individual message
-// It will be in a sub-collection: /conversations/{id}/messages
+// (This struct remains unchanged)
 struct ChatMessage: Identifiable, Codable, Hashable {
     @DocumentID var id: String?
     
     let senderID: String
-    var text: String // Changed to 'var' so it can be updated
+    var text: String
     @ServerTimestamp var timestamp: Date?
     
     var isEdited: Bool? = false
     var isDeleted: Bool? = false
 }
 
-// --- *** NEW, CORRECT LOCATION FOR CHATERROR *** ---
-// Error to throw when a chat is initiated with a blocked user
+// (This enum remains unchanged)
 enum ChatError: Error, LocalizedError {
     case blocked
     

@@ -1,5 +1,5 @@
-// File: Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: Fixed exhaustive switch error and added 'blocked' state logic ---
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
+// --- UPDATED: Added a conditional "Message" button in the toolbar ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -9,7 +9,7 @@ enum RequestButtonState {
     case pending
     case approved
     case denied
-    case blocked // --- ADDED ---
+    case blocked
 }
 
 struct InstructorPublicProfileView: View {
@@ -75,13 +75,26 @@ struct InstructorPublicProfileView: View {
         .toolbar {
             if authManager.role == .student {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: handleRequestButtonTap) {
-                        Text(buttonText)
-                            .bold()
+                    // --- *** THIS IS THE UPDATED TOOLBAR *** ---
+                    HStack(spacing: 16) {
+                        // 1. Conditional Message Button
+                        if requestState == .approved, let instructorAppUser = instructor {
+                            NavigationLink(destination: ChatLoadingView(otherUser: instructorAppUser)) {
+                                Image(systemName: "message.circle.fill")
+                                    .font(.title3) // Use a slightly smaller icon for toolbar
+                                    .foregroundColor(appBlue)
+                            }
+                        }
+                        
+                        // 2. Existing Request Button
+                        Button(action: handleRequestButtonTap) {
+                            Text(buttonText)
+                                .bold()
+                        }
+                        .disabled(buttonIsDisabled)
+                        .tint(requestState == .pending ? .red : (requestState == .blocked ? .gray : appBlue))
                     }
-                    .disabled(buttonIsDisabled)
-                    // --- UPDATED: Change tint for pending or blocked ---
-                    .tint(requestState == .pending ? .red : (requestState == .blocked ? .gray : appBlue))
+                    // --- *** END OF UPDATE *** ---
                 }
             }
         }
@@ -104,12 +117,11 @@ struct InstructorPublicProfileView: View {
         case .pending: return "Cancel Request"
         case .approved: return "Approved"
         case .denied: return "Re-apply"
-        case .blocked: return "Blocked" // --- ADDED ---
+        case .blocked: return "Blocked"
         }
     }
     
     var buttonIsDisabled: Bool {
-        // --- UPDATED: Disable if approved or blocked ---
         return requestState == .approved || requestState == .blocked || isLoading
     }
     
@@ -123,7 +135,7 @@ struct InstructorPublicProfileView: View {
                 await sendRequest()
             case .pending:
                 await cancelRequest()
-            case .approved, .blocked: // --- UPDATED ---
+            case .approved, .blocked:
                 break
             }
             isLoading = false
@@ -137,15 +149,16 @@ struct InstructorPublicProfileView: View {
         guard let studentID = authManager.user?.id else { return }
         
         do {
+            // Fetch the instructor's user object
             let doc = try await Firestore.firestore().collection("users")
                                     .document(instructorID).getDocument()
             self.instructor = try doc.data(as: AppUser.self)
             
+            // Check the status of any requests between the student and this instructor
             let requests = try await communityManager.fetchSentRequests(for: studentID)
             if let existingRequest = requests.first(where: { $0.instructorID == instructorID }) {
                 self.currentRequestID = existingRequest.id
                 
-                // --- *** THIS IS THE FIX *** ---
                 switch existingRequest.status {
                 case .pending:
                     self.requestState = .pending
@@ -156,8 +169,6 @@ struct InstructorPublicProfileView: View {
                 case .blocked:
                     self.requestState = .blocked
                 }
-                // --- *** END OF FIX *** ---
-                
             } else {
                 self.requestState = .idle
                 self.currentRequestID = nil
@@ -178,7 +189,6 @@ struct InstructorPublicProfileView: View {
             await loadData()
         } catch let error as RequestError {
             self.alertMessage = error.localizedDescription
-            // Sync state based on error
             if error == .alreadyPending { self.requestState = .pending }
             if error == .alreadyApproved { self.requestState = .approved }
             if error == .blocked { self.requestState = .blocked }
@@ -206,7 +216,7 @@ struct InstructorPublicProfileView: View {
 }
 
 
-// MARK: - Re-usable Profile Sub-views (private)
+// ... (Rest of InstructorPublicProfileView.swift: ProfileHeaderCard, ContactCard, RateHighlightCard, etc. are unchanged) ...
 // (These are all fine)
 
 private struct ProfileHeaderCard: View {
@@ -277,9 +287,6 @@ private struct ContactCard: View {
         .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
-
-// --- *** THE DUPLICATE ContactRow HAS BEEN DELETED *** ---
-
 
 private struct RateHighlightCard: View {
     let user: AppUser

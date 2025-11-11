@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
-// --- UPDATED: Added missing SecondaryDrivingAppButtonStyle and Color extension ---
+// --- UPDATED: Message icon now navigates to ChatLoadingView ---
 
 import SwiftUI
 
@@ -14,25 +14,24 @@ struct StudentProfileView: View {
     @EnvironmentObject var authManager: AuthManager
     @Environment(\.dismiss) var dismiss
     
+    // --- *** ADD THESE LINES *** ---
+    @EnvironmentObject var dataService: DataService
+    @State private var studentAsAppUser: AppUser? = nil // To store the full user object
+    // --- *** END OF ADD *** ---
+    
     @State private var selectedTab: ProfileTab = .progress
-    
     @State private var skills: [String: Double] = [:]
-    
     @State private var isShowingRemoveAlert = false
     @State private var isShowingBlockAlert = false
     
-    var lessonHistory: [Lesson] {
-        return []
-    }
-    
-    var payments: [Payment] {
-        return []
-    }
+    var lessonHistory: [Lesson] { return [] }
+    var payments: [Payment] { return [] }
 
     var body: some View {
         VStack(spacing: 0) {
             // Header: Photo, contact icons, "Add Note / Update Progress"
-            ProfileHeaderView(student: student, onUpdateProgress: {
+            // --- *** UPDATED: Pass the AppUser object to the header *** ---
+            ProfileHeaderView(student: student, studentAsAppUser: studentAsAppUser, onUpdateProgress: {
                 print("Updating progress for \(student.name)")
             })
             
@@ -52,25 +51,21 @@ struct StudentProfileView: View {
             TabView(selection: $selectedTab) {
                 ProgressTabView(skills: skills, overallProgress: student.averageProgress)
                     .tag(ProfileTab.progress)
-                
                 LessonsTabView(lessons: lessonHistory)
                     .tag(ProfileTab.lessons)
-                
                 PaymentsTabView(payments: payments)
                     .tag(ProfileTab.payments)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .animation(.easeInOut, value: selectedTab)
             
-            // --- UPDATED BUTTONS ---
             VStack(spacing: 10) {
                 Button(role: .destructive) {
                     isShowingRemoveAlert = true
                 } label: {
                     Text("Remove Student")
-                    // --- REMOVED: .font() and .padding() modifiers ---
                 }
-                .buttonStyle(RemoveDestructiveDrivingAppButtonStyle()) // This will now work
+                .buttonStyle(RemoveDestructiveDrivingAppButtonStyle())
                 .padding(.horizontal)
 
                 Button(role: .destructive) {
@@ -82,19 +77,22 @@ struct StudentProfileView: View {
                 .padding(.horizontal)
                 .padding(.bottom)
             }
-            // ---------------------------
         }
         .navigationTitle(student.name)
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            // --- *** UPDATED: Fetch both data and the AppUser object *** ---
             await fetchData()
+            if studentAsAppUser == nil, let studentID = student.id {
+                // Fetch the full AppUser object needed for ChatLoadingView
+                self.studentAsAppUser = try? await dataService.fetchUser(withId: studentID)
+            }
+            // --- *** END OF UPDATE *** ---
         }
         .alert("Remove \(student.name)?", isPresented: $isShowingRemoveAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Remove", role: .destructive) {
-                Task {
-                    await removeStudent()
-                }
+                Task { await removeStudent() }
             }
         } message: {
             Text("This will remove the student from your active list. They will be notified and can re-apply later.")
@@ -102,9 +100,7 @@ struct StudentProfileView: View {
         .alert("Block \(student.name)?", isPresented: $isShowingBlockAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Block", role: .destructive) {
-                Task {
-                    await blockStudent()
-                }
+                Task { await blockStudent() }
             }
         } message: {
             Text("This will permanently block this student. They will be removed from your list and will not be able to send you new requests.")
@@ -113,11 +109,11 @@ struct StudentProfileView: View {
     
     func fetchData() async {
         print("Fetching data for student \(student.id ?? "N/A")")
+        // ... (your existing fetch data logic)
     }
     
     func removeStudent() async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
-        
         do {
             try await communityManager.removeStudent(studentID: studentID, instructorID: instructorID)
             dismiss()
@@ -128,7 +124,6 @@ struct StudentProfileView: View {
     
     func blockStudent() async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
-        
         do {
             try await communityManager.blockStudent(studentID: studentID, instructorID: instructorID)
             dismiss()
@@ -148,12 +143,14 @@ enum ProfileTab: String {
 
 struct ProfileHeaderView: View {
     let student: Student
+    // --- *** ADD THIS LINE *** ---
+    let studentAsAppUser: AppUser? // The full AppUser object
+    
     let onUpdateProgress: () -> Void
     
     var body: some View {
         VStack(spacing: 15) {
             HStack(alignment: .top) {
-                // Photo & Name
                 Image(systemName: "person.crop.circle.fill")
                     .resizable()
                     .frame(width: 70, height: 70)
@@ -168,14 +165,26 @@ struct ProfileHeaderView: View {
                 }
                 Spacer()
                 
-                // Contact Icons
+                // --- *** UPDATED: Contact Icons *** ---
                 HStack(spacing: 15) {
                     Image(systemName: "phone.circle.fill").foregroundColor(.accentGreen).font(.title)
-                    Image(systemName: "message.circle.fill").foregroundColor(.primaryBlue).font(.title)
+                    
+                    // Wrap the message icon in a NavigationLink
+                    if let appUser = studentAsAppUser {
+                        // Only enable navigation if we successfully fetched the AppUser
+                        NavigationLink(destination: ChatLoadingView(otherUser: appUser)) {
+                            Image(systemName: "message.circle.fill")
+                                .foregroundColor(.primaryBlue).font(.title)
+                        }
+                    } else {
+                        // Show a disabled (gray) icon if the user object isn't loaded
+                        Image(systemName: "message.circle.fill")
+                            .foregroundColor(.gray).font(.title)
+                    }
                 }
+                // --- *** END OF UPDATE *** ---
             }
             
-            // CTA Buttons (Assumes QuickActionButton is available)
             HStack {
                 QuickActionButton(title: "Add Note", icon: "note.text.badge.plus", color: .orange, action: {})
                 QuickActionButton(title: "Update Progress", icon: "arrow.up.circle.fill", color: .accentGreen, action: onUpdateProgress)
@@ -185,7 +194,9 @@ struct ProfileHeaderView: View {
     }
 }
 
-// 1️⃣ Progress Tab Content
+// ... (Rest of StudentProfileView.swift: ProgressTabView, LessonsTabView, PaymentsTabView, and Button Styles are unchanged) ...
+
+// (ProgressTabView is unchanged)
 struct ProgressTabView: View {
     let skills: [String: Double]
     let overallProgress: Double
@@ -193,7 +204,6 @@ struct ProgressTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 25) {
-                // Circular Graph & Summary (Assumes CircularProgressView is available)
                 HStack(spacing: 20) {
                     CircularProgressView(progress: overallProgress, color: .primaryBlue, size: 100)
                     
@@ -208,7 +218,6 @@ struct ProgressTabView: View {
                 }
                 .padding(.horizontal)
                 
-                // Skills list
                 Text("Skill Breakdown")
                     .font(.title3).bold()
                     .padding(.horizontal)
@@ -223,11 +232,10 @@ struct ProgressTabView: View {
                     }
                 }
                 
-                // Instructor notes section (Placeholder)
                 Text("Instructor Notes")
                     .font(.title3).bold()
                     .padding(.horizontal)
-                Text("No notes added yet.") // Placeholder text
+                Text("No notes added yet.")
                     .padding(.horizontal)
                     .foregroundColor(.textLight)
             }
@@ -236,6 +244,7 @@ struct ProgressTabView: View {
     }
 }
 
+// (SkillProgressRow is unchanged)
 struct SkillProgressRow: View {
     let skill: String
     let progress: Double
@@ -262,7 +271,7 @@ struct SkillProgressRow: View {
     }
 }
 
-// 2️⃣ Lessons Tab Content
+// (LessonsTabView is unchanged)
 struct LessonsTabView: View {
     let lessons: [Lesson]
     
@@ -292,7 +301,7 @@ struct LessonsTabView: View {
     }
 }
 
-// 3️⃣ Payments Tab Content
+// (PaymentsTabView is unchanged)
 struct PaymentsTabView: View {
     let payments: [Payment]
     
@@ -322,7 +331,6 @@ struct PaymentsTabView: View {
             
             Section {
                 Button("View All Payments") {
-                    // TODO: Navigate to main PaymentsView (Flow 13)
                     print("Navigating to PaymentsView")
                 }
             }
@@ -330,17 +338,14 @@ struct PaymentsTabView: View {
     }
 }
 
-// ----------------------------------------------------------------------
-// MARK: - LOCAL BUTTON STYLES (COPIED FROM CustomStyles.swift)
-// ----------------------------------------------------------------------
-
+// (Button Styles are unchanged)
 struct DestructiveDrivingAppButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
-            .background(Color.warningRed) // Use red
+            .background(Color.warningRed)
             .foregroundColor(.white)
             .cornerRadius(12)
             .shadow(color: Color.warningRed.opacity(0.3), radius: configuration.isPressed ? 3 : 8, x: 0, y: configuration.isPressed ? 2 : 5)
@@ -356,7 +361,7 @@ struct RemoveDestructiveDrivingAppButtonStyle: ButtonStyle {
             .font(.headline)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
-            .background(Color.secondaryGray) // Use red
+            .background(Color.secondaryGray)
             .foregroundColor(.black)
             .cornerRadius(12)
             .shadow(color: Color.warningRed.opacity(0.3), radius: configuration.isPressed ? 3 : 8, x: 0, y: configuration.isPressed ? 2 : 5)

@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/MessagingView.swift
+// --- UPDATED: Added swipe-to-delete on the conversation list ---
+
 import SwiftUI
 import Combine
 
@@ -71,6 +74,17 @@ struct MessagingView: View {
                             ConversationRow(conversation: conversation)
                         }
                         .buttonStyle(.plain)
+                        // --- *** THIS IS THE NEW MODIFIER *** ---
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                Task {
+                                    await deleteConversation(conversation)
+                                }
+                            } label: {
+                                Label("Delete", systemImage: "trash.fill")
+                            }
+                        }
+                        // --- *** END OF NEW MODIFIER *** ---
                     }
                 }
             }
@@ -92,8 +106,28 @@ struct MessagingView: View {
             chatManager.removeAllListeners()
         }
     }
+    
+    // --- *** THIS IS THE NEW FUNCTION *** ---
+    /// Hides the conversation from the user's list.
+    private func deleteConversation(_ conversation: Conversation) async {
+        guard let conversationID = conversation.id, let userID = authManager.user?.id else {
+            print("Cannot delete: Missing conversation or user ID")
+            return
+        }
+        
+        do {
+            try await chatManager.hideConversation(conversationID: conversationID, userID: userID)
+            // The listener will automatically update the UI
+        } catch {
+            print("Error deleting conversation: \(error.localizedDescription)")
+        }
+    }
 }
 
+// ... (Rest of the file: ConversationRow, ChatView, ChatBubble, etc. remains the same as the previous step) ...
+// ... (Make sure the rest of your file from the previous step is included here) ...
+
+// (ConversationRow is unchanged)
 struct ConversationRow: View {
     @EnvironmentObject var authManager: AuthManager
     let conversation: Conversation
@@ -167,13 +201,11 @@ struct ConversationRow: View {
 }
 
 
-// MARK: - Chat Message View (Redesigned)
-
+// (ChatView is unchanged from previous step)
 struct ChatView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var chatManager: ChatManager
-    // We need DataService to fetch the 'otherUser' object
     @EnvironmentObject var dataService: DataService
     
     let conversation: Conversation
@@ -181,7 +213,6 @@ struct ChatView: View {
     @State private var messageText: String = ""
     @State private var messageToEdit: ChatMessage? = nil
     
-    // We must fetch the full AppUser object for the other participant
     @State private var otherUser: AppUser? = nil
     @State private var isLoadingOtherUser: Bool = true
     
@@ -198,7 +229,6 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             
-            // --- CUSTOM HEADER ---
             HStack(spacing: 8) {
                 Button {
                     chatManager.removeAllListeners()
@@ -224,7 +254,6 @@ struct ChatView: View {
                     Text(otherParticipantName)
                         .font(.headline)
                         .foregroundColor(.white)
-                    // Show connection status
                     Text(chatManager.isConnectionActive ? "Online" : "Connection Removed")
                         .font(.caption2)
                         .foregroundColor(.white.opacity(chatManager.isConnectionActive ? 0.8 : 1.0))
@@ -234,7 +263,7 @@ struct ChatView: View {
             }
             .padding(.horizontal)
             .padding(.bottom, 10)
-            .padding(.top, 70) // Top padding for safe area
+            .padding(.top, 70)
             .background(Color.primaryBlue)
             
             ScrollViewReader { proxy in
@@ -269,28 +298,19 @@ struct ChatView: View {
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
                 .task {
-                    // This task now fetches the other user and starts all listeners
                     guard let convoID = conversation.id, let currentUserID = authManager.user?.id else { return }
                     
                     isLoadingOtherUser = true
-                    
-                    // 1. Find other user's ID
                     let otherUserID = conversation.participantIDs.first { $0 != currentUserID } ?? ""
-                    
-                    // 2. Fetch the full otherUser object
                     self.otherUser = try? await dataService.fetchUser(withId: otherUserID)
-                    
                     isLoadingOtherUser = false
                     
-                    // 3. Start message listener
-                    chatManager.messages = [] // Clear messages
+                    chatManager.messages = []
                     await chatManager.listenForMessages(conversationID: convoID)
                     
-                    // 4. Start the new status listener
                     if let currentUser = authManager.user, let otherUser = self.otherUser {
                         await chatManager.listenForConnectionStatus(currentUser: currentUser, otherUser: otherUser)
                     } else {
-                        // Failsafe: if we can't get user roles, disable the chat
                         chatManager.isConnectionActive = false
                     }
                 }
@@ -303,7 +323,6 @@ struct ChatView: View {
                 }
             }
             
-            // --- NEW WARNING BANNER ---
             if !chatManager.isConnectionActive {
                 Text("You no longer have permission to send messages in this chat.")
                     .font(.caption.bold())
@@ -314,7 +333,6 @@ struct ChatView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             
-            // Edit Message Banner
             if let messageToEdit {
                 HStack {
                     VStack(alignment: .leading) {
@@ -340,7 +358,6 @@ struct ChatView: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             
-            // --- MESSAGE INPUT BAR ---
             HStack(spacing: 12) {
                 TextField("Type a message...", text: $messageText, axis: .vertical)
                     .padding(.horizontal, 12)
@@ -349,7 +366,6 @@ struct ChatView: View {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .stroke(Color(.systemGray4), lineWidth: 1)
                     )
-                    // Disable if connection is lost
                     .disabled(!chatManager.isConnectionActive || isLoadingOtherUser)
                 
                 Button(action: sendOrUpdateMessage) {
@@ -360,7 +376,6 @@ struct ChatView: View {
                         .background(messageText.isEmpty || !chatManager.isConnectionActive ? Color.secondaryGray : Color.primaryBlue)
                         .clipShape(Circle())
                 }
-                // Disable if connection is lost
                 .disabled(messageText.isEmpty || !chatManager.isConnectionActive || isLoadingOtherUser)
             }
             .padding(.horizontal, 10)
@@ -368,7 +383,7 @@ struct ChatView: View {
             .background(Color(.systemBackground))
         }
         .animation(.default, value: messageToEdit)
-        .animation(.default, value: chatManager.isConnectionActive) // Animate the warning
+        .animation(.default, value: chatManager.isConnectionActive)
         .navigationBarHidden(true)
         .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .tabBar)
@@ -400,12 +415,11 @@ struct ChatView: View {
                         text: textToSend
                     )
                 } catch let error as ChatError {
-                    // This will be caught if the failsafe in sendMessage is triggered
                     print("Chat blocked by manager: \(error.localizedDescription)")
-                    messageText = textToSend // Put text back
+                    messageText = textToSend
                 } catch {
                     print("Failed to send message: \(error)")
-                    messageText = textToSend // Put text back
+                    messageText = textToSend
                 }
             }
         }
@@ -423,6 +437,7 @@ struct ChatView: View {
     }
 }
 
+// (ChatBubble is unchanged)
 struct ChatBubble: View {
     @EnvironmentObject var authManager: AuthManager
     let message: ChatMessage
@@ -485,7 +500,7 @@ struct ChatBubble: View {
     }
 }
 
-// --- Helpers (Unchanged) ---
+// (Helper Extensions are unchanged)
 extension View {
     func border(width: CGFloat, edges: [Edge], color: Color) -> some View {
         overlay(EdgeBorder(width: width, edges: edges).foregroundColor(color))

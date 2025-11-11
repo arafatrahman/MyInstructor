@@ -1,5 +1,5 @@
 // File: MyInstructor/Core/Managers/ChatManager.swift
-// --- UPDATED: To add a live connection status listener ---
+// --- UPDATED: Fixed permissions error by removing unnecessary 'getDocument' call ---
 
 import Foundation
 import Combine
@@ -17,16 +17,10 @@ class ChatManager: ObservableObject {
     
     @Published var conversations = [Conversation]()
     @Published var messages = [ChatMessage]()
-    
-    // --- *** NEW *** ---
-    // This will be true or false, and the UI will watch it
     @Published var isConnectionActive: Bool = true
     
     private var conversationsListener: ListenerRegistration?
     private var messagesListener: ListenerRegistration?
-    
-    // --- *** NEW *** ---
-    // A new listener to watch the student_requests status
     private var statusListener: ListenerRegistration?
     
     // MARK: - Conversation List
@@ -45,9 +39,23 @@ class ChatManager: ObservableObject {
                 return
             }
             guard let documents = snapshot?.documents else { return }
-            self.conversations = documents.compactMap { try? $0.data(as: Conversation.self) }
-            print("ChatManager: Fetched \(self.conversations.count) conversations")
+            
+            // Filter out any that are "hidden" for the current user
+            let allConversations = documents.compactMap { try? $0.data(as: Conversation.self) }
+            self.conversations = allConversations.filter { conversation in
+                !(conversation.hiddenFor?.contains(userID) ?? false)
+            }
+            
+            print("ChatManager: Fetched \(self.conversations.count) visible conversations")
         }
+    }
+    
+    // --- (New function to hide chats) ---
+    func hideConversation(conversationID: String, userID: String) async throws {
+        print("ChatManager: Hiding conversation \(conversationID) for user \(userID)")
+        try await conversationsCollection.document(conversationID).updateData([
+            "hiddenFor": FieldValue.arrayUnion([userID])
+        ])
     }
     
     // MARK: - Chat Message View
@@ -71,9 +79,6 @@ class ChatManager: ObservableObject {
         }
     }
 
-    // --- *** NEW FUNCTION *** ---
-    /// Starts a live listener on the `student_requests` collection.
-    /// This sets `isConnectionActive` to false if a `.blocked` or `.denied` status is found.
     @MainActor
     func listenForConnectionStatus(currentUser: AppUser, otherUser: AppUser) {
         guard let currentUserID = currentUser.id, let otherUserID = otherUser.id else {
@@ -83,13 +88,11 @@ class ChatManager: ObservableObject {
         
         statusListener?.remove() // Remove old one
         
-        // Determine who is student and instructor
         let (studentID, instructorID) = (currentUser.role == .student) ?
             (currentUserID, otherUserID) : (otherUserID, currentUserID)
             
         let deniedOrBlockedStatuses = [RequestStatus.blocked.rawValue, RequestStatus.denied.rawValue]
         
-        // Query for a request that is .blocked OR .denied
         let query = requestsCollection
             .whereField("studentID", isEqualTo: studentID)
             .whereField("instructorID", isEqualTo: instructorID)
@@ -99,17 +102,14 @@ class ChatManager: ObservableObject {
         self.statusListener = query.addSnapshotListener { snapshot, error in
             if let error {
                 print("Error listening for connection status: \(error.localizedDescription)")
-                // Default to active if there's an error
                 self.isConnectionActive = true
                 return
             }
             
-            // If we find any document, it means the connection is blocked or denied.
             if let documents = snapshot?.documents, !documents.isEmpty {
                 print("!!! ChatManager Status: Connection is DENIED or BLOCKED.")
                 self.isConnectionActive = false
             } else {
-                // No denied or blocked requests found.
                 print("ChatManager Status: Connection is Active.")
                 self.isConnectionActive = true
             }
@@ -117,8 +117,6 @@ class ChatManager: ObservableObject {
     }
     
     func sendMessage(conversationID: String, senderID: String, text: String) async throws {
-        // --- *** NEW FAILSAFE *** ---
-        // Final check. If this is false, stop the message from being sent.
         guard isConnectionActive else {
             print("!!! ChatManager: sendMessage blocked. Connection is not active.")
             throw ChatError.blocked
@@ -126,14 +124,28 @@ class ChatManager: ObservableObject {
         
         let message = ChatMessage(senderID: senderID, text: text)
         
+        // 1. Add the new message
         try await conversationsCollection.document(conversationID)
             .collection("messages")
             .addDocument(from: message)
             
-        try await conversationsCollection.document(conversationID).updateData([
+        // 2. Find the recipient's ID
+        let convoDoc = try await conversationsCollection.document(conversationID).getDocument()
+        let participantIDs = convoDoc.data()?["participantIDs"] as? [String] ?? []
+        let recipientID = participantIDs.first { $0 != senderID }
+        
+        // 3. Update the conversation document
+        var dataToUpdate: [String: Any] = [
             "lastMessage": text,
             "lastMessageTimestamp": FieldValue.serverTimestamp()
-        ])
+        ]
+        
+        if let recipientID {
+            // This pulls the recipient's ID out of the 'hiddenFor' array
+            dataToUpdate["hiddenFor"] = FieldValue.arrayRemove([recipientID])
+        }
+        
+        try await conversationsCollection.document(conversationID).updateData(dataToUpdate)
     }
     
     func deleteMessage(conversationID: String, messageID: String) async throws {
@@ -163,27 +175,23 @@ class ChatManager: ObservableObject {
             throw NSError(domain: "ChatManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid user IDs"])
         }
         
-        // 1. Determine who is the student and who is the instructor
         let (studentID, instructorID) = (currentUser.role == .student) ?
             (currentUserID, otherUserID) : (otherUserID, currentUserID)
 
-        // 2. Check if a 'blocked' or 'denied' request exists
         let deniedOrBlockedStatuses = [RequestStatus.blocked.rawValue, RequestStatus.denied.rawValue]
 
         let blockQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
             .whereField("instructorID", isEqualTo: instructorID)
-            .whereField("status", in: deniedOrBlockedStatuses) // <-- This is the fix from before
+            .whereField("status", in: deniedOrBlockedStatuses)
             .limit(to: 1)
             .getDocuments()
 
-        // 3. If a block or denied request exists, throw an error
         if !blockQuery.isEmpty {
             print("!!! ChatManager: Blocked or Denied. Chat cannot be initiated.")
-            throw ChatError.blocked // This relies on ChatModels.swift
+            throw ChatError.blocked
         }
         
-        // 4. Check if a conversation already exists
         let query = conversationsCollection
             .whereField("participantIDs", arrayContains: currentUserID)
         
@@ -199,7 +207,7 @@ class ChatManager: ObservableObject {
         
         // 5. No conversation exists. Create a new one.
         print("ChatManager: Creating new conversation...")
-        let newConversation = Conversation(
+        var newConversation = Conversation( // <-- Make it a 'var'
             participantIDs: [currentUserID, otherUserID],
             participantNames: [
                 currentUserID: currentUser.name ?? "Me",
@@ -210,12 +218,20 @@ class ChatManager: ObservableObject {
                 otherUserID: otherUser.photoURL
             ],
             lastMessage: "You are now connected!",
-            lastMessageTimestamp: Date()
+            lastMessageTimestamp: Date(),
+            hiddenFor: []
         )
         
+        // This 'addDocument' call writes to the server
         let newDocRef = try conversationsCollection.addDocument(from: newConversation)
-        let newDoc = try await newDocRef.getDocument()
-        return try newDoc.data(as: Conversation.self)
+        
+        // --- *** THIS IS THE FIX *** ---
+        // We don't need to read the document back.
+        // We already have the data. Just assign the new ID and return it.
+        // This avoids the "Missing permissions" read error.
+        newConversation.id = newDocRef.documentID
+        return newConversation
+        // --- *** END OF FIX *** ---
     }
 
     
@@ -224,19 +240,15 @@ class ChatManager: ObservableObject {
     func removeAllListeners() {
         conversationsListener?.remove()
         messagesListener?.remove()
-        // --- *** NEW *** ---
         statusListener?.remove()
         
         conversationsListener = nil
         messagesListener = nil
-        // --- *** NEW *** ---
         statusListener = nil
         
         self.conversations = []
         self.messages = []
         
-        // --- *** NEW *** ---
-        // Reset to default
         self.isConnectionActive = true
     }
 }

@@ -1,5 +1,5 @@
 // File: MyInstructor/Core/Managers/ChatManager.swift
-// --- UPDATED: markConversationAsRead is now more robust ---
+// --- UPDATED: Replaced faulty query with a robust one that does not require a composite index ---
 
 import Foundation
 import Combine
@@ -17,7 +17,7 @@ class ChatManager: ObservableObject {
     
     @Published var conversations = [Conversation]()
     @Published var messages = [ChatMessage]()
-    @Published var isConnectionActive: Bool = true
+    @Published var isConnectionActive: Bool = true // Start as true, let listener correct it
     
     private var conversationsListener: ListenerRegistration?
     private var messagesListener: ListenerRegistration?
@@ -57,27 +57,16 @@ class ChatManager: ObservableObject {
         ])
     }
     
-    // --- *** THIS IS THE UPDATED FUNCTION *** ---
-    /// Sets the unread count for a conversation to 0 in Firestore.
     @MainActor
     func markConversationAsRead(_ conversation: Conversation, currentUserID: String) async {
-        // We use the conversation object passed directly from the view.
         guard let conversationID = conversation.id else { return }
         
-        // Only mark as read if:
-        // 1. The last message was NOT from the current user.
-        // 2. The unread count is greater than 0.
-        // This check is now robust because it uses the specific conversation
-        // object the user just tapped on.
         if conversation.lastMessageSenderID != currentUserID && conversation.unreadCount > 0 {
             print("ChatManager: Marking conversation \(conversationID) as read in Firestore.")
             do {
-                // This is the permanent database write.
                 try await conversationsCollection.document(conversationID).updateData([
                     "unreadCount": 0
                 ])
-                // The listener will automatically update the local 'conversations' array
-                // and all UI will refresh.
             } catch {
                 print("Failed to mark as read: \(error.localizedDescription)")
             }
@@ -105,6 +94,7 @@ class ChatManager: ObservableObject {
         }
     }
 
+    // --- *** THIS IS THE UPDATED FUNCTION *** ---
     @MainActor
     func listenForConnectionStatus(currentUser: AppUser, otherUser: AppUser) {
         guard let currentUserID = currentUser.id, let otherUserID = otherUser.id else {
@@ -117,28 +107,43 @@ class ChatManager: ObservableObject {
         let (studentID, instructorID) = (currentUser.role == .student) ?
             (currentUserID, otherUserID) : (otherUserID, currentUserID)
             
-        let deniedOrBlockedStatuses = [RequestStatus.blocked.rawValue, RequestStatus.denied.rawValue]
-        
+        // --- *** THIS IS THE NEW, ROBUST QUERY *** ---
+        // We fetch ALL requests between the two users.
+        // This query does NOT require a composite index and will not fail.
         let query = requestsCollection
             .whereField("studentID", isEqualTo: studentID)
             .whereField("instructorID", isEqualTo: instructorID)
-            .whereField("status", in: deniedOrBlockedStatuses)
-            .limit(to: 1)
         
         self.statusListener = query.addSnapshotListener { snapshot, error in
             if let error {
                 print("Error listening for connection status: \(error.localizedDescription)")
-                self.isConnectionActive = true
+                self.isConnectionActive = false // Default to false on error
                 return
             }
             
-            if let documents = snapshot?.documents, !documents.isEmpty {
-                print("!!! ChatManager Status: Connection is DENIED or BLOCKED.")
+            guard let documents = snapshot?.documents, !documents.isEmpty else {
+                // No request document exists at all. Connection is INACTIVE.
+                print("!!! ChatManager Status: Connection is INACTIVE (No request found).")
                 self.isConnectionActive = false
-            } else {
-                print("ChatManager Status: Connection is Active.")
-                self.isConnectionActive = true
+                return
             }
+
+            // --- *** THIS IS THE FIXED LOGIC *** ---
+            // We have the documents. Now we sort them in code to find the newest.
+            let requests = documents.compactMap { try? $0.data(as: StudentRequest.self) }
+            let newestRequest = requests.sorted(by: { $0.timestamp > $1.timestamp }).first
+            
+            if let newestRequest = newestRequest, newestRequest.status == .approved {
+                // The newest request is "approved". The connection is LIVE.
+                print("ChatManager Status: Connection is Active (Approved).")
+                self.isConnectionActive = true
+            } else {
+                // The newest request is "pending", "denied", "blocked", or nil.
+                // In all these cases, the connection is NOT LIVE.
+                print("!!! ChatManager Status: Connection is INACTIVE (Newest request is \(newestRequest?.status.rawValue ?? "unknown")).")
+                self.isConnectionActive = false
+            }
+            // --- *** END OF FIXED LOGIC *** ---
         }
     }
     
@@ -200,6 +205,7 @@ class ChatManager: ObservableObject {
         ])
     }
 
+    // --- *** THIS IS THE UPDATED FUNCTION *** ---
     func getOrCreateConversation(currentUser: AppUser, otherUser: AppUser) async throws -> Conversation {
         guard let currentUserID = currentUser.id, let otherUserID = otherUser.id else {
             throw NSError(domain: "ChatManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid user IDs"])
@@ -208,26 +214,42 @@ class ChatManager: ObservableObject {
         let (studentID, instructorID) = (currentUser.role == .student) ?
             (currentUserID, otherUserID) : (otherUserID, currentUserID)
 
-        let deniedOrBlockedStatuses = [RequestStatus.blocked.rawValue, RequestStatus.denied.rawValue]
-
-        let blockQuery = try await requestsCollection
+        // --- *** THIS IS THE NEW, ROBUST QUERY *** ---
+        // 1. Fetch ALL requests between them.
+        let query = requestsCollection
             .whereField("studentID", isEqualTo: studentID)
             .whereField("instructorID", isEqualTo: instructorID)
-            .whereField("status", in: deniedOrBlockedStatuses)
-            .limit(to: 1)
-            .getDocuments()
-
-        if !blockQuery.isEmpty {
-            print("!!! ChatManager: Blocked or Denied. Chat cannot be initiated.")
-            throw ChatError.blocked
-        }
-        
-        let query = conversationsCollection
-            .whereField("participantIDs", arrayContains: currentUserID)
         
         let snapshot = try await query.getDocuments()
         
-        for doc in snapshot.documents {
+        // 2. Sort in code to find the newest one.
+        let requests = snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
+        let newestRequest = requests.sorted(by: { $0.timestamp > $1.timestamp }).first
+        
+        // 3. Check the status of the newest request.
+        if let newestRequest = newestRequest {
+            if newestRequest.status != .approved {
+                // The newest request is NOT approved (pending, denied, blocked).
+                print("!!! ChatManager: Connection not approved (Status: \(newestRequest.status.rawValue)). Chat cannot be initiated.")
+                throw ChatError.blocked
+            }
+            // If we are here, the newest request IS approved.
+            
+        } else {
+            // No request has *ever* existed between them. They cannot chat.
+            print("!!! ChatManager: No request found. Chat cannot be initiated.")
+            throw ChatError.blocked
+        }
+        // --- *** END OF NEW LOGIC *** ---
+        
+        // --- IF WE REACH THIS POINT, THE CHAT IS APPROVED ---
+        
+        let conversationQuery = conversationsCollection
+            .whereField("participantIDs", arrayContains: currentUserID)
+        
+        let conversationSnapshot = try await conversationQuery.getDocuments()
+        
+        for doc in conversationSnapshot.documents {
             let participantIDs = doc.data()["participantIDs"] as? [String] ?? []
             if participantIDs.contains(otherUserID) {
                 print("ChatManager: Found existing conversation.")
@@ -237,7 +259,7 @@ class ChatManager: ObservableObject {
         
         // 5. No conversation exists. Create a new one.
         print("ChatManager: Creating new conversation...")
-        var newConversation = Conversation( // <-- Make it a 'var'
+        var newConversation = Conversation(
             participantIDs: [currentUserID, otherUserID],
             participantNames: [
                 currentUserID: currentUser.name ?? "Me",
@@ -249,17 +271,13 @@ class ChatManager: ObservableObject {
             ],
             lastMessage: "You are now connected!",
             lastMessageTimestamp: Date(),
-            lastMessageSenderID: nil, // No sender yet for initial message
-            unreadCount: 0, // Starts at 0
+            lastMessageSenderID: nil,
+            unreadCount: 0,
             hiddenFor: []
         )
         
-        // This 'addDocument' call writes to the server
         let newDocRef = try conversationsCollection.addDocument(from: newConversation)
         
-        // We don't need to read the document back.
-        // We already have the data. Just assign the new ID and return it.
-        // This avoids the "Missing permissions" read error.
         newConversation.id = newDocRef.documentID
         return newConversation
     }

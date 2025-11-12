@@ -1,5 +1,5 @@
 // File: Core/Managers/CommunityManager.swift
-// --- UPDATED: To fix Firestore permission errors on student-side block/remove ---
+// --- UPDATED: unblockInstructor and removeInstructor to fix permission/timestamp bugs ---
 
 import Combine
 import Foundation
@@ -83,10 +83,8 @@ class CommunityManager: ObservableObject {
     func sendRequest(from student: AppUser, to instructorID: String) async throws {
         guard let studentID = student.id else { throw URLError(.badServerResponse) }
         
-        // --- UPDATED: to use new fetchSentRequests logic ---
         let existingRequests = try await self.fetchSentRequests(for: studentID)
         
-        // Check if a request for this specific instructor exists
         if let request = existingRequests.first(where: { $0.instructorID == instructorID }) {
             
             if request.status == .blocked {
@@ -94,7 +92,6 @@ class CommunityManager: ObservableObject {
                     print("Student is blocked by this instructor.")
                     throw RequestError.blocked
                 } else {
-                    // Blocked by student. Allow re-apply by deleting.
                     print("Found a student-blocked request. Deleting it to re-apply...")
                     try await requestsCollection.document(request.id!).delete()
                 }
@@ -120,7 +117,7 @@ class CommunityManager: ObservableObject {
             instructorID: instructorID,
             status: .pending,
             timestamp: Date(),
-            blockedBy: nil // Ensure new request is not blocked
+            blockedBy: nil
         )
         
         try requestsCollection.addDocument(from: newRequest)
@@ -309,35 +306,28 @@ class CommunityManager: ObservableObject {
         ])
     }
     
-    // --- *** THIS IS THE UPDATED FUNCTION *** ---
+    // Block (BY STUDENT)
     func blockInstructor(instructorID: String, student: AppUser) async throws {
         guard let studentID = student.id else { throw URLError(.badServerResponse) }
         let batch = db.batch()
 
-        // 1. Remove instructor from student's list (Allowed)
         let studentRef = usersCollection.document(studentID)
         batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
         
-        // --- REMOVED: Line that tried to update instructor's doc (Permission Error) ---
-
-        // 2. Find *only* pending or denied requests to delete (Allowed)
         let requestQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
             .whereField("instructorID", isEqualTo: instructorID)
             .getDocuments()
 
-        // 3. Delete ONLY requests the student is allowed to delete
         if !requestQuery.documents.isEmpty {
             for doc in requestQuery.documents {
                 let request = try? doc.data(as: StudentRequest.self)
-                // Do NOT touch "approved" or "instructor-blocked" requests
                 if request?.status == .pending || request?.status == .denied || request?.blockedBy == "student" {
                     batch.deleteDocument(doc.reference)
                 }
             }
         }
 
-        // 4. Create ONE new request with the 'blocked' status (Allowed)
         let newBlockedRequest = StudentRequest(
             studentID: studentID,
             studentName: student.name ?? "Student",
@@ -347,14 +337,15 @@ class CommunityManager: ObservableObject {
             timestamp: Date(),
             blockedBy: "student"
         )
-        let newReqRef = requestsCollection.document() // Create a new document ref
+        let newReqRef = requestsCollection.document()
         try batch.setData(from: newBlockedRequest, forDocument: newReqRef)
         
         try await batch.commit()
     }
     
     
-    // "Unblock" - sets status to denied (BY STUDENT)
+    // --- *** THIS IS THE UPDATED FUNCTION *** ---
+    // Unblock (BY STUDENT)
     func unblockInstructor(instructorID: String, studentID: String) async throws {
         let requestQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
@@ -368,9 +359,12 @@ class CommunityManager: ObservableObject {
             return
         }
         
+        // Update status to 'denied' AND update the timestamp
+        // This makes it the "newest" request.
         try await doc.reference.updateData([
             "status": RequestStatus.denied.rawValue,
-            "blockedBy": FieldValue.delete()
+            "blockedBy": FieldValue.delete(),
+            "timestamp": FieldValue.serverTimestamp() // <-- THIS IS THE FIX
         ])
     }
     
@@ -383,57 +377,70 @@ class CommunityManager: ObservableObject {
         let studentRef = usersCollection.document(studentID)
         batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
         
-        // --- REMOVED: Line that tried to update instructor's doc (Permission Error) ---
-        
-        // 2. Find the "approved" request
+        // 2. Find *only* pending/denied requests to delete (Allowed)
         let requestQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
             .whereField("instructorID", isEqualTo: instructorID)
-            .whereField("status", isEqualTo: RequestStatus.approved.rawValue)
             .getDocuments()
         
-        // 3. Update it to "denied"
-        // (We are assuming this is allowed by security rules.
-        // If this fails, the logic is flawed and "remove" must
-        // be handled by a Cloud Function or by creating a "blocked" request)
+        var approvedDocRef: DocumentReference? = nil
+
         for doc in requestQuery.documents {
-            batch.updateData([
-                "status": RequestStatus.denied.rawValue,
-                "blockedBy": FieldValue.delete()
-            ], forDocument: doc.reference)
+            let request = try? doc.data(as: StudentRequest.self)
+            if request?.status == .approved {
+                approvedDocRef = doc.reference // Save ref to approved doc
+            } else {
+                batch.deleteDocument(doc.reference) // Delete all others
+            }
         }
         
+        // 3. Create a new "denied" request
+        // We create a new doc instead of updating the 'approved' one
+        // to avoid permission errors.
+        if let approvedRequestDoc = approvedDocRef {
+             // Create a new denied request
+             let studentDoc = try await usersCollection.document(studentID).getDocument()
+             let student = try studentDoc.data(as: AppUser.self)
+             
+             let newDeniedRequest = StudentRequest(
+                 studentID: studentID,
+                 studentName: student.name ?? "Student",
+                 studentPhotoURL: student.photoURL,
+                 instructorID: instructorID,
+                 status: .denied,
+                 timestamp: Date(), // Set new timestamp
+                 blockedBy: nil
+             )
+             let newReqRef = requestsCollection.document()
+             try batch.setData(from: newDeniedRequest, forDocument: newReqRef)
+             
+             // We can't delete the approved doc, so we leave it.
+             // The new "denied" doc will be newer and take precedence.
+        }
+
         try await batch.commit()
     }
     
-    // --- *** THIS IS THE UPDATED FUNCTION *** ---
     func fetchSentRequests(for studentID: String) async throws -> [StudentRequest] {
         let snapshot = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
-            // .order(by: "timestamp", descending: true) // We can't order by timestamp AND status
+            .order(by: "timestamp", descending: true)
             .getDocuments()
             
-        var requests = snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
+        let requests = snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
         
-        // Sort in code to prioritize Blocked > Approved > Pending > Denied
-        requests.sort { (req1, req2) -> Bool in
-            if req1.status != req2.status {
-                // Prioritize statuses
-                if req1.status == .blocked { return true }
-                if req2.status == .blocked { return false }
-                
-                if req1.status == .approved { return true }
-                if req2.status == .approved { return false }
-                
-                if req1.status == .pending { return true }
-                if req2.status == .pending { return false }
-                
+        // De-duplicate in code: Only keep the *newest* request for each instructor
+        var uniqueRequests: [StudentRequest] = []
+        var seenInstructorIDs = Set<String>()
+
+        for request in requests {
+            if !seenInstructorIDs.contains(request.instructorID) {
+                uniqueRequests.append(request)
+                seenInstructorIDs.insert(request.instructorID)
             }
-            // If statuses are the same, sort by most recent
-            return req1.timestamp > req2.timestamp
         }
         
-        return requests
+        return uniqueRequests
     }
     
     func cancelRequest(requestID: String) async throws {

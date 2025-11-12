@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: The "Approved" button is now hidden when a student is approved ---
+// --- UPDATED: Fixed logic to correctly show the "Re-apply" button after unblocking ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -88,8 +88,8 @@ struct InstructorPublicProfileView: View {
                         
                         // --- *** THIS IS THE UPDATED SECTION *** ---
                         // 2. Existing Request Button
-                        // Only show this button if the state is NOT approved.
-                        if requestState != .approved {
+                        // Show the button only for these specific states:
+                        if requestState == .idle || requestState == .pending || requestState == .denied || requestState == .blockedByStudent {
                             Button(action: handleRequestButtonTap) {
                                 Text(buttonText)
                                     .bold()
@@ -182,6 +182,8 @@ struct InstructorPublicProfileView: View {
             // Check the status of any requests between the student and this instructor
             let requests = try await communityManager.fetchSentRequests(for: studentID)
             
+            // Find the highest-priority request for this instructor
+            // (e.g., a "blocked" request overrides an old "approved" one)
             if let existingRequest = requests.first(where: { $0.instructorID == instructorID }) {
                 self.currentRequestID = existingRequest.id
                 

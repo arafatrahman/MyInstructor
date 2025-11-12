@@ -1,5 +1,5 @@
 // File: MyInstructor/Features/Student/MyInstructorsView.swift
-// --- UPDATED: Added swipe-to-unblock and clearer status badges ---
+// --- UPDATED: "Blocked by You" instructors are now tappable to view profile for unblocking ---
 
 import SwiftUI
 
@@ -16,8 +16,9 @@ struct MyInstructorsView: View {
     
     @State private var selectedStatus: MyInstructorsFilter = .approved
     
-    private var approvedRequests: [StudentRequest] {
-        sentRequests.filter { $0.status == .approved }
+    // "My Instructors" now includes active AND student-blocked instructors
+    private var myInstructorsList: [StudentRequest] {
+        sentRequests.filter { $0.status == .approved || ($0.status == .blocked && $0.blockedBy == "student") }
     }
     
     private var pendingRequests: [StudentRequest] {
@@ -28,16 +29,22 @@ struct MyInstructorsView: View {
         sentRequests.filter { $0.status == .denied }
     }
     
-    private var blockedRequests: [StudentRequest] {
-        sentRequests.filter { $0.status == .blocked }
+    // This list now *only* shows instructors who blocked the student
+    private var instructorBlockedRequests: [StudentRequest] {
+        sentRequests.filter { $0.status == .blocked && $0.blockedBy == "instructor" }
+    }
+    
+    // Count for the "Pending" tab
+    private var otherRequestsCount: Int {
+        pendingRequests.count + deniedRequests.count + instructorBlockedRequests.count
     }
     
     var body: some View {
         NavigationView {
             VStack {
                 Picker("Request Status", selection: $selectedStatus) {
-                    Text("My Instructors (\(approvedRequests.count))").tag(MyInstructorsFilter.approved)
-                    Text("Pending (\(pendingRequests.count + deniedRequests.count + blockedRequests.count))").tag(MyInstructorsFilter.pending) // Updated count
+                    Text("My Instructors (\(myInstructorsList.count))").tag(MyInstructorsFilter.approved)
+                    Text("Pending (\(otherRequestsCount))").tag(MyInstructorsFilter.pending)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
@@ -47,13 +54,14 @@ struct MyInstructorsView: View {
                         .frame(maxHeight: .infinity)
                 } else {
                     if selectedStatus == .approved {
-                        if approvedRequests.isEmpty {
+                        // --- *** THIS IS THE "MY INSTRUCTORS" (APPROVED) TAB *** ---
+                        if myInstructorsList.isEmpty {
                             VStack(spacing: 15) {
                                 Image(systemName: "person.badge.plus")
                                     .font(.system(size: 50))
                                     .foregroundColor(.textLight)
                                 
-                                Text("You have no approved instructors yet.")
+                                Text("You have no approved or blocked instructors yet.")
                                     .font(.headline)
                                     .foregroundColor(.textLight)
                                     .multilineTextAlignment(.center)
@@ -70,28 +78,42 @@ struct MyInstructorsView: View {
                             
                         } else {
                             List {
-                                Section("Approved Instructors") {
-                                    ForEach(approvedRequests) { request in
+                                Section("My Instructors") {
+                                    // --- *** THIS IS THE UPDATED LOGIC *** ---
+                                    // The row is now always a NavigationLink.
+                                    ForEach(myInstructorsList) { request in
                                         NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
                                             MyInstructorRow(request: request)
                                         }
+                                        // The swipe action changes based on the status
                                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                            Button(role: .destructive) {
-                                                Task { await removeInstructor(request) }
-                                            } label: {
-                                                Label("Remove", systemImage: "trash.fill")
+                                            if request.status == .approved {
+                                                Button(role: .destructive) {
+                                                    Task { await removeInstructor(request) }
+                                                } label: {
+                                                    Label("Remove", systemImage: "trash.fill")
+                                                }
+                                            } else if request.status == .blocked && request.blockedBy == "student" {
+                                                Button("Unblock") {
+                                                    Task { await unblockInstructor(request) }
+                                                }
+                                                .tint(.accentGreen)
                                             }
                                         }
+                                        // Disable navigation if blocked *by instructor* (though they're on the other tab)
+                                        .disabled(request.status == .blocked && request.blockedBy == "instructor")
                                     }
+                                    // --- *** END OF UPDATED LOGIC *** ---
                                 }
                             }
                             .listStyle(.insetGrouped)
                         }
                     } else {
-                        if pendingRequests.isEmpty && deniedRequests.isEmpty && blockedRequests.isEmpty {
+                        // --- *** THIS IS THE "PENDING" TAB *** ---
+                        if otherRequestsCount == 0 {
                             EmptyStateView(
                                 icon: "paperplane.fill",
-                                message: "You have no pending, denied, or blocked requests."
+                                message: "You have no pending, denied, or instructor-blocked requests."
                             )
                         } else {
                             List {
@@ -118,21 +140,10 @@ struct MyInstructorsView: View {
                                         }
                                     }
                                 }
-                                if !blockedRequests.isEmpty {
-                                    Section("Blocked Requests") {
-                                        ForEach(blockedRequests) { request in
+                                if !instructorBlockedRequests.isEmpty {
+                                    Section("Blocked by Instructor") {
+                                        ForEach(instructorBlockedRequests) { request in
                                             MyInstructorRow(request: request)
-                                                // --- *** THIS IS THE NEW SWIPE ACTION *** ---
-                                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                                    // Only show Unblock if student blocked them
-                                                    if request.blockedBy == "student" {
-                                                        Button("Unblock") {
-                                                            Task { await unblockInstructor(request) }
-                                                        }
-                                                        .tint(.accentGreen)
-                                                    }
-                                                }
-                                                // --- *** END OF NEW SWIPE ACTION *** ---
                                         }
                                     }
                                 }
@@ -156,10 +167,30 @@ struct MyInstructorsView: View {
         guard let studentID = authManager.user?.id else { return }
         isLoading = true
         do {
-            self.sentRequests = try await communityManager.fetchSentRequests(for: studentID)
+            // 1. Fetch all requests, sorted by priority (Blocked > Approved > etc)
+            let allRequests = try await communityManager.fetchSentRequests(for: studentID)
             
-            // --- SYNC LOCAL PROFILE ---
-            let approvedIDs = self.approvedRequests.map { $0.instructorID }
+            // 2. De-duplicate the list to prevent "double profiles"
+            var uniqueRequests: [StudentRequest] = []
+            var seenInstructorIDs = Set<String>()
+            
+            for request in allRequests {
+                // Because the list is pre-sorted, we only add the *first*
+                // request we see for each instructor.
+                if !seenInstructorIDs.contains(request.instructorID) {
+                    uniqueRequests.append(request)
+                    seenInstructorIDs.insert(request.instructorID)
+                }
+            }
+            
+            // 3. Set the de-duplicated list as our main source
+            self.sentRequests = uniqueRequests
+            
+            // 4. Sync local profile with *only* the approved instructors
+            let approvedIDs = self.myInstructorsList
+                .filter { $0.status == .approved }
+                .map { $0.instructorID }
+            
             await authManager.syncApprovedInstructors(approvedInstructorIDs: approvedIDs)
             
         } catch {
@@ -182,13 +213,13 @@ struct MyInstructorsView: View {
         guard let studentID = authManager.user?.id else { return }
         do {
             try await communityManager.removeInstructor(instructorID: request.instructorID, studentID: studentID)
-            sentRequests.removeAll(where: { $0.id == request.id })
+            // Refresh list to move them to "Denied"
+            await loadRequests()
         } catch {
             print("Failed to remove instructor: \(error.localizedDescription)")
         }
     }
     
-    // --- *** THIS IS THE NEW FUNCTION *** ---
     private func unblockInstructor(_ request: StudentRequest) async {
         guard let studentID = authManager.user?.id else { return }
         do {
@@ -227,6 +258,7 @@ struct MyInstructorRow: View {
                 if let instructor {
                     Text(instructor.name ?? "Instructor")
                         .font(.headline)
+                        .foregroundColor(request.status == .blocked ? .textLight : .textDark)
                 } else {
                     ProgressView()
                         .frame(maxWidth: 100)
@@ -238,7 +270,6 @@ struct MyInstructorRow: View {
             
             Spacer()
             
-            // --- *** UPDATED: Pass blockedBy to the badge *** ---
             StatusBadge(status: request.status, blockedBy: request.blockedBy)
         }
         .padding(.vertical, 6)
@@ -258,7 +289,6 @@ struct MyInstructorRow: View {
 // A simple badge to show the request status
 struct StatusBadge: View {
     let status: RequestStatus
-    // --- *** ADDED THIS FIELD *** ---
     let blockedBy: String?
     
     var text: String {
@@ -267,7 +297,6 @@ struct StatusBadge: View {
         case .approved: return "Approved"
         case .denied: return "Denied"
         case .blocked:
-            // --- *** UPDATED LOGIC *** ---
             if blockedBy == "student" {
                 return "Blocked by You"
             } else if blockedBy == "instructor" {

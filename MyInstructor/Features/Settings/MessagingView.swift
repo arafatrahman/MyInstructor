@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/MessagingView.swift
-// --- UPDATED: ChatView now calls the new markConversationAsRead function ---
+// --- UPDATED: The chat header (profile pic + name) is now a NavigationLink to the user's profile ---
 
 import SwiftUI
 import Combine
@@ -237,12 +237,39 @@ struct ChatView: View {
         return conversation.participantPhotoURLs[otherID] ?? nil
     }
     
+    // --- *** THIS IS THE NEW HELPER FUNCTION *** ---
+    /// Creates the correct profile destination view based on the user's role.
+    @ViewBuilder
+    private func profileDestination(for user: AppUser) -> some View {
+        if authManager.role == .instructor {
+            // User is an instructor, so otherUser is a student
+            // We need to create a Student object from the AppUser
+            let student = Student(
+                id: user.id,
+                userID: user.id ?? "unknown_user_id",
+                name: user.name ?? "Student",
+                photoURL: user.photoURL,
+                email: user.email,
+                drivingSchool: user.drivingSchool, // nil for student
+                phone: user.phone,
+                address: user.address,
+                averageProgress: 0, // Profile view will load the real data
+                nextLessonTime: nil,
+                nextLessonTopic: nil
+            )
+            StudentProfileView(student: student)
+        } else {
+            // User is a student, so otherUser is an instructor
+            InstructorPublicProfileView(instructorID: user.id ?? "")
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             
+            // --- *** THIS IS THE UPDATED HEADER *** ---
             HStack(spacing: 8) {
                 Button {
-                    // chatManager.removeAllListeners() // This line was removed
                     dismiss()
                 } label: {
                     Image(systemName: "chevron.left")
@@ -250,32 +277,63 @@ struct ChatView: View {
                         .foregroundColor(.white)
                 }
                 
-                AsyncImage(url: URL(string: otherParticipantPhotoURL ?? "")) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        Circle().fill(Color.white)
+                // Wrap the profile pic and name in a NavigationLink
+                if let otherUser = otherUser {
+                    // Only enable link if the other user object is loaded
+                    NavigationLink(destination: profileDestination(for: otherUser)) {
+                        HStack(spacing: 8) { // Group image and name
+                            AsyncImage(url: URL(string: otherParticipantPhotoURL ?? "")) { phase in
+                                if let image = phase.image {
+                                    image.resizable().scaledToFill()
+                                } else {
+                                    Circle().fill(Color.white)
+                                }
+                            }
+                            .frame(width: 30, height: 30)
+                            .background(Color.white)
+                            .clipShape(Circle())
+                            
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(otherParticipantName)
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                Text(chatManager.isConnectionActive ? "Online" : "Connection Removed")
+                                    .font(.caption2)
+                                    .foregroundColor(.white.opacity(chatManager.isConnectionActive ? 0.8 : 1.0))
+                                    .fontWeight(chatManager.isConnectionActive ? .regular : .bold)
+                            }
+                        }
+                    }
+                } else {
+                    // Loading/fallback state (not tappable)
+                    HStack(spacing: 8) {
+                        AsyncImage(url: URL(string: otherParticipantPhotoURL ?? "")) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFill()
+                            } else {
+                                Circle().fill(Color.white)
+                            }
+                        }
+                        .frame(width: 30, height: 30)
+                        .background(Color.white)
+                        .clipShape(Circle())
+                        
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(otherParticipantName)
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            ProgressView() // Show loading for status
+                        }
                     }
                 }
-                .frame(width: 30, height: 30)
-                .background(Color.white)
-                .clipShape(Circle())
                 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(otherParticipantName)
-                        .font(.headline)
-                        .foregroundColor(.white)
-                    Text(chatManager.isConnectionActive ? "Online" : "Connection Removed")
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(chatManager.isConnectionActive ? 0.8 : 1.0))
-                        .fontWeight(chatManager.isConnectionActive ? .regular : .bold)
-                }
                 Spacer()
             }
             .padding(.horizontal)
             .padding(.bottom, 10)
             .padding(.top, 70)
             .background(Color.primaryBlue)
+            // --- *** END OF UPDATED HEADER *** ---
             
             ScrollViewReader { proxy in
                 ScrollView {
@@ -309,13 +367,10 @@ struct ChatView: View {
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
                 .task {
-                    // --- *** THIS SECTION IS UPDATED *** ---
                     guard let convoID = conversation.id, let currentUserID = authManager.user?.id else { return }
                     
                     // Mark as read *before* fetching messages
-                    // We pass the *entire conversation object* now for the check.
                     await chatManager.markConversationAsRead(conversation, currentUserID: currentUserID)
-                    // --- *** END OF UPDATE *** ---
                     
                     isLoadingOtherUser = true
                     let otherUserID = conversation.participantIDs.first { $0 != currentUserID } ?? ""

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/MessagingView.swift
-// --- UPDATED: Added swipe-to-delete on the conversation list ---
+// --- UPDATED: ChatView now calls the new markConversationAsRead function ---
 
 import SwiftUI
 import Combine
@@ -74,7 +74,6 @@ struct MessagingView: View {
                             ConversationRow(conversation: conversation)
                         }
                         .buttonStyle(.plain)
-                        // --- *** THIS IS THE NEW MODIFIER *** ---
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
                                 Task {
@@ -84,7 +83,6 @@ struct MessagingView: View {
                                 Label("Delete", systemImage: "trash.fill")
                             }
                         }
-                        // --- *** END OF NEW MODIFIER *** ---
                     }
                 }
             }
@@ -107,7 +105,6 @@ struct MessagingView: View {
         }
     }
     
-    // --- *** THIS IS THE NEW FUNCTION *** ---
     /// Hides the conversation from the user's list.
     private func deleteConversation(_ conversation: Conversation) async {
         guard let conversationID = conversation.id, let userID = authManager.user?.id else {
@@ -124,10 +121,7 @@ struct MessagingView: View {
     }
 }
 
-// ... (Rest of the file: ConversationRow, ChatView, ChatBubble, etc. remains the same as the previous step) ...
-// ... (Make sure the rest of your file from the previous step is included here) ...
 
-// (ConversationRow is unchanged)
 struct ConversationRow: View {
     @EnvironmentObject var authManager: AuthManager
     let conversation: Conversation
@@ -169,6 +163,12 @@ struct ConversationRow: View {
         return timestamp.compactTimeAgo()
     }
     
+    private var isUnread: Bool {
+        guard let currentUserID = authManager.user?.id else { return false }
+        // It's unread if count > 0 AND the last message was NOT from us
+        return conversation.unreadCount > 0 && conversation.lastMessageSenderID != currentUserID
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
@@ -184,24 +184,35 @@ struct ConversationRow: View {
                 Text(otherParticipantName)
                     .font(.headline)
                     .foregroundColor(.textDark)
+                    .fontWeight(isUnread ? .bold : .regular) // Bold if unread
+                
                 Text(lastMessagePreview)
                     .font(.subheadline)
-                    .foregroundColor(.textLight)
+                    .foregroundColor(isUnread ? .primaryBlue : .textLight) // Blue if unread
+                    .fontWeight(isUnread ? .bold : .regular) // Bold if unread
                     .lineLimit(1)
             }
             
             Spacer()
             
-            Text(timestampString)
-                .font(.subheadline)
-                .foregroundColor(.textLight)
+            VStack(alignment: .trailing, spacing: 5) {
+                Text(timestampString)
+                    .font(.subheadline)
+                    .foregroundColor(isUnread ? .primaryBlue : .textLight)
+                    .fontWeight(isUnread ? .bold : .regular) // Bold if unread
+                
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 10, height: 10)
+                    .opacity(isUnread ? 1.0 : 0.0) // Show or hide dot
+            }
+            .frame(width: 70, alignment: .trailing) // Give stack a fixed width
         }
         .padding(.vertical, 8)
     }
 }
 
 
-// (ChatView is unchanged from previous step)
 struct ChatView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var authManager: AuthManager
@@ -298,7 +309,13 @@ struct ChatView: View {
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
                 .task {
+                    // --- *** THIS SECTION IS UPDATED *** ---
                     guard let convoID = conversation.id, let currentUserID = authManager.user?.id else { return }
+                    
+                    // Mark as read *before* fetching messages
+                    // We pass the *entire conversation object* now for the check.
+                    await chatManager.markConversationAsRead(conversation, currentUserID: currentUserID)
+                    // --- *** END OF UPDATE *** ---
                     
                     isLoadingOtherUser = true
                     let otherUserID = conversation.participantIDs.first { $0 != currentUserID } ?? ""
@@ -437,7 +454,7 @@ struct ChatView: View {
     }
 }
 
-// (ChatBubble is unchanged)
+
 struct ChatBubble: View {
     @EnvironmentObject var authManager: AuthManager
     let message: ChatMessage
@@ -500,7 +517,7 @@ struct ChatBubble: View {
     }
 }
 
-// (Helper Extensions are unchanged)
+
 extension View {
     func border(width: CGFloat, edges: [Edge], color: Color) -> some View {
         overlay(EdgeBorder(width: width, edges: edges).foregroundColor(color))

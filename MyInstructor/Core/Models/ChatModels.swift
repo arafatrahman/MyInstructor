@@ -16,10 +16,13 @@ struct Conversation: Identifiable, Codable, Hashable {
     // For the conversation list preview
     var lastMessage: String?
     var lastMessageTimestamp: Date?
-    var unreadCount: Int = 0
     
     // --- *** THIS IS THE NEW FIELD *** ---
-    /// An array of user IDs who have "hidden" or "deleted" this chat from their view.
+    var lastMessageSenderID: String? // Tracks who sent the last message
+    
+    var unreadCount: Int = 0
+    
+    // An array of user IDs who have "hidden" or "deleted" this chat from their view.
     var hiddenFor: [String]?
 }
 

@@ -1,5 +1,5 @@
 // File: MyInstructor/Core/Managers/ChatManager.swift
-// --- UPDATED: sendMessage now un-hides the chat for the SENDER as well as the recipient ---
+// --- UPDATED: markConversationAsRead is now more robust ---
 
 import Foundation
 import Combine
@@ -55,6 +55,33 @@ class ChatManager: ObservableObject {
         try await conversationsCollection.document(conversationID).updateData([
             "hiddenFor": FieldValue.arrayUnion([userID])
         ])
+    }
+    
+    // --- *** THIS IS THE UPDATED FUNCTION *** ---
+    /// Sets the unread count for a conversation to 0 in Firestore.
+    @MainActor
+    func markConversationAsRead(_ conversation: Conversation, currentUserID: String) async {
+        // We use the conversation object passed directly from the view.
+        guard let conversationID = conversation.id else { return }
+        
+        // Only mark as read if:
+        // 1. The last message was NOT from the current user.
+        // 2. The unread count is greater than 0.
+        // This check is now robust because it uses the specific conversation
+        // object the user just tapped on.
+        if conversation.lastMessageSenderID != currentUserID && conversation.unreadCount > 0 {
+            print("ChatManager: Marking conversation \(conversationID) as read in Firestore.")
+            do {
+                // This is the permanent database write.
+                try await conversationsCollection.document(conversationID).updateData([
+                    "unreadCount": 0
+                ])
+                // The listener will automatically update the local 'conversations' array
+                // and all UI will refresh.
+            } catch {
+                print("Failed to mark as read: \(error.localizedDescription)")
+            }
+        }
     }
     
     // MARK: - Chat Message View
@@ -136,20 +163,17 @@ class ChatManager: ObservableObject {
         // 3. Update the conversation document
         var dataToUpdate: [String: Any] = [
             "lastMessage": text,
-            "lastMessageTimestamp": FieldValue.serverTimestamp()
+            "lastMessageTimestamp": FieldValue.serverTimestamp(),
+            "lastMessageSenderID": senderID, // Set who sent the last message
+            "unreadCount": FieldValue.increment(1.0) // Increment the unread count
         ]
         
-        // --- *** THIS IS THE FIX *** ---
-        // We must remove BOTH the sender and the recipient from the 'hiddenFor' array.
-        // This ensures that if the SENDER deleted the chat, it reappears for them.
-        // And if the RECIPIENT deleted the chat, it reappears for them.
+        // Un-hide the conversation for both sender and recipient
         if let recipientID {
             dataToUpdate["hiddenFor"] = FieldValue.arrayRemove([senderID, recipientID])
         } else {
-            // Failsafe in case recipient isn't found (e.g., group chat, though not supported)
             dataToUpdate["hiddenFor"] = FieldValue.arrayRemove([senderID])
         }
-        // --- *** END OF FIX *** ---
         
         try await conversationsCollection.document(conversationID).updateData(dataToUpdate)
     }
@@ -225,6 +249,8 @@ class ChatManager: ObservableObject {
             ],
             lastMessage: "You are now connected!",
             lastMessageTimestamp: Date(),
+            lastMessageSenderID: nil, // No sender yet for initial message
+            unreadCount: 0, // Starts at 0
             hiddenFor: []
         )
         

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: To fetch notification count and pass it to the header ---
+// --- UPDATED: To fetch notification count AND listen for chat messages ---
 
 import SwiftUI
 
@@ -7,9 +7,10 @@ import SwiftUI
 struct InstructorDashboardView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var dataService: DataService
-    // --- *** ADD THIS LINE *** ---
     @EnvironmentObject var communityManager: CommunityManager // Add this to fetch requests
-    
+    // --- *** ADD THIS LINE *** ---
+    @EnvironmentObject var chatManager: ChatManager
+
     @State private var nextLesson: Lesson?
     @State private var weeklyEarnings: Double = 0
     @State private var avgStudentProgress: Double = 0
@@ -82,7 +83,16 @@ struct InstructorDashboardView: View {
             .navigationTitle("Dashboard")
             .navigationBarHidden(true) // Use custom header
             .task {
+                // --- *** THIS LOGIC IS UPDATED *** ---
+                guard let instructorID = authManager.user?.id else {
+                    isLoading = false
+                    return
+                }
+                // Start listening for conversations
+                chatManager.listenForConversations(for: instructorID)
+                // Fetch dashboard data
                 await fetchData()
+                // --- *** END OF UPDATE *** ---
             }
             .refreshable {
                 await fetchData()

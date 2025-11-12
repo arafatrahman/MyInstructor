@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/StudentDashboardView.swift
-// --- UPDATED: Notification count now includes .blocked status ---
+// --- UPDATED: To listen for chat messages ---
 
 import SwiftUI
 
@@ -8,7 +8,9 @@ struct StudentDashboardView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var dataService: DataService
     @EnvironmentObject var communityManager: CommunityManager // To fetch request status
-    
+    // --- *** ADD THIS LINE *** ---
+    @EnvironmentObject var chatManager: ChatManager
+
     @State private var upcomingLesson: Lesson?
     @State private var progress: Double = 0.0 // Default to 0
     @State private var latestFeedback: String = ""
@@ -59,7 +61,17 @@ struct StudentDashboardView: View {
             .navigationTitle("Dashboard")
             .navigationBarHidden(true)
             .task {
+                // --- *** THIS LOGIC IS UPDATED *** ---
+                guard let studentID = authManager.user?.id else {
+                    print("StudentDashboard: Error - No student ID found.")
+                    isLoading = false
+                    return
+                }
+                // Start listening for conversations
+                chatManager.listenForConversations(for: studentID)
+                // Fetch dashboard data
                 await fetchData()
+                // --- *** END OF UPDATE *** ---
             }
             .refreshable {
                 await fetchData()

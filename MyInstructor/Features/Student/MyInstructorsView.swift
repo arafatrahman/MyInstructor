@@ -1,5 +1,5 @@
 // File: MyInstructor/Features/Student/MyInstructorsView.swift
-// --- UPDATED: StatusBadge now handles 'blocked' ---
+// --- UPDATED: Added swipe-to-unblock and clearer status badges ---
 
 import SwiftUI
 
@@ -122,6 +122,17 @@ struct MyInstructorsView: View {
                                     Section("Blocked Requests") {
                                         ForEach(blockedRequests) { request in
                                             MyInstructorRow(request: request)
+                                                // --- *** THIS IS THE NEW SWIPE ACTION *** ---
+                                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                                    // Only show Unblock if student blocked them
+                                                    if request.blockedBy == "student" {
+                                                        Button("Unblock") {
+                                                            Task { await unblockInstructor(request) }
+                                                        }
+                                                        .tint(.accentGreen)
+                                                    }
+                                                }
+                                                // --- *** END OF NEW SWIPE ACTION *** ---
                                         }
                                     }
                                 }
@@ -176,6 +187,19 @@ struct MyInstructorsView: View {
             print("Failed to remove instructor: \(error.localizedDescription)")
         }
     }
+    
+    // --- *** THIS IS THE NEW FUNCTION *** ---
+    private func unblockInstructor(_ request: StudentRequest) async {
+        guard let studentID = authManager.user?.id else { return }
+        do {
+            try await communityManager.unblockInstructor(instructorID: request.instructorID, studentID: studentID)
+            // After unblocking, refresh the list. The request will
+            // move to the "Denied" section.
+            await loadRequests()
+        } catch {
+            print("Failed to unblock instructor: \(error.localizedDescription)")
+        }
+    }
 }
 
 // REDESIGNED ROW
@@ -214,7 +238,8 @@ struct MyInstructorRow: View {
             
             Spacer()
             
-            StatusBadge(status: request.status)
+            // --- *** UPDATED: Pass blockedBy to the badge *** ---
+            StatusBadge(status: request.status, blockedBy: request.blockedBy)
         }
         .padding(.vertical, 6)
         .task {
@@ -233,13 +258,22 @@ struct MyInstructorRow: View {
 // A simple badge to show the request status
 struct StatusBadge: View {
     let status: RequestStatus
+    // --- *** ADDED THIS FIELD *** ---
+    let blockedBy: String?
     
     var text: String {
         switch status {
         case .pending: return "Pending"
         case .approved: return "Approved"
         case .denied: return "Denied"
-        case .blocked: return "Blocked" // --- FIX: Added .blocked case ---
+        case .blocked:
+            // --- *** UPDATED LOGIC *** ---
+            if blockedBy == "student" {
+                return "Blocked by You"
+            } else if blockedBy == "instructor" {
+                return "Blocked by Instructor"
+            }
+            return "Blocked" // Fallback
         }
     }
     
@@ -248,7 +282,7 @@ struct StatusBadge: View {
         case .pending: return .orange
         case .approved: return .accentGreen
         case .denied: return .warningRed
-        case .blocked: return .black // --- FIX: Added .blocked case ---
+        case .blocked: return .black
         }
     }
     

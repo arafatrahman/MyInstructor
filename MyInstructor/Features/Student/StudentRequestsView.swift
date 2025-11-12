@@ -1,6 +1,5 @@
 // File: MyInstructor/Features/Student/StudentRequestsView.swift
-// (This is a NEW file)
-// --- UPDATED: Removed the duplicate StatusBadge struct ---
+// --- UPDATED: Fixed the missing 'blockedBy' parameter error ---
 
 import SwiftUI
 
@@ -146,8 +145,10 @@ struct StudentRequestRow: View {
             
             Spacer()
             
+            // --- *** THIS IS THE FIX *** ---
             // Status Badge
-            StatusBadge(status: request.status)
+            StatusBadge(status: request.status, blockedBy: request.blockedBy)
+            // --- *** END OF FIX *** ---
         }
         .padding(.vertical, 6)
         .task {

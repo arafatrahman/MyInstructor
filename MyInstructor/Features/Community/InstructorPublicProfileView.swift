@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: Added a conditional "Message" button in the toolbar ---
+// --- UPDATED: The "Approved" button is now hidden when a student is approved ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -9,7 +9,8 @@ enum RequestButtonState {
     case pending
     case approved
     case denied
-    case blocked
+    case blocked // Blocked by INSTRUCTOR
+    case blockedByStudent // Blocked by STUDENT
 }
 
 struct InstructorPublicProfileView: View {
@@ -75,26 +76,49 @@ struct InstructorPublicProfileView: View {
         .toolbar {
             if authManager.role == .student {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    // --- *** THIS IS THE UPDATED TOOLBAR *** ---
                     HStack(spacing: 16) {
                         // 1. Conditional Message Button
                         if requestState == .approved, let instructorAppUser = instructor {
                             NavigationLink(destination: ChatLoadingView(otherUser: instructorAppUser)) {
                                 Image(systemName: "message.circle.fill")
-                                    .font(.title3) // Use a slightly smaller icon for toolbar
+                                    .font(.title3)
                                     .foregroundColor(appBlue)
                             }
                         }
                         
+                        // --- *** THIS IS THE UPDATED SECTION *** ---
                         // 2. Existing Request Button
-                        Button(action: handleRequestButtonTap) {
-                            Text(buttonText)
-                                .bold()
+                        // Only show this button if the state is NOT approved.
+                        if requestState != .approved {
+                            Button(action: handleRequestButtonTap) {
+                                Text(buttonText)
+                                    .bold()
+                            }
+                            .disabled(buttonIsDisabled)
+                            .tint(requestState == .pending ? .red : (requestState == .blocked || requestState == .blockedByStudent ? .gray : appBlue))
                         }
-                        .disabled(buttonIsDisabled)
-                        .tint(requestState == .pending ? .red : (requestState == .blocked ? .gray : appBlue))
+                        // --- *** END OF UPDATE *** ---
+                        
+                        // 3. Block/Unblock Menu
+                        // Don't show menu if instructor blocked you
+                        if requestState != .blocked {
+                            Menu {
+                                if requestState == .blockedByStudent {
+                                    Button("Unblock Instructor", role: .destructive) {
+                                        Task { await unblockInstructor() }
+                                    }
+                                } else {
+                                    Button("Block Instructor", role: .destructive) {
+                                        Task { await blockInstructor() }
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                                    .font(.title3)
+                                    .foregroundColor(.textLight)
+                            }
+                        }
                     }
-                    // --- *** END OF UPDATE *** ---
                 }
             }
         }
@@ -117,12 +141,13 @@ struct InstructorPublicProfileView: View {
         case .pending: return "Cancel Request"
         case .approved: return "Approved"
         case .denied: return "Re-apply"
-        case .blocked: return "Blocked"
+        case .blocked: return "Blocked by Instructor"
+        case .blockedByStudent: return "Blocked"
         }
     }
     
     var buttonIsDisabled: Bool {
-        return requestState == .approved || requestState == .blocked || isLoading
+        return requestState == .approved || requestState == .blocked || requestState == .blockedByStudent || isLoading
     }
     
     func handleRequestButtonTap() {
@@ -135,7 +160,7 @@ struct InstructorPublicProfileView: View {
                 await sendRequest()
             case .pending:
                 await cancelRequest()
-            case .approved, .blocked:
+            case .approved, .blocked, .blockedByStudent:
                 break
             }
             isLoading = false
@@ -156,6 +181,7 @@ struct InstructorPublicProfileView: View {
             
             // Check the status of any requests between the student and this instructor
             let requests = try await communityManager.fetchSentRequests(for: studentID)
+            
             if let existingRequest = requests.first(where: { $0.instructorID == instructorID }) {
                 self.currentRequestID = existingRequest.id
                 
@@ -167,12 +193,19 @@ struct InstructorPublicProfileView: View {
                 case .denied:
                     self.requestState = .denied
                 case .blocked:
-                    self.requestState = .blocked
+                    // Check WHO blocked
+                    if existingRequest.blockedBy == "student" {
+                        self.requestState = .blockedByStudent
+                    } else {
+                        // Blocked by instructor (or old block)
+                        self.requestState = .blocked
+                    }
                 }
             } else {
                 self.requestState = .idle
                 self.currentRequestID = nil
             }
+            
         } catch {
             print("Error loading data: \(error)")
             self.alertMessage = error.localizedDescription
@@ -212,6 +245,38 @@ struct InstructorPublicProfileView: View {
         } catch {
             self.alertMessage = error.localizedDescription
         }
+    }
+    
+    func blockInstructor() async {
+        guard let student = authManager.user else { return }
+        
+        isLoading = true
+        alertMessage = nil
+        do {
+            try await communityManager.blockInstructor(instructorID: instructorID, student: student)
+            self.alertMessage = "You have blocked this instructor. They cannot be messaged and will be removed from your lists."
+            self.showSuccessAlert = true
+            await loadData() // Refresh the state
+        } catch {
+            self.alertMessage = error.localizedDescription
+        }
+        isLoading = false
+    }
+    
+    func unblockInstructor() async {
+        guard let studentID = authManager.user?.id else { return }
+        
+        isLoading = true
+        alertMessage = nil
+        do {
+            try await communityManager.unblockInstructor(instructorID: instructorID, studentID: studentID)
+            self.alertMessage = "You have unblocked this instructor. You can now send them a new request."
+            self.showSuccessAlert = true
+            await loadData() // Refresh the state
+        } catch {
+            self.alertMessage = error.localizedDescription
+        }
+        isLoading = false
     }
 }
 

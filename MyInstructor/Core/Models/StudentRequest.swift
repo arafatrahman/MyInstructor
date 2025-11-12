@@ -1,5 +1,5 @@
 // File: Core/Models/StudentRequest.swift
-// --- UPDATED: Added .blocked status ---
+// --- UPDATED: Added .blocked status and blockedBy field ---
 
 import Foundation
 import FirebaseFirestore
@@ -12,6 +12,10 @@ struct StudentRequest: Identifiable, Codable {
     let instructorID: String
     var status: RequestStatus
     let timestamp: Date
+    
+    // --- *** THIS IS THE NEW FIELD *** ---
+    /// Tracks who initiated a block. Values: "student" or "instructor".
+    var blockedBy: String?
 }
 
 enum RequestStatus: String, Codable {

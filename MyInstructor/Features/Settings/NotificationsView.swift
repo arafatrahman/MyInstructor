@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/NotificationsView.swift
-// --- UPDATED: Now fetches ALL requests (pending, denied, blocked) to show as notifications ---
+// --- UPDATED: Fixed missing 'blockedBy' parameter in StatusBadge call ---
 
 import SwiftUI
 
@@ -122,7 +122,8 @@ struct NotificationsView: View {
             do {
                 let allSentRequests = try await communityManager.fetchSentRequests(for: userID)
                 self.deniedRequests = allSentRequests.filter { $0.status == .denied }
-                self.blockedRequests = allSentRequests.filter { $0.status == .blocked }
+                // Only show requests blocked *by the instructor*
+                self.blockedRequests = allSentRequests.filter { $0.status == .blocked && $0.blockedBy == "instructor" }
             } catch {
                 print("Failed to fetch student's sent requests: \(error)")
             }
@@ -230,7 +231,9 @@ struct NotificationInfoRow: View {
             
             Spacer()
             
-            StatusBadge(status: request.status)
+            // --- *** THIS IS THE FIX *** ---
+            StatusBadge(status: request.status, blockedBy: request.blockedBy)
+            // --- *** END OF FIX *** ---
         }
         .padding(.vertical, 6)
         .task {

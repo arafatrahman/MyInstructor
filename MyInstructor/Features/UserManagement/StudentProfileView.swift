@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
-// --- UPDATED: Message icon now navigates to ChatLoadingView ---
+// --- UPDATED: Moved "Remove" and "Block" buttons to a toolbar menu ---
 
 import SwiftUI
 
@@ -14,80 +14,66 @@ struct StudentProfileView: View {
     @EnvironmentObject var authManager: AuthManager
     @Environment(\.dismiss) var dismiss
     
-    // --- *** ADD THESE LINES *** ---
     @EnvironmentObject var dataService: DataService
-    @State private var studentAsAppUser: AppUser? = nil // To store the full user object
-    // --- *** END OF ADD *** ---
+    @State private var studentAsAppUser: AppUser? = nil
     
-    @State private var selectedTab: ProfileTab = .progress
-    @State private var skills: [String: Double] = [:]
+    // --- State for the card data ---
+    @State private var skills: [String: Double] = [:] // Mock data
+    @State private var lessonHistory: [Lesson] = [] // Mock data
+    @State private var payments: [Payment] = [] // Mock data
+    
     @State private var isShowingRemoveAlert = false
     @State private var isShowingBlockAlert = false
-    
-    var lessonHistory: [Lesson] { return [] }
-    var payments: [Payment] { return [] }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header: Photo, contact icons, "Add Note / Update Progress"
-            // --- *** UPDATED: Pass the AppUser object to the header *** ---
-            ProfileHeaderView(student: student, studentAsAppUser: studentAsAppUser, onUpdateProgress: {
-                print("Updating progress for \(student.name)")
-            })
-            
-            // Tabs: Progress | Lessons | Payments
-            Picker("Profile View", selection: $selectedTab) {
-                Text("Progress").tag(ProfileTab.progress)
-                Text("Lessons").tag(ProfileTab.lessons)
-                Text("Payments").tag(ProfileTab.payments)
-            }
-            .pickerStyle(.segmented)
-            .padding([.horizontal, .top])
-            
-            Divider()
-                .padding(.vertical, 8)
-            
-            // Tab Content
-            TabView(selection: $selectedTab) {
-                ProgressTabView(skills: skills, overallProgress: student.averageProgress)
-                    .tag(ProfileTab.progress)
-                LessonsTabView(lessons: lessonHistory)
-                    .tag(ProfileTab.lessons)
-                PaymentsTabView(payments: payments)
-                    .tag(ProfileTab.payments)
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .animation(.easeInOut, value: selectedTab)
-            
-            VStack(spacing: 10) {
-                Button(role: .destructive) {
-                    isShowingRemoveAlert = true
-                } label: {
-                    Text("Remove Student")
-                }
-                .buttonStyle(RemoveDestructiveDrivingAppButtonStyle())
+        ScrollView {
+            VStack(spacing: 16) {
+                // Header: Photo, contact icons, "Add Note / Update Progress"
+                ProfileHeaderView(student: student, studentAsAppUser: studentAsAppUser, onUpdateProgress: {
+                    print("Updating progress for \(student.name)")
+                })
                 .padding(.horizontal)
-
-                Button(role: .destructive) {
-                    isShowingBlockAlert = true
-                } label: {
-                    Text("Block Student")
-                }
-                .buttonStyle(DestructiveDrivingAppButtonStyle())
-                .padding(.horizontal)
-                .padding(.bottom)
+                .padding(.top, 16)
+                
+                ProgressCard(skills: skills, overallProgress: student.averageProgress)
+                    .padding(.horizontal)
+                
+                LessonsCard(lessons: lessonHistory)
+                    .padding(.horizontal)
+                
+                PaymentsCard(payments: payments)
+                    .padding(.horizontal)
+                
+                Spacer(minLength: 20)
+                
+                // --- *** ACTION BUTTONS REMOVED FROM HERE *** ---
             }
+            .padding(.bottom, 20) // Add bottom padding
         }
         .navigationTitle(student.name)
         .navigationBarTitleDisplayMode(.inline)
+        // --- *** THIS IS THE NEW TOOLBAR *** ---
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Button("Remove Student", role: .destructive) {
+                        isShowingRemoveAlert = true
+                    }
+                    Button("Block Student", role: .destructive) {
+                        isShowingBlockAlert = true
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
+        // --- *** END OF NEW TOOLBAR *** ---
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .task {
-            // --- *** UPDATED: Fetch both data and the AppUser object *** ---
             await fetchData()
             if studentAsAppUser == nil, let studentID = student.id {
-                // Fetch the full AppUser object needed for ChatLoadingView
                 self.studentAsAppUser = try? await dataService.fetchUser(withId: studentID)
             }
-            // --- *** END OF UPDATE *** ---
         }
         .alert("Remove \(student.name)?", isPresented: $isShowingRemoveAlert) {
             Button("Cancel", role: .cancel) { }
@@ -109,7 +95,10 @@ struct StudentProfileView: View {
     
     func fetchData() async {
         print("Fetching data for student \(student.id ?? "N/A")")
-        // ... (your existing fetch data logic)
+        // TODO: Load real data for skills, lessons, and payments
+        // self.skills = ...
+        // self.lessonHistory = ...
+        // self.payments = ...
     }
     
     func removeStudent() async {
@@ -133,28 +122,30 @@ struct StudentProfileView: View {
     }
 }
 
-enum ProfileTab: String {
-    case progress, lessons, payments
-}
-
 // ----------------------------------------------------------------------
 // MARK: - SUPPORTING VIEWS
 // ----------------------------------------------------------------------
 
 struct ProfileHeaderView: View {
     let student: Student
-    // --- *** ADD THIS LINE *** ---
-    let studentAsAppUser: AppUser? // The full AppUser object
-    
+    let studentAsAppUser: AppUser?
     let onUpdateProgress: () -> Void
     
     var body: some View {
         VStack(spacing: 15) {
             HStack(alignment: .top) {
-                Image(systemName: "person.crop.circle.fill")
-                    .resizable()
-                    .frame(width: 70, height: 70)
-                    .foregroundColor(.primaryBlue)
+                AsyncImage(url: URL(string: student.photoURL ?? "")) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "person.crop.circle.fill")
+                            .resizable()
+                            .foregroundColor(.primaryBlue)
+                    }
+                }
+                .frame(width: 70, height: 70)
+                .background(Color.secondaryGray)
+                .clipShape(Circle())
                 
                 VStack(alignment: .leading) {
                     Text(student.name)
@@ -165,24 +156,19 @@ struct ProfileHeaderView: View {
                 }
                 Spacer()
                 
-                // --- *** UPDATED: Contact Icons *** ---
                 HStack(spacing: 15) {
                     Image(systemName: "phone.circle.fill").foregroundColor(.accentGreen).font(.title)
                     
-                    // Wrap the message icon in a NavigationLink
                     if let appUser = studentAsAppUser {
-                        // Only enable navigation if we successfully fetched the AppUser
                         NavigationLink(destination: ChatLoadingView(otherUser: appUser)) {
                             Image(systemName: "message.circle.fill")
                                 .foregroundColor(.primaryBlue).font(.title)
                         }
                     } else {
-                        // Show a disabled (gray) icon if the user object isn't loaded
                         Image(systemName: "message.circle.fill")
                             .foregroundColor(.gray).font(.title)
                     }
                 }
-                // --- *** END OF UPDATE *** ---
             }
             
             HStack {
@@ -190,20 +176,28 @@ struct ProfileHeaderView: View {
                 QuickActionButton(title: "Update Progress", icon: "arrow.up.circle.fill", color: .accentGreen, action: onUpdateProgress)
             }
         }
-        .padding(.horizontal)
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
-// ... (Rest of StudentProfileView.swift: ProgressTabView, LessonsTabView, PaymentsTabView, and Button Styles are unchanged) ...
-
-// (ProgressTabView is unchanged)
-struct ProgressTabView: View {
+private struct ProgressCard: View {
     let skills: [String: Double]
     let overallProgress: Double
     
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 25) {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("PROGRESS")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            Divider().padding(.horizontal, 16)
+
+            VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 20) {
                     CircularProgressView(progress: overallProgress, color: .primaryBlue, size: 100)
                     
@@ -216,36 +210,122 @@ struct ProgressTabView: View {
                     }
                     Spacer()
                 }
-                .padding(.horizontal)
                 
                 Text("Skill Breakdown")
                     .font(.title3).bold()
-                    .padding(.horizontal)
                 
                 if skills.isEmpty {
                     Text("No skills tracked yet.")
                         .foregroundColor(.textLight)
-                        .padding(.horizontal)
                 } else {
                     ForEach(skills.keys.sorted(), id: \.self) { skill in
                         SkillProgressRow(skill: skill, progress: skills[skill]!)
                     }
                 }
-                
-                Text("Instructor Notes")
-                    .font(.title3).bold()
-                    .padding(.horizontal)
-                Text("No notes added yet.")
-                    .padding(.horizontal)
-                    .foregroundColor(.textLight)
             }
-            .padding(.top)
+            .padding(16)
         }
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
-// (SkillProgressRow is unchanged)
-struct SkillProgressRow: View {
+private struct LessonsCard: View {
+    let lessons: [Lesson]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("LESSON HISTORY")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            Divider().padding(.horizontal, 16)
+
+            VStack(alignment: .leading, spacing: 14) {
+                if lessons.isEmpty {
+                    Text("No lesson history found.")
+                        .font(.system(size: 15))
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 8) // Add padding so card isn't empty
+                } else {
+                    ForEach(lessons.sorted(by: { $0.startTime > $1.startTime })) { lesson in
+                        VStack(alignment: .leading) {
+                            Text(lesson.topic).bold()
+                            HStack {
+                                Text(lesson.startTime, style: .date)
+                                Spacer()
+                                Text(lesson.status.rawValue.capitalized)
+                                    .foregroundColor(lesson.status == .completed ? .accentGreen : .primaryBlue)
+                            }
+                            .font(.caption)
+                            .foregroundColor(.textLight)
+                        }
+                        if lesson.id != lessons.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+    }
+}
+
+private struct PaymentsCard: View {
+    let payments: [Payment]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("PAYMENT HISTORY")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            Divider().padding(.horizontal, 16)
+
+            VStack(alignment: .leading, spacing: 14) {
+                if payments.isEmpty {
+                    Text("No payment history found.")
+                        .font(.system(size: 15))
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 8)
+                } else {
+                    ForEach(payments.sorted(by: { $0.date > $1.date })) { payment in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(payment.isPaid ? "Payment Received" : "Payment Pending")
+                                    .font(.headline)
+                                    .foregroundColor(payment.isPaid ? .accentGreen : .warningRed)
+                                Text(payment.date, style: .date)
+                                    .font(.caption).foregroundColor(.textLight)
+                            }
+                            Spacer()
+                            Text("£\(payment.amount, specifier: "%.2f")")
+                                .font(.title3).bold()
+                        }
+                        if payment.id != payments.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+    }
+}
+
+
+private struct SkillProgressRow: View {
     let skill: String
     let progress: Double
     
@@ -266,74 +346,6 @@ struct SkillProgressRow: View {
             }
             ProgressView(value: progress)
                 .tint(progressColor)
-        }
-        .padding(.horizontal)
-    }
-}
-
-// (LessonsTabView is unchanged)
-struct LessonsTabView: View {
-    let lessons: [Lesson]
-    
-    var body: some View {
-        List {
-            Section("Lesson History") {
-                if lessons.isEmpty {
-                    Text("No lesson history found.")
-                        .foregroundColor(.textLight)
-                } else {
-                    ForEach(lessons.sorted(by: { $0.startTime > $1.startTime })) { lesson in
-                        VStack(alignment: .leading) {
-                            Text(lesson.topic).bold()
-                            HStack {
-                                Text(lesson.startTime, style: .date)
-                                Spacer()
-                                Text(lesson.status.rawValue.capitalized)
-                                    .foregroundColor(lesson.status == .completed ? .accentGreen : .primaryBlue)
-                            }
-                            .font(.caption)
-                            .foregroundColor(.textLight)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// (PaymentsTabView is unchanged)
-struct PaymentsTabView: View {
-    let payments: [Payment]
-    
-    var body: some View {
-        List {
-            Section("Payment History") {
-                if payments.isEmpty {
-                    Text("No payment history found.")
-                        .foregroundColor(.textLight)
-                } else {
-                    ForEach(payments.sorted(by: { $0.date > $1.date })) { payment in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(payment.isPaid ? "Payment Received" : "Payment Pending")
-                                    .font(.headline)
-                                    .foregroundColor(payment.isPaid ? .accentGreen : .warningRed)
-                                Text(payment.date, style: .date)
-                                    .font(.caption).foregroundColor(.textLight)
-                            }
-                            Spacer()
-                            Text("£\(payment.amount, specifier: "%.2f")")
-                                .font(.title3).bold()
-                        }
-                    }
-                }
-            }
-            
-            Section {
-                Button("View All Payments") {
-                    print("Navigating to PaymentsView")
-                }
-            }
         }
     }
 }

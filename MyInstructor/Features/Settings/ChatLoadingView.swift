@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/ChatLoadingView.swift
-// --- UPDATED: Now handles errors from ChatManager ---
+// --- UPDATED: Now dismisses itself when returning from ChatView ---
 
 import SwiftUI
 
@@ -7,11 +7,9 @@ struct ChatLoadingView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var chatManager: ChatManager
     
-    // --- *** ADD THESE LINES *** ---
     @Environment(\.dismiss) var dismiss
     @State private var errorMessage: String? = nil
     @State private var isShowingErrorAlert: Bool = false
-    // --- *** END OF ADD *** ---
     
     // The user we want to chat with
     let otherUser: AppUser
@@ -33,7 +31,23 @@ struct ChatLoadingView: View {
                 )
             }
         }
+        // --- *** THIS IS THE FIX *** ---
+        .onAppear {
+            if conversation != nil {
+                // If this view re-appears and we *already* have a conversation,
+                // it means the user came BACK from ChatView.
+                // We should dismiss this loading view entirely and go
+                // back to the profile screen.
+                dismiss()
+            }
+        }
+        // --- *** END OF FIX *** ---
         .task {
+            // --- *** ADDED THIS CHECK *** ---
+            // Only run the fetch logic if we haven't already.
+            // This prevents a re-fetch when coming back.
+            guard conversation == nil else { return }
+            
             // When the view appears, find or create the chat
             guard let currentUser = authManager.user else {
                 self.errorMessage = "You are not logged in."
@@ -42,7 +56,6 @@ struct ChatLoadingView: View {
             }
             
             do {
-                // --- *** UPDATED: Use do-catch *** ---
                 self.conversation = try await chatManager.getOrCreateConversation(
                     currentUser: currentUser,
                     otherUser: otherUser
@@ -58,9 +71,7 @@ struct ChatLoadingView: View {
                 self.errorMessage = "An unexpected error occurred. Please try again."
                 self.isShowingErrorAlert = true
             }
-            // --- *** END OF UPDATE *** ---
         }
-        // --- *** ADD THIS ALERT MODIFIER *** ---
         .alert("Cannot Open Chat", isPresented: $isShowingErrorAlert, presenting: errorMessage) { _ in
             Button("OK") {
                 // When "OK" is tapped, dismiss this loading view
@@ -69,6 +80,5 @@ struct ChatLoadingView: View {
         } message: { message in
             Text(message)
         }
-        // --- *** END OF ADD *** ---
     }
 }

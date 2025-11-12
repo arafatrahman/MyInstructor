@@ -231,7 +231,7 @@ struct ChatView: View {
             
             HStack(spacing: 8) {
                 Button {
-                    chatManager.removeAllListeners()
+                    // chatManager.removeAllListeners() // This line was removed
                     dismiss()
                 } label: {
                     Image(systemName: "chevron.left")

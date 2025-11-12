@@ -1,5 +1,5 @@
 // File: MyInstructor/Core/Managers/ChatManager.swift
-// --- UPDATED: Fixed permissions error by removing unnecessary 'getDocument' call ---
+// --- UPDATED: sendMessage now un-hides the chat for the SENDER as well as the recipient ---
 
 import Foundation
 import Combine
@@ -50,7 +50,6 @@ class ChatManager: ObservableObject {
         }
     }
     
-    // --- (New function to hide chats) ---
     func hideConversation(conversationID: String, userID: String) async throws {
         print("ChatManager: Hiding conversation \(conversationID) for user \(userID)")
         try await conversationsCollection.document(conversationID).updateData([
@@ -140,10 +139,17 @@ class ChatManager: ObservableObject {
             "lastMessageTimestamp": FieldValue.serverTimestamp()
         ]
         
+        // --- *** THIS IS THE FIX *** ---
+        // We must remove BOTH the sender and the recipient from the 'hiddenFor' array.
+        // This ensures that if the SENDER deleted the chat, it reappears for them.
+        // And if the RECIPIENT deleted the chat, it reappears for them.
         if let recipientID {
-            // This pulls the recipient's ID out of the 'hiddenFor' array
-            dataToUpdate["hiddenFor"] = FieldValue.arrayRemove([recipientID])
+            dataToUpdate["hiddenFor"] = FieldValue.arrayRemove([senderID, recipientID])
+        } else {
+            // Failsafe in case recipient isn't found (e.g., group chat, though not supported)
+            dataToUpdate["hiddenFor"] = FieldValue.arrayRemove([senderID])
         }
+        // --- *** END OF FIX *** ---
         
         try await conversationsCollection.document(conversationID).updateData(dataToUpdate)
     }
@@ -225,13 +231,11 @@ class ChatManager: ObservableObject {
         // This 'addDocument' call writes to the server
         let newDocRef = try conversationsCollection.addDocument(from: newConversation)
         
-        // --- *** THIS IS THE FIX *** ---
         // We don't need to read the document back.
         // We already have the data. Just assign the new ID and return it.
         // This avoids the "Missing permissions" read error.
         newConversation.id = newDocRef.documentID
         return newConversation
-        // --- *** END OF FIX *** ---
     }
 
     

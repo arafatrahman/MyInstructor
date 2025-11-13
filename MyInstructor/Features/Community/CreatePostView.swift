@@ -82,9 +82,13 @@ struct CreatePostView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { publishPost() } label: {
-                        if isLoading { ProgressView().tint(.white) } else { Text("Publish") }
+                        if isLoading {
+                            ProgressView() // Will use accent color
+                        } else {
+                            Text("Publish").bold() // Make text bold
+                        }
                     }
-                    .buttonStyle(.primaryDrivingApp)
+                    // .buttonStyle(.primaryDrivingApp) // <-- REMOVED
                     .disabled(content.isEmpty || isLoading)
                 }
             }

@@ -1,6 +1,8 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CreatePostView.swift
+// --- UPDATED: Removed PostType Picker for a single, unified creation flow ---
+
 import SwiftUI
-import PhotosUI // --- ADD THIS ---
+import PhotosUI // Make sure this is imported
 
 // Flow Item 19: Create Post
 struct CreatePostView: View {
@@ -10,19 +12,19 @@ struct CreatePostView: View {
     
     var onPostCreated: () -> Void
 
-    @State private var postType: PostType = .text
-    @State private var content: String = ""
-    // mediaURL is now set by the uploader
-    @State private var visibility: PostVisibility = .public
+    // --- REMOVED ---
+    // @State private var postType: PostType = .text
     
-    // --- ADD THESE STATE VARIABLES ---
-    @State private var selectedPhotoItem: PhotosPickerItem?
-    @State private var selectedPhotoData: Data?
-    @State private var isUploadingMedia = false // To show a separate loader
-    // --- END OF ADDITIONS ---
+    @State private var content: String = ""
+    @State private var visibility: PostVisibility = .public
     
     @State private var isLoading = false
     @State private var errorMessage: String?
+    
+    // --- STATE FOR NEW PHOTO PICKER ---
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var selectedPhotoData: Data?
+    @State private var isUploadingMedia = false // To show a separate loader
     
     var visibilityOptions: [PostVisibility] {
         authManager.role == .instructor ? [.public, .instructors, .students, .private] : [.public, .private]
@@ -31,14 +33,8 @@ struct CreatePostView: View {
     var body: some View {
         NavigationView {
             Form {
-                // Post Type Tabs
-                Picker("Post Type", selection: $postType) {
-                    Text("🗣️ Text").tag(PostType.text)
-                    Text("📸 Media").tag(PostType.photoVideo)
-                    Text("❓ Q&A").tag(PostType.qna)
-                }
-                .pickerStyle(.segmented)
-                .padding(.bottom, 10)
+                
+                // --- REMOVED PICKER ---
                 
                 // Form Fields (Content)
                 Section("Content") {
@@ -52,65 +48,71 @@ struct CreatePostView: View {
                                     .padding(.leading, 5)
                             }
                         }
-
-                    // --- THIS SECTION IS MODIFIED ---
-                    if postType == .photoVideo {
-                        PhotosPicker(
-                            selection: $selectedPhotoItem,
-                            matching: .images, // You can expand to .videos later
-                            photoLibrary: .shared()
-                        ) {
-                            HStack(spacing: 12) {
-                                // Show selected image
-                                if let photoData = selectedPhotoData, let uiImage = UIImage(data: photoData) {
-                                    Image(uiImage: uiImage)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 60, height: 60)
-                                        .cornerRadius(8)
-                                } else {
-                                    // Placeholder icon
-                                    Image(systemName: "photo.on.rectangle.angled")
-                                        .font(.title)
-                                        .frame(width: 60, height: 60)
-                                        .background(Color.secondaryGray)
-                                        .cornerRadius(8)
-                                }
-                                
-                                VStack(alignment: .leading) {
-                                    Text(selectedPhotoData == nil ? "Add Photo" : "Change Photo")
-                                        .font(.headline)
-                                        .foregroundColor(.accentGreen)
-                                    if selectedPhotoData != nil {
-                                        Text("Photo selected")
-                                            .font(.caption)
-                                            .foregroundColor(.textLight)
-                                    }
-                                }
-                                
-                                Spacer()
-                                
-                                if isUploadingMedia {
-                                    ProgressView().padding(.leading)
-                                }
+                }
+                
+                // --- NEW UNCONDITIONAL MEDIA SECTION ---
+                Section("Media (Optional)") {
+                    PhotosPicker(
+                        selection: $selectedPhotoItem,
+                        matching: .images,
+                        photoLibrary: .shared()
+                    ) {
+                        // This is the "button" part
+                        HStack(spacing: 12) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.title)
+                                .frame(width: 40)
+                                .foregroundColor(.accentGreen)
+                            
+                            Text(selectedPhotoData == nil ? "Add Photo" : "Change Photo")
+                                .font(.headline)
+                                .foregroundColor(.accentGreen)
+                            
+                            Spacer()
+                            
+                            if isUploadingMedia {
+                                ProgressView()
                             }
-                            .padding(.vertical, 8)
                         }
-                        .onChange(of: selectedPhotoItem) { newItem in
-                            Task {
-                                isUploadingMedia = true
-                                errorMessage = nil
-                                if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                                    selectedPhotoData = data
-                                } else if newItem != nil {
-                                    errorMessage = "Could not load selected photo."
-                                }
-                                isUploadingMedia = false
+                        .padding(.vertical, 8)
+                    }
+                    .onChange(of: selectedPhotoItem) { newItem in
+                        Task {
+                            isUploadingMedia = true
+                            errorMessage = nil
+                            if let data = try? await newItem?.loadTransferable(type: Data.self) {
+                                selectedPhotoData = data
+                            } else if newItem != nil {
+                                errorMessage = "Could not load selected photo."
+                            } else {
+                                // User cleared selection
+                                selectedPhotoData = nil
                             }
+                            isUploadingMedia = false
                         }
                     }
-                    // --- END OF MODIFICATION ---
+                    
+                    // This is the "preview" part
+                    if let photoData = selectedPhotoData, let uiImage = UIImage(data: photoData) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFit()
+                            .cornerRadius(10)
+                            .padding(.vertical, 5)
+                            // Add a context menu (long press) to remove
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    withAnimation {
+                                        selectedPhotoItem = nil
+                                        selectedPhotoData = nil
+                                    }
+                                } label: {
+                                    Label("Remove Photo", systemImage: "xmark.circle.fill")
+                                }
+                            }
+                    }
                 }
+                // --- END OF NEW SECTION ---
                 
                 // Settings
                 Section("Privacy & Settings") {
@@ -125,7 +127,7 @@ struct CreatePostView: View {
                         Image(systemName: "location.fill")
                         Text("Add Location (Optional)")
                     }
-                    .foregroundColor(.textLight) // Make it look disabled
+                    .foregroundColor(.textLight)
                 }
                 
                 if let error = errorMessage {
@@ -146,7 +148,8 @@ struct CreatePostView: View {
                             Text("Publish").bold() // Make text bold
                         }
                     }
-                    .disabled(isLoading || isUploadingMedia) // Disable while saving or loading
+                    // Disable while saving or loading
+                    .disabled(isLoading || isUploadingMedia)
                 }
             }
         }
@@ -154,7 +157,7 @@ struct CreatePostView: View {
     
     // MARK: - Actions
     
-    // --- THIS FUNCTION IS FULLY REPLACED ---
+    // --- THIS FUNCTION IS UPDATED ---
     private func publishPost() {
         guard let userID = authManager.user?.id, let userName = authManager.user?.name else {
             errorMessage = "Error: Could not find user."
@@ -165,12 +168,6 @@ struct CreatePostView: View {
         let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedContent.isEmpty && selectedPhotoData == nil {
             errorMessage = "Please write something or select a photo to post."
-            return
-        }
-        
-        // Ensure post type matches content
-        if postType == .photoVideo && selectedPhotoData == nil {
-            errorMessage = "Please select a photo for a media post."
             return
         }
         
@@ -191,8 +188,18 @@ struct CreatePostView: View {
                         userID: userID
                     )
                 }
+                
+                // 2. Determine PostType implicitly
+                let finalPostType: PostType
+                if finalMediaURL != nil {
+                    // If there's a photo, it's a photoVideo post
+                    finalPostType = .photoVideo
+                } else {
+                    // Otherwise, it's a text post
+                    finalPostType = .text
+                }
 
-                // 2. Create the Post object
+                // 3. Create the Post object
                 let newPost = Post(
                     authorID: userID,
                     authorName: userName,
@@ -200,14 +207,14 @@ struct CreatePostView: View {
                     timestamp: Date(),
                     content: trimmedContent.isEmpty ? nil : trimmedContent, // Store nil if empty
                     mediaURL: finalMediaURL, // Use the URL from upload
-                    postType: postType,
+                    postType: finalPostType, // Use the new implicit type
                     visibility: visibility
                 )
                 
-                // 3. Save the Post object to Firestore
+                // 4. Save the Post object to Firestore
                 try await communityManager.createPost(post: newPost)
                 
-                // 4. Success: Call handler and dismiss
+                // 5. Success: Call handler and dismiss
                 onPostCreated()
                 dismiss()
                 
@@ -218,5 +225,5 @@ struct CreatePostView: View {
             // isLoading is set to false (or view is dismissed)
         }
     }
-    // --- END OF REPLACEMENT ---
+    // --- END OF UPDATE ---
 }

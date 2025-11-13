@@ -11,8 +11,8 @@ struct Post: Identifiable, Codable {
     var authorRole: UserRole
     let timestamp: Date
     var content: String?
-    var mediaURL: String?
-    var location: String? // --- *** ADD THIS NEW FIELD *** ---
+    var mediaURLs: [String]? // --- *** THIS LINE WAS UPDATED *** ---
+    var location: String?
     var postType: PostType
     var reactionsCount: [String: Int] = ["thumbsup": 0, "fire": 0, "heart": 0]
     var commentsCount: Int = 0

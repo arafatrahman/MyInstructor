@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: Replaced SearchBar/Toolbar with a custom header to match user's image ---
+// --- UPDATED: Handles multiple media URLs ---
 
 import SwiftUI
 
@@ -9,13 +9,12 @@ struct CommunityFeedView: View {
     @EnvironmentObject var authManager: AuthManager
     
     @State private var posts: [Post] = []
-    @State private var searchText = "" // This is no longer used by a SearchBar, but kept for filtering logic
-    @State private var filterMode: CommunityFilter = .all // Filter logic is still present
+    @State private var searchText = ""
+    @State private var filterMode: CommunityFilter = .all
     @State private var isCreatePostPresented = false
     
     @State private var isLoading = true
     
-    // Simple mock filter for the UI demonstration
     var filteredPosts: [Post] {
         if searchText.isEmpty {
             return posts
@@ -26,9 +25,9 @@ struct CommunityFeedView: View {
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 15) { // Added spacing
+            VStack(spacing: 15) {
                 
-                // --- *** NEW CUSTOM HEADER *** ---
+                // --- *** CUSTOM HEADER *** ---
                 HStack {
                     Text("Community Hub")
                         .font(.largeTitle).bold()
@@ -36,9 +35,7 @@ struct CommunityFeedView: View {
                     
                     Spacer()
                     
-                    // 1. Search Button
                     Button {
-                        // TODO: Implement search (e.g., show a search bar or modal)
                         print("Search tapped")
                     } label: {
                         Image(systemName: "magnifyingglass")
@@ -47,7 +44,6 @@ struct CommunityFeedView: View {
                     }
                     .padding(.trailing, 5)
                     
-                    // 2. "Find Instructor" (from old toolbar)
                     if authManager.role == .student {
                         NavigationLink(destination: InstructorDirectoryView()) {
                             Image(systemName: "person.badge.plus.fill")
@@ -58,10 +54,8 @@ struct CommunityFeedView: View {
                 }
                 .padding(.horizontal)
                 .padding(.top, 10)
-                // --- *** END CUSTOM HEADER *** ---
-
                 
-                // --- *** NEW "CREATE POST" BAR *** ---
+                // --- *** "CREATE POST" BAR *** ---
                 HStack(spacing: 10) {
                     AsyncImage(url: URL(string: authManager.user?.photoURL ?? "")) { phase in
                         if let image = phase.image {
@@ -75,9 +69,8 @@ struct CommunityFeedView: View {
                     .clipShape(Circle())
                     .background(Color.secondaryGray.clipShape(Circle()))
                     
-                    // This Button looks like text and triggers the sheet
                     Button {
-                        isCreatePostPresented = true // Open create post screen
+                        isCreatePostPresented = true
                     } label: {
                         HStack {
                             Text("What's on your mind?")
@@ -90,9 +83,8 @@ struct CommunityFeedView: View {
                     
                     Spacer()
                     
-                    // This "Photo" Button also triggers the sheet
                     Button {
-                        isCreatePostPresented = true // Open create post screen
+                        isCreatePostPresented = true
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "photo.fill")
@@ -103,23 +95,14 @@ struct CommunityFeedView: View {
                         .padding(.vertical, 8)
                         .background(Color.accentGreen)
                         .foregroundColor(.white)
-                        .cornerRadius(20) // Pill shape
+                        .cornerRadius(20)
                     }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(Color(.systemGray6)) // Light background
-                .cornerRadius(30) // Rounded bar
-                .padding(.horizontal) // Inset the bar
-                // --- *** END "CREATE POST" BAR *** ---
-                
-                
-                // --- THIS HSTACK WAS REMOVED ---
-                // HStack {
-                //    SearchBar(text: $searchText, placeholder: "Search posts or people")
-                //    Picker("Filter", ...)
-                // }
-                // .padding(.horizontal)
+                .background(Color(.systemGray6))
+                .cornerRadius(30)
+                .padding(.horizontal)
                 
                 // Content View
                 if isLoading {
@@ -131,9 +114,9 @@ struct CommunityFeedView: View {
                     List {
                         ForEach(filteredPosts) { post in
                             NavigationLink {
-                                PostDetailView(post: post) // Navigate to Flow 20
+                                PostDetailView(post: post)
                             } label: {
-                                PostCard(post: post)
+                                PostCard(post: post) // --- PostCard now handles mediaURLs ---
                             }
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
@@ -145,9 +128,7 @@ struct CommunityFeedView: View {
                     }
                 }
             }
-            // .navigationTitle("Community") // <-- REMOVED
-            .navigationBarHidden(true) // <-- ADDED
-            // --- .toolbar modifier was here, but is now removed ---
+            .navigationBarHidden(true)
             .task { await fetchPosts() }
             .sheet(isPresented: $isCreatePostPresented) {
                 CreatePostView(onPostCreated: { Task { await fetchPosts() } })
@@ -171,8 +152,7 @@ enum CommunityFilter: String {
     case all, instructors, local, trending
 }
 
-// Post Card (Flow Item 18 detail)
-// --- THIS STRUCT IS MODIFIED ---
+// --- *** POSTCARD IS UPDATED TO HANDLE MULTIPLE IMAGES *** ---
 struct PostCard: View {
     let post: Post
     
@@ -191,12 +171,23 @@ struct PostCard: View {
                             Text("Instructor").font(.caption).bold().foregroundColor(.white).padding(4).background(Color.primaryBlue).cornerRadius(4)
                         }
                     }
-                    Text(post.timestamp, style: .relative).font(.caption).foregroundColor(.textLight)
+                    // Show timestamp and location
+                    HStack(spacing: 8) {
+                        Text(post.timestamp, style: .relative).font(.caption).foregroundColor(.textLight)
+                        if let location = post.location {
+                            HStack(spacing: 3) {
+                                Image(systemName: "mappin.circle.fill")
+                                Text(location)
+                            }
+                            .font(.caption)
+                            .foregroundColor(.textLight)
+                            .lineLimit(1)
+                        }
+                    }
                 }
                 
                 Spacer()
                 
-                // Action Button
                 if post.authorRole == .instructor {
                     Button("Book") { print("Booking instructor...") }
                         .buttonStyle(.borderedProminent)
@@ -208,38 +199,52 @@ struct PostCard: View {
             if let content = post.content {
                 Text(content)
                     .font(.body)
-                    .padding(.bottom, 5) // Add padding
+                    .padding(.bottom, 5)
             }
             
-            // --- ADD THIS SECTION TO DISPLAY THE IMAGE ---
-            if let mediaURLString = post.mediaURL, let url = URL(string: mediaURLString) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFit() // Use scaledToFit to see the whole image
-                            .cornerRadius(10)
-                            .padding(.vertical, 5)
-                    case .failure:
-                        HStack(spacing: 8) {
-                            Image(systemName: "photo.on.rectangle")
-                            Text("Failed to load image")
+            // --- *** UPDATED MEDIA SECTION *** ---
+            // Check for media URLs, get the first one
+            if let mediaURLs = post.mediaURLs, let firstURLString = mediaURLs.first, let url = URL(string: firstURLString) {
+                ZStack(alignment: .topTrailing) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .cornerRadius(10)
+                                .padding(.vertical, 5)
+                        case .failure:
+                            HStack(spacing: 8) {
+                                Image(systemName: "photo.on.rectangle")
+                                Text("Failed to load image")
+                            }
+                            .font(.caption)
+                            .foregroundColor(.textLight)
+                            .padding(.vertical, 10)
+                        case .empty:
+                            ProgressView()
+                                .frame(maxWidth: .infinity, minHeight: 150, alignment: .center)
+                        @unknown default:
+                            EmptyView()
                         }
-                        .font(.caption)
-                        .foregroundColor(.textLight)
-                        .padding(.vertical, 10)
-                    case .empty:
-                        ProgressView() // Show a loader
-                            .frame(maxWidth: .infinity, minHeight: 150, alignment: .center)
-                    @unknown default:
-                        EmptyView()
+                    }
+                    
+                    // Add badge if more than 1 image
+                    if mediaURLs.count > 1 {
+                        Text("1/\(mediaURLs.count)")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.7))
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                            .padding(10)
                     }
                 }
             }
-            // --- END OF ADDITION ---
-            
-            // Placeholder for media/Progress Update (Media not fully implemented)
+            // --- *** END OF MEDIA SECTION *** ---
+
             if post.postType == .progressUpdate {
                 Text("📈 Progress Update: 65% Mastery Achieved!")
                     .font(.subheadline).bold()
@@ -270,7 +275,7 @@ struct PostCard: View {
         .shadow(color: Color.textDark.opacity(0.1), radius: 8, x: 0, y: 4)
     }
 }
-// --- END OF MODIFICATION ---
+// --- *** END OF UPDATE *** ---
 
 struct ReactionButton: View {
     let icon: String

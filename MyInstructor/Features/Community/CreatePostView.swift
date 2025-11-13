@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CreatePostView.swift
-// --- UPDATED: Fixed button tap area bug ---
+// --- UPDATED: Handles multiple photos and simplified visibility ---
 
 import SwiftUI
 import PhotosUI
@@ -18,17 +18,19 @@ struct CreatePostView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     
-    // --- STATE FOR NEW FEATURES ---
-    @State private var selectedPhotoItem: PhotosPickerItem?
-    @State private var selectedPhotoData: Data?
+    // --- STATE FOR MULTIPLE PHOTOS ---
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var selectedPhotoData: [Data] = []
     @State private var isUploadingMedia = false
     
     @State private var isShowingAddressSearch = false
     @State private var selectedLocationString: String? = nil
     
+    // --- *** THIS IS THE UPDATED VISIBILITY *** ---
     var visibilityOptions: [PostVisibility] {
-        authManager.role == .instructor ? [.public, .instructors, .students, .private] : [.public, .private]
+        [.public, .private]
     }
+    // --- *** END OF UPDATE *** ---
 
     var body: some View {
         NavigationView {
@@ -49,28 +51,38 @@ struct CreatePostView: View {
                                 }
                             }
                         
-                        // 2. Small Preview (if photo is selected)
-                        if let photoData = selectedPhotoData, let uiImage = UIImage(data: photoData) {
-                            ZStack(alignment: .topTrailing) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(maxHeight: 200)
-                                    .cornerRadius(10)
-                                    .padding(.top, 10)
+                        // --- *** UPDATED PHOTO PREVIEW LOOP *** ---
+                        // 2. Horizontal Scrolling Preview (if photos are selected)
+                        if !selectedPhotoData.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(Array(selectedPhotoData.enumerated()), id: \.offset) { index, photoData in
+                                        if let uiImage = UIImage(data: photoData) {
+                                            ZStack(alignment: .topTrailing) {
+                                                Image(uiImage: uiImage)
+                                                    .resizable()
+                                                    .scaledToFill()
+                                                    .frame(width: 100, height: 100)
+                                                    .cornerRadius(10)
 
-                                // Remove Button
-                                Button(action: removePhoto) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.title2)
-                                        .foregroundColor(.white)
-                                        .background(Color.black.opacity(0.6).clipShape(Circle()))
-                                        .shadow(radius: 2)
+                                                // Remove Button
+                                                Button(action: { removePhoto(at: index) }) {
+                                                    Image(systemName: "xmark.circle.fill")
+                                                        .font(.callout) // Smaller icon
+                                                        .foregroundColor(.white)
+                                                        .background(Color.black.opacity(0.6).clipShape(Circle()))
+                                                }
+                                                .buttonStyle(.plain)
+                                                .padding(4)
+                                            }
+                                        }
+                                    }
                                 }
-                                .buttonStyle(.plain) // Ensure this button is also plain
-                                .padding(15)
+                                .padding(.top, 10)
                             }
+                            .frame(height: 110) // Set a fixed height for the scroll view
                         }
+                        // --- *** END OF PREVIEW LOOP *** ---
 
                         // 3. Selected Location (if selected)
                         if let location = selectedLocationString {
@@ -86,7 +98,7 @@ struct CreatePostView: View {
                                         .font(.caption)
                                         .foregroundColor(.textLight)
                                 }
-                                .buttonStyle(.plain) // Ensure this button is plain
+                                .buttonStyle(.plain)
                             }
                             .padding(8)
                             .background(Color.secondaryGray.opacity(0.5))
@@ -96,48 +108,56 @@ struct CreatePostView: View {
 
                         Divider().padding(.top, 10)
                         
-                        // --- *** THIS IS THE CORRECTED HSTACK *** ---
                         // 4. Action Icons
                         HStack(spacing: 25) {
-                            // PhotosPicker Icon
+                            // --- *** UPDATED PHOTOSPICKER *** ---
+                            // PhotosPicker Icon for MULTIPLE items
                             PhotosPicker(
-                                selection: $selectedPhotoItem,
+                                selection: $selectedPhotoItems, // Binds to the array
+                                maxSelectionCount: 5, // Set a limit
                                 matching: .images,
                                 photoLibrary: .shared()
                             ) {
                                 Image(systemName: "photo.on.rectangle.angled")
                                     .font(.title2)
                                     .foregroundColor(.accentGreen)
-                                    .contentShape(Rectangle()) // Define precise tap area
+                                    .contentShape(Rectangle())
                             }
-                            .onChange(of: selectedPhotoItem, handlePhotoSelection)
+                            .onChange(of: selectedPhotoItems, handlePhotoSelection)
+                            // --- *** END OF UPDATE *** ---
                             
                             // Location Icon Button
                             Button(action: { isShowingAddressSearch = true }) {
                                 Image(systemName: "mappin.and.ellipse")
                                     .font(.title2)
                                     .foregroundColor(.primaryBlue)
-                                    .contentShape(Rectangle()) // Define precise tap area
+                                    .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain) // <-- THIS IS THE FIX
+                            .buttonStyle(.plain)
                             
                             Spacer()
                             
                             if isUploadingMedia { ProgressView() }
                         }
                         .padding(.top, 10)
-                        // --- *** END OF CORRECTION *** ---
                     }
                 }
                 
                 // Settings
                 Section("Privacy & Settings") {
-                    // Visibility
+                    // --- *** UPDATED VISIBILITY PICKER *** ---
                     Picker("Visibility", selection: $visibility) {
                         ForEach(visibilityOptions, id: \.self) { option in
-                            Text(option.rawValue.capitalized).tag(option)
+                            // Use icons for a cleaner look
+                            if option == .public {
+                                Label("Public", systemImage: "globe").tag(PostVisibility.public)
+                            } else if option == .private {
+                                Label("Private", systemImage: "lock.fill").tag(PostVisibility.private)
+                            }
                         }
                     }
+                    .pickerStyle(.segmented) // Segmented style looks good for two options
+                    // --- *** END OF UPDATE *** ---
                 }
                 
                 if let error = errorMessage {
@@ -162,7 +182,6 @@ struct CreatePostView: View {
                 }
             }
             .sheet(isPresented: $isShowingAddressSearch) {
-                // Present the Address Search View you already created
                 AddressSearchView { selectedAddressString in
                     self.selectedLocationString = selectedAddressString
                 }
@@ -174,23 +193,32 @@ struct CreatePostView: View {
     
     // MARK: - Helper Functions
     
-    private func handlePhotoSelection(oldItem: PhotosPickerItem?, newItem: PhotosPickerItem?) {
+    // --- *** UPDATED HANDLER FOR MULTIPLE PHOTOS *** ---
+    private func handlePhotoSelection(oldItems: [PhotosPickerItem]?, newItems: [PhotosPickerItem]) {
          Task {
             isUploadingMedia = true
             errorMessage = nil
-            if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                selectedPhotoData = data
-            } else if newItem != nil {
-                errorMessage = "Could not load selected photo."
+            
+            // This reloads all items in the selection.
+            var newData: [Data] = []
+            for item in newItems {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    newData.append(data)
+                }
             }
+            // This ensures the data array matches the items array
+            selectedPhotoData = newData
+            
             isUploadingMedia = false
         }
     }
     
-    private func removePhoto() {
+    // --- *** UPDATED REMOVE FUNCTION *** ---
+    private func removePhoto(at index: Int) {
         withAnimation {
-            selectedPhotoItem = nil
-            selectedPhotoData = nil
+            // Remove from both arrays to keep them in sync
+            selectedPhotoData.remove(at: index)
+            selectedPhotoItems.remove(at: index)
         }
     }
     
@@ -202,6 +230,7 @@ struct CreatePostView: View {
     
     // MARK: - Actions
     
+    // --- *** UPDATED PUBLISH FUNCTION *** ---
     private func publishPost() {
         guard let userID = authManager.user?.id, let userName = authManager.user?.name else {
             errorMessage = "Error: Could not find user."
@@ -209,7 +238,7 @@ struct CreatePostView: View {
         }
         
         let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedContent.isEmpty && selectedPhotoData == nil {
+        if trimmedContent.isEmpty && selectedPhotoData.isEmpty {
             errorMessage = "Please write something or select a photo to post."
             return
         }
@@ -219,19 +248,23 @@ struct CreatePostView: View {
         
         Task {
             do {
-                var finalMediaURL: String? = nil
+                var finalMediaURLs: [String] = []
                 
-                // 1. If photo data exists, upload it
-                if let photoData = selectedPhotoData {
-                    print("Photo data found, attempting upload...")
-                    finalMediaURL = try await StorageManager.shared.uploadPostMedia(
-                        photoData: photoData,
-                        userID: userID
-                    )
+                // 1. If photo data exists, upload it IN A LOOP
+                if !selectedPhotoData.isEmpty {
+                    print("Photo data found, attempting to upload \(selectedPhotoData.count) photos...")
+                    
+                    for photoData in selectedPhotoData {
+                        let url = try await StorageManager.shared.uploadPostMedia(
+                            photoData: photoData,
+                            userID: userID
+                        )
+                        finalMediaURLs.append(url)
+                    }
                 }
                 
                 // 2. Determine PostType implicitly
-                let finalPostType: PostType = (finalMediaURL != nil) ? .photoVideo : .text
+                let finalPostType: PostType = (finalMediaURLs.isEmpty) ? .text : .photoVideo
 
                 // 3. Create the Post object
                 let newPost = Post(
@@ -240,8 +273,8 @@ struct CreatePostView: View {
                     authorRole: authManager.role,
                     timestamp: Date(),
                     content: trimmedContent.isEmpty ? nil : trimmedContent,
-                    mediaURL: finalMediaURL,
-                    location: selectedLocationString, // --- ADDED LOCATION ---
+                    mediaURLs: finalMediaURLs.isEmpty ? nil : finalMediaURLs, // Save the array
+                    location: selectedLocationString,
                     postType: finalPostType,
                     visibility: visibility
                 )

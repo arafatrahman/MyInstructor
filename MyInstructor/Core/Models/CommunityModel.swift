@@ -1,3 +1,4 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/CommunityModel.swift
 import Foundation
 import FirebaseFirestore
 
@@ -7,10 +8,11 @@ struct Post: Identifiable, Codable {
     @DocumentID var id: String?
     let authorID: String
     let authorName: String
-    var authorRole: UserRole 
+    var authorRole: UserRole
     let timestamp: Date
     var content: String?
     var mediaURL: String?
+    var location: String? // --- *** ADD THIS NEW FIELD *** ---
     var postType: PostType
     var reactionsCount: [String: Int] = ["thumbsup": 0, "fire": 0, "heart": 0]
     var commentsCount: Int = 0

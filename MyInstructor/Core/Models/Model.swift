@@ -69,8 +69,10 @@ struct Student: Identifiable, Codable, Hashable {
     var phone: String?
     var address: String?
     var distance: Double? // Used for sorting by proximity, in meters
-    var coordinate: CLLocationCoordinate2D? // <-- ADDED FOR MAP PINS
-    // --- *** END OF ADDED/MODIFIED FIELDS *** ---
+    
+    // --- *** THIS IS THE FIX *** ---
+    var coordinate: CLLocationCoordinate2D? // <-- Was CLLocationCoordinateD
+    // --- *** END OF FIX *** ---
     
     // Calculated/Derived properties for dashboard/progress display
     var averageProgress: Double = 0.0 // 0.0 to 1.0
@@ -121,4 +123,15 @@ extension TimeInterval {
         formatter.unitsStyle = .abbreviated
         return formatter.string(from: self) ?? ""
     }
+}
+
+// MARK: - Offline Student Model
+struct OfflineStudent: Identifiable, Codable, Hashable {
+    @DocumentID var id: String?
+    let instructorID: String // The ID of the instructor who created this record
+    var name: String
+    var phone: String?
+    var email: String?
+    var address: String?
+    @ServerTimestamp var timestamp: Date? = Date()
 }

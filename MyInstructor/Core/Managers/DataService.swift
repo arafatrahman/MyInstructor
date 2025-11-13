@@ -15,6 +15,11 @@ class DataService: ObservableObject {
         db.collection("lessons")
     }
     
+    // --- *** ADD THIS NEW COLLECTION REFERENCE *** ---
+    private var offlineStudentsCollection: CollectionReference {
+        db.collection("offline_students")
+    }
+    
     init() {
         // Initialization is now empty
     }
@@ -84,6 +89,22 @@ class DataService: ObservableObject {
         
         return students
     }
+    
+    // --- *** ADD THIS NEW FUNCTION *** ---
+    
+    /// Fetches all offline student records created by a specific instructor.
+    func fetchOfflineStudents(for instructorID: String) async throws -> [OfflineStudent] {
+        let snapshot = try await offlineStudentsCollection
+            .whereField("instructorID", isEqualTo: instructorID)
+            .order(by: "name") // Sort them alphabetically
+            .getDocuments()
+            
+        let students = snapshot.documents.compactMap { document -> OfflineStudent? in
+            try? document.data(as: OfflineStudent.self)
+        }
+        return students
+    }
+    // --- *** END OF NEW FUNCTION *** ---
     
     func fetchUser(withId userID: String) async throws -> AppUser? {
         let doc = try await usersCollection.document(userID).getDocument()

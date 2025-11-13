@@ -37,6 +37,11 @@ class CommunityManager: ObservableObject {
     private var conversationsCollection: CollectionReference {
         db.collection("conversations")
     }
+    
+    // --- *** ADD THIS NEW COLLECTION REFERENCE *** ---
+    private var offlineStudentsCollection: CollectionReference {
+        db.collection("offline_students")
+    }
 
     // Fetches recent community posts
     func fetchPosts(filter: String) async throws -> [Post] {
@@ -77,6 +82,27 @@ class CommunityManager: ObservableObject {
         }
         return instructors
     }
+    
+    // MARK: - --- OFFLINE STUDENT FUNCTION ---
+    
+    // --- *** THIS FUNCTION IS UPDATED *** ---
+    
+    /// Creates a new "offline" student record, owned by the instructor.
+    func addOfflineStudent(instructorID: String, name: String, phone: String?, email: String?, address: String?) async throws {
+        let newOfflineStudent = OfflineStudent(
+            instructorID: instructorID,
+            name: name,
+            phone: phone,
+            email: email,
+            address: address
+        )
+        
+        // Add the new document to the 'offline_students' collection
+        try offlineStudentsCollection.addDocument(from: newOfflineStudent)
+        print("Offline student '\(name)' added successfully.")
+    }
+    // --- *** END OF UPDATED FUNCTION *** ---
+
     
     // MARK: - --- STUDENT REQUEST FUNCTIONS ---
     

@@ -1,5 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
 // --- UPDATED: Default filter is now "All Categories", showing all sections ---
+// --- UPDATED: Now includes Offline Student functionality ---
 
 import SwiftUI
 
@@ -9,10 +10,14 @@ struct StudentsListView: View {
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var chatManager: ChatManager
     
+    // --- STATE ---
     @State private var approvedStudents: [Student] = []
     @State private var pendingRequests: [StudentRequest] = []
     @State private var deniedRequests: [StudentRequest] = []
     @State private var blockedRequests: [StudentRequest] = []
+    
+    // --- *** ADD THIS NEW STATE *** ---
+    @State private var offlineStudents: [OfflineStudent] = []
     
     @State private var isLoading = true
     @State private var searchText = ""
@@ -21,6 +26,9 @@ struct StudentsListView: View {
     
     @State private var conversationToPush: Conversation? = nil
     @State private var chatErrorAlert: (isPresented: Bool, message: String) = (false, "")
+    
+    // --- *** ADD THIS NEW STATE *** ---
+    @State private var isAddingOfflineStudent = false // To show the new sheet
     
     // --- UPDATED: Split 'filteredApprovedStudents' into two new properties ---
     var activeStudents: [Student] {
@@ -56,6 +64,14 @@ struct StudentsListView: View {
         }
         return blockedRequests.filter { $0.studentName.localizedCaseInsensitiveContains(searchText) }
     }
+    
+    // --- *** ADD THIS NEW COMPUTED PROPERTY *** ---
+    var filteredOfflineStudents: [OfflineStudent] {
+        if searchText.isEmpty {
+            return offlineStudents
+        }
+        return offlineStudents.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
 
     var body: some View {
         NavigationView {
@@ -79,6 +95,8 @@ struct StudentsListView: View {
                         Text("Completed").tag(StudentFilter.completed)
                         Text("Denied").tag(StudentFilter.denied)
                         Text("Blocked").tag(StudentFilter.blocked)
+                        // --- *** ADD THIS NEW TAG *** ---
+                        Text("Offline").tag(StudentFilter.offline)
                     }
                     .pickerStyle(.menu)
                     .frame(width: 110)
@@ -89,10 +107,10 @@ struct StudentsListView: View {
                 if isLoading {
                     ProgressView("Loading Students...")
                         .padding(.top, 50)
-                } else if pendingRequests.isEmpty && approvedStudents.isEmpty && deniedRequests.isEmpty && blockedRequests.isEmpty {
+                } else if pendingRequests.isEmpty && approvedStudents.isEmpty && deniedRequests.isEmpty && blockedRequests.isEmpty && offlineStudents.isEmpty {
                     EmptyStateView(
                         icon: "person.3.fill",
-                        message: "No students or requests yet. Students can find and request you from the Community Directory."
+                        message: "No students or requests yet. Tap the '+' to add an offline student or wait for a new request."
                     )
                 } else {
                     // --- UPDATED: Removed 'switch' and now use 'if' to show sections ---
@@ -176,6 +194,22 @@ struct StudentsListView: View {
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                         }
+                        
+                        // --- *** ADD THIS ENTIRE NEW SECTION *** ---
+                        if filterMode == .allCategories || filterMode == .offline {
+                            Section(header: Text("Offline Students (\(filteredOfflineStudents.count))").font(.headline).foregroundColor(.gray)) {
+                                if filteredOfflineStudents.isEmpty {
+                                    Text("No offline students found.").foregroundColor(.textLight)
+                                }
+                                ForEach(filteredOfflineStudents) { student in
+                                    // We can create a simple row view for this
+                                    OfflineStudentRow(student: student)
+                                }
+                            }
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                        }
+                        // --- *** END OF NEW SECTION *** ---
                     }
                     .listStyle(.insetGrouped)
                     .animation(.default, value: filterMode)
@@ -187,6 +221,26 @@ struct StudentsListView: View {
             }
             .refreshable {
                 await fetchData()
+            }
+            // --- *** ADD THIS TOOLBAR ITEM *** ---
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        isAddingOfflineStudent = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            // --- *** ADD THIS SHEET MODIFIER *** ---
+            .sheet(isPresented: $isAddingOfflineStudent) {
+                AddOfflineStudentView {
+                    // This is the onStudentAdded closure
+                    // We refresh the data when the sheet is dismissed
+                    Task {
+                        await fetchData()
+                    }
+                }
             }
             // Alert for chat errors (like being blocked)
             .alert("Cannot Start Chat", isPresented: $chatErrorAlert.isPresented, actions: {
@@ -206,11 +260,18 @@ struct StudentsListView: View {
         async let deniedTask = communityManager.fetchDeniedRequests(for: instructorID)
         async let blockedTask = communityManager.fetchBlockedRequests(for: instructorID)
         
+        // --- *** ADD THIS NEW TASK *** ---
+        async let offlineStudentsTask = dataService.fetchOfflineStudents(for: instructorID)
+        
         do {
             self.approvedStudents = try await studentsTask
             self.pendingRequests = try await requestsTask
             self.deniedRequests = try await deniedTask
             self.blockedRequests = try await blockedTask
+            
+            // --- *** AWAIT THE NEW TASK *** ---
+            self.offlineStudents = try await offlineStudentsTask
+            
         } catch {
             print("Failed to fetch data: \(error)")
         }
@@ -282,6 +343,8 @@ enum StudentFilter: String {
     case completed = "Completed"
     case denied = "Denied"
     case blocked = "Blocked"
+    // --- *** ADD THIS NEW CASE *** ---
+    case offline = "Offline"
 }
 
 struct CompactRequestRow: View {
@@ -428,6 +491,74 @@ struct StudentListCard: View {
                     .font(.caption)
                     .foregroundColor(.textLight)
             }
+        }
+        .padding(10)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.textDark.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+}
+
+// --- *** THIS IS THE UPDATED STRUCT *** ---
+
+/// A simple row view for displaying an OfflineStudent
+struct OfflineStudentRow: View {
+    let student: OfflineStudent
+    
+    var body: some View {
+        HStack {
+            Image(systemName: "person.circle.fill")
+                .font(.largeTitle)
+                .foregroundColor(.gray)
+                .frame(width: 50, height: 50)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(student.name)
+                    .font(.headline)
+                
+                if let phone = student.phone, !phone.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "phone.fill")
+                            .font(.caption2)
+                        Text(phone)
+                    }
+                    .font(.caption)
+                    .foregroundColor(.textLight)
+                }
+                
+                if let email = student.email, !email.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "envelope.fill")
+                            .font(.caption2)
+                        Text(email)
+                    }
+                    .font(.caption)
+                    .foregroundColor(.textLight)
+                }
+                
+                if let address = student.address, !address.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.fill")
+                            .font(.caption2)
+                        Text(address)
+                    }
+                    .font(.caption)
+                    .foregroundColor(.textLight)
+                    .lineLimit(1)
+                }
+            }
+            .padding(.leading, 5)
+            
+            Spacer()
+            
+            // "Offline" Tag
+            Text("Offline")
+                .font(.caption).bold()
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.gray.opacity(0.15))
+                .foregroundColor(.gray)
+                .cornerRadius(8)
         }
         .padding(10)
         .background(Color(.systemBackground))

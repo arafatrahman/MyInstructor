@@ -172,6 +172,7 @@ enum CommunityFilter: String {
 }
 
 // Post Card (Flow Item 18 detail)
+// --- THIS STRUCT IS MODIFIED ---
 struct PostCard: View {
     let post: Post
     
@@ -207,7 +208,36 @@ struct PostCard: View {
             if let content = post.content {
                 Text(content)
                     .font(.body)
+                    .padding(.bottom, 5) // Add padding
             }
+            
+            // --- ADD THIS SECTION TO DISPLAY THE IMAGE ---
+            if let mediaURLString = post.mediaURL, let url = URL(string: mediaURLString) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFit() // Use scaledToFit to see the whole image
+                            .cornerRadius(10)
+                            .padding(.vertical, 5)
+                    case .failure:
+                        HStack(spacing: 8) {
+                            Image(systemName: "photo.on.rectangle")
+                            Text("Failed to load image")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.textLight)
+                        .padding(.vertical, 10)
+                    case .empty:
+                        ProgressView() // Show a loader
+                            .frame(maxWidth: .infinity, minHeight: 150, alignment: .center)
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+            }
+            // --- END OF ADDITION ---
             
             // Placeholder for media/Progress Update (Media not fully implemented)
             if post.postType == .progressUpdate {
@@ -240,6 +270,7 @@ struct PostCard: View {
         .shadow(color: Color.textDark.opacity(0.1), radius: 8, x: 0, y: 4)
     }
 }
+// --- END OF MODIFICATION ---
 
 struct ReactionButton: View {
     let icon: String

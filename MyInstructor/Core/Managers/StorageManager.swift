@@ -22,7 +22,51 @@ class StorageManager: ObservableObject {
     private func profilePhotosReference(userID: String) -> StorageReference {
         storageReference.child("profile_photos").child(userID)
     }
-    
+
+    // --- ADD THIS NEW HELPER FUNCTION ---
+    /// A reference to the 'post_media' folder, creating a unique file name
+    private func postMediaReference(userID: String) -> StorageReference {
+        let mediaID = UUID().uuidString
+        return storageReference.child("post_media").child(userID).child("\(mediaID).jpg")
+    }
+
+    // --- ADD THIS NEW FUNCTION ---
+    /// Uploads media for a community post and returns the download URL.
+    func uploadPostMedia(photoData: Data, userID: String) async throws -> String {
+        
+        print("StorageManager: Compressing post media...")
+        guard let image = UIImage(data: photoData),
+              let compressedJPEGData = image.jpegData(compressionQuality: 0.7) else {
+            throw NSError(domain: "StorageManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Could not compress image to JPEG."])
+        }
+        print("StorageManager: Post media compressed. Size: \(compressedJPEGData.count) bytes.")
+
+        let mediaRef = postMediaReference(userID: userID) // Get unique ref
+        
+        let metadata = StorageMetadata()
+        metadata.contentType = "image/jpeg"
+        
+        print("StorageManager: Uploading post media to \(mediaRef.fullPath)...")
+        do {
+            let _ = try await mediaRef.putDataAsync(compressedJPEGData, metadata: metadata)
+            print("StorageManager: Post media upload SUCCESSFUL.")
+        } catch {
+            print("!!! StorageManager POST MEDIA UPLOAD FAILED: \(error.localizedDescription)")
+            throw error
+        }
+        
+        // Get and return the download URL
+        do {
+            let downloadURL = try await mediaRef.downloadURL()
+            print("StorageManager: Got post media URL: \(downloadURL.absoluteString)")
+            return downloadURL.absoluteString
+        } catch {
+            print("!!! StorageManager GET POST MEDIA URL FAILED: \(error.localizedDescription)")
+            throw error
+        }
+    }
+    // --- END OF NEW FUNCTION ---
+
     // MARK: - Public Functions
     
     /// Uploads a profile photo and returns the download URL.
@@ -33,49 +77,49 @@ class StorageManager: ObservableObject {
     func uploadProfilePhoto(photoData: Data, userID: String) async throws -> String {
         
         // --- IMAGE CONVERSION ---
-        print("StorageManager: Received photo data. Size: \(photoData.count) bytes.") // <-- ADDED
+        print("StorageManager: Received photo data. Size: \(photoData.count) bytes.")
         guard let image = UIImage(data: photoData) else {
-            print("!!! StorageManager ERROR: Could not convert data to UIImage.") // <-- ADDED
+            print("!!! StorageManager ERROR: Could not convert data to UIImage.")
             throw NSError(domain: "StorageManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not convert data to UIImage."])
         }
         guard let compressedJPEGData = image.jpegData(compressionQuality: 0.8) else {
-            print("!!! StorageManager ERROR: Could not compress image to JPEG.") // <-- ADDED
+            print("!!! StorageManager ERROR: Could not compress image to JPEG.")
             throw NSError(domain: "StorageManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Could not compress image to JPEG."])
         }
-        print("StorageManager: Image successfully converted to JPEG. Size: \(compressedJPEGData.count) bytes.") // <-- ADDED
+        print("StorageManager: Image successfully converted to JPEG. Size: \(compressedJPEGData.count) bytes.")
         // -------------------------
 
         let photoRef = profilePhotosReference(userID: userID)
-        print("StorageManager: Reference created: \(photoRef.fullPath)") // <-- ADDED
+        print("StorageManager: Reference created: \(photoRef.fullPath)")
 
         // --- UPLOAD ---
         let metadata = StorageMetadata()
         metadata.contentType = "image/jpeg" // We now know it's a JPEG
         
-        print("StorageManager: Attempting upload to Firebase Storage...") // <-- ADDED
+        print("StorageManager: Attempting upload to Firebase Storage...")
         do {
             // Using putDataAsync which works well with async/await
             let _ = try await photoRef.putDataAsync(compressedJPEGData, metadata: metadata)
-            print("StorageManager: Upload Task SUCCESSFUL.") // <-- ADDED
+            print("StorageManager: Upload Task SUCCESSFUL.")
         } catch {
-            print("!!! StorageManager FIREBASE UPLOAD FAILED: \(error.localizedDescription)") // <-- ADDED MORE DETAIL
+            print("!!! StorageManager FIREBASE UPLOAD FAILED: \(error.localizedDescription)")
             // Check error code, e.g., storage/unauthorized for rules issues
             let nsError = error as NSError
-            print("!!! StorageManager Firebase Error Code: \(nsError.code), Domain: \(nsError.domain)") // <-- ADDED
+            print("!!! StorageManager Firebase Error Code: \(nsError.code), Domain: \(nsError.domain)")
             throw error // Re-throw the original error
         }
         // -------------
 
         // --- GET URL ---
-        print("StorageManager: Attempting to get download URL...") // <-- ADDED
+        print("StorageManager: Attempting to get download URL...")
         do {
             let downloadURL = try await photoRef.downloadURL()
-            print("StorageManager: Got download URL: \(downloadURL.absoluteString)") // <-- ADDED
+            print("StorageManager: Got download URL: \(downloadURL.absoluteString)")
             return downloadURL.absoluteString
         } catch {
-            print("!!! StorageManager GET DOWNLOAD URL FAILED: \(error.localizedDescription)") // <-- ADDED
+            print("!!! StorageManager GET DOWNLOAD URL FAILED: \(error.localizedDescription)")
             let nsError = error as NSError
-            print("!!! StorageManager Firebase Error Code: \(nsError.code), Domain: \(nsError.domain)") // <-- ADDED
+            print("!!! StorageManager Firebase Error Code: \(nsError.code), Domain: \(nsError.domain)")
             throw error // Re-throw
         }
         // ------------

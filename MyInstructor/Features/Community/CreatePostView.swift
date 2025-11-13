@@ -10,9 +10,8 @@ struct CreatePostView: View {
 
     @State private var postType: PostType = .text
     @State private var content: String = ""
-    @State private var mediaURL: String? = nil 
+    @State private var mediaURL: String? = nil
     @State private var visibility: PostVisibility = .public
-    @State private var tagStudent: Bool = false
     
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -28,7 +27,6 @@ struct CreatePostView: View {
                 Picker("Post Type", selection: $postType) {
                     Text("🗣️ Text").tag(PostType.text)
                     Text("📸 Media").tag(PostType.photoVideo)
-                    Text("📈 Progress").tag(PostType.progressUpdate)
                     Text("❓ Q&A").tag(PostType.qna)
                 }
                 .pickerStyle(.segmented)
@@ -64,12 +62,6 @@ struct CreatePostView: View {
                         ForEach(visibilityOptions, id: \.self) { option in
                             Text(option.rawValue.capitalized).tag(option)
                         }
-                    }
-                    
-                    // Tag Student (Instructor only)
-                    if authManager.role == .instructor {
-                        Toggle("Tag a Student", isOn: $tagStudent)
-                            .tint(.primaryBlue)
                     }
                     
                     HStack {

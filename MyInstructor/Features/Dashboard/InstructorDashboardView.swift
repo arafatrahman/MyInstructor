@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: To fetch notification count AND listen for chat messages ---
+// --- UPDATED: All 3 Quick Action buttons are now functional ---
 
 import SwiftUI
 
@@ -8,7 +8,6 @@ struct InstructorDashboardView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var dataService: DataService
     @EnvironmentObject var communityManager: CommunityManager // Add this to fetch requests
-    // --- *** ADD THIS LINE *** ---
     @EnvironmentObject var chatManager: ChatManager
 
     @State private var nextLesson: Lesson?
@@ -16,14 +15,18 @@ struct InstructorDashboardView: View {
     @State private var avgStudentProgress: Double = 0
     @State private var isLoading = true
     
-    // --- *** ADD THIS LINE *** ---
     @State private var notificationCount: Int = 0 // State to hold the count
+
+    // --- *** ADDED STATE FOR QUICK ACTIONS *** ---
+    @State private var isAddingLesson = false
+    @State private var isAddingOfflineStudent = false
+    @State private var isRecordingPayment = false
+    // --- *** END OF ADDED STATE *** ---
 
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
-                    // --- *** UPDATE THIS LINE *** ---
                     DashboardHeader(notificationCount: notificationCount) // Pass the count
                     
                     if isLoading {
@@ -59,17 +62,19 @@ struct InstructorDashboardView: View {
                                 .padding(.horizontal)
                             
                             HStack(spacing: 15) {
+                                // --- *** ACTION UPDATED *** ---
                                 QuickActionButton(title: "Add Lesson", icon: "plus.circle.fill", color: .primaryBlue, action: {
-                                    // TODO: Navigate to Add Lesson Form
-                                    print("Add Lesson tapped")
+                                    isAddingLesson = true
                                 })
+                                
+                                // --- *** ACTION UPDATED *** ---
                                 QuickActionButton(title: "Add Student", icon: "person.badge.plus.fill", color: .accentGreen, action: {
-                                    // TODO: Open Add Student Modal/Form
-                                    print("Add Student tapped")
+                                    isAddingOfflineStudent = true
                                 })
+                                
+                                // --- *** ACTION UPDATED *** ---
                                 QuickActionButton(title: "Record Payment", icon: "creditcard.fill", color: .purple, action: {
-                                    // TODO: Navigate to Add Payment Form
-                                    print("Record Payment tapped")
+                                    isRecordingPayment = true
                                 })
                             }
                             .padding(.horizontal)
@@ -83,20 +88,33 @@ struct InstructorDashboardView: View {
             .navigationTitle("Dashboard")
             .navigationBarHidden(true) // Use custom header
             .task {
-                // --- *** THIS LOGIC IS UPDATED *** ---
                 guard let instructorID = authManager.user?.id else {
                     isLoading = false
                     return
                 }
-                // Start listening for conversations
                 chatManager.listenForConversations(for: instructorID)
-                // Fetch dashboard data
                 await fetchData()
-                // --- *** END OF UPDATE *** ---
             }
             .refreshable {
                 await fetchData()
             }
+            // --- *** ADDED SHEET MODIFIERS *** ---
+            .sheet(isPresented: $isAddingLesson) {
+                AddLessonFormView(onLessonAdded: {
+                    Task { await fetchData() } // Refresh dashboard
+                })
+            }
+            .sheet(isPresented: $isAddingOfflineStudent) {
+                OfflineStudentFormView(studentToEdit: nil, onStudentAdded: {
+                    Task { await fetchData() } // Refresh dashboard
+                })
+            }
+            .sheet(isPresented: $isRecordingPayment) {
+                AddPaymentFormView(onPaymentAdded: {
+                    Task { await fetchData() } // Refresh dashboard
+                })
+            }
+            // --- *** END OF MODIFIERS *** ---
         }
     }
     
@@ -107,19 +125,15 @@ struct InstructorDashboardView: View {
         }
         isLoading = true
         
-        // --- *** THIS LOGIC IS UPDATED *** ---
-        // We fetch the dashboard data and the notification count at the same time
         async let dashboardDataTask = dataService.fetchInstructorDashboardData(for: instructorID)
         async let notificationCountTask = communityManager.fetchRequests(for: instructorID) // Fetches pending requests
 
         do {
-            // Get dashboard data
             let data = try await dashboardDataTask
             self.nextLesson = data.nextLesson
             self.weeklyEarnings = data.earnings
             self.avgStudentProgress = data.avgProgress
             
-            // Get the count from the notification task
             self.notificationCount = (try await notificationCountTask).count
             
         } catch {

@@ -1,6 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
 // --- UPDATED: Default filter is now "All Categories", showing all sections ---
-// --- UPDATED: Now includes Offline Student functionality ---
+// --- UPDATED: Now includes Offline Student functionality (Edit & Delete) ---
 
 import SwiftUI
 
@@ -15,22 +15,23 @@ struct StudentsListView: View {
     @State private var pendingRequests: [StudentRequest] = []
     @State private var deniedRequests: [StudentRequest] = []
     @State private var blockedRequests: [StudentRequest] = []
-    
-    // --- *** ADD THIS NEW STATE *** ---
     @State private var offlineStudents: [OfflineStudent] = []
     
     @State private var isLoading = true
     @State private var searchText = ""
-    // --- THIS IS THE CHANGE ---
-    @State private var filterMode: StudentFilter = .allCategories // New default
+    @State private var filterMode: StudentFilter = .allCategories
     
     @State private var conversationToPush: Conversation? = nil
     @State private var chatErrorAlert: (isPresented: Bool, message: String) = (false, "")
     
-    // --- *** ADD THIS NEW STATE *** ---
-    @State private var isAddingOfflineStudent = false // To show the new sheet
+    @State private var isAddingOfflineStudent = false // To show the "Add" sheet
     
-    // --- UPDATED: Split 'filteredApprovedStudents' into two new properties ---
+    // --- *** ADD THIS NEW STATE FOR DELETE ALERT *** ---
+    @State private var studentToDelete: OfflineStudent? = nil
+    @State private var isShowingDeleteAlert = false
+    @State private var deleteErrorMessage: String? = nil
+
+    // --- COMPUTED PROPERTIES ---
     var activeStudents: [Student] {
         let list = approvedStudents.filter { $0.averageProgress < 1.0 }
         if searchText.isEmpty { return list }
@@ -42,7 +43,6 @@ struct StudentsListView: View {
         if searchText.isEmpty { return list }
         return list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
-    // --- END OF CHANGE ---
     
     var filteredPendingRequests: [StudentRequest] {
         if searchText.isEmpty {
@@ -65,7 +65,6 @@ struct StudentsListView: View {
         return blockedRequests.filter { $0.studentName.localizedCaseInsensitiveContains(searchText) }
     }
     
-    // --- *** ADD THIS NEW COMPUTED PROPERTY *** ---
     var filteredOfflineStudents: [OfflineStudent] {
         if searchText.isEmpty {
             return offlineStudents
@@ -87,7 +86,6 @@ struct StudentsListView: View {
                 HStack {
                     SearchBar(text: $searchText, placeholder: "Search students by name")
                     
-                    // --- UPDATED PICKER ---
                     Picker("Filter", selection: $filterMode) {
                         Text("All").tag(StudentFilter.allCategories)
                         Text("Pending").tag(StudentFilter.pending)
@@ -95,7 +93,6 @@ struct StudentsListView: View {
                         Text("Completed").tag(StudentFilter.completed)
                         Text("Denied").tag(StudentFilter.denied)
                         Text("Blocked").tag(StudentFilter.blocked)
-                        // --- *** ADD THIS NEW TAG *** ---
                         Text("Offline").tag(StudentFilter.offline)
                     }
                     .pickerStyle(.menu)
@@ -113,8 +110,10 @@ struct StudentsListView: View {
                         message: "No students or requests yet. Tap the '+' to add an offline student or wait for a new request."
                     )
                 } else {
-                    // --- UPDATED: Removed 'switch' and now use 'if' to show sections ---
                     List {
+                        
+                        // --- (Online Student Sections: Pending, Active, Completed, Denied, Blocked) ---
+                        // --- (These sections remain unchanged) ---
                         
                         if filterMode == .allCategories || filterMode == .pending {
                             Section(header: Text("Pending Requests (\(filteredPendingRequests.count))").font(.headline).foregroundColor(.accentGreen)) {
@@ -195,21 +194,35 @@ struct StudentsListView: View {
                             .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                         }
                         
-                        // --- *** ADD THIS ENTIRE NEW SECTION *** ---
+                        // --- *** THIS SECTION IS UPDATED *** ---
                         if filterMode == .allCategories || filterMode == .offline {
                             Section(header: Text("Offline Students (\(filteredOfflineStudents.count))").font(.headline).foregroundColor(.gray)) {
                                 if filteredOfflineStudents.isEmpty {
                                     Text("No offline students found.").foregroundColor(.textLight)
                                 }
                                 ForEach(filteredOfflineStudents) { student in
-                                    // We can create a simple row view for this
-                                    OfflineStudentRow(student: student)
+                                    // Wrap row in NavigationLink to the form for editing
+                                    NavigationLink(destination: OfflineStudentFormView(studentToEdit: student, onStudentAdded: {
+                                        Task { await fetchData() } // Refresh list on save
+                                    })) {
+                                        OfflineStudentRow(student: student)
+                                    }
+                                    .swipeActions(edge: .trailing) {
+                                        Button(role: .destructive) {
+                                            // Set student to delete and show confirmation
+                                            self.studentToDelete = student
+                                            self.isShowingDeleteAlert = true
+                                        } label: {
+                                            Label("Delete", systemImage: "trash.fill")
+                                        }
+                                    }
                                 }
                             }
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                         }
-                        // --- *** END OF NEW SECTION *** ---
+                        // --- *** END OF UPDATED SECTION *** ---
+                        
                     }
                     .listStyle(.insetGrouped)
                     .animation(.default, value: filterMode)
@@ -222,7 +235,6 @@ struct StudentsListView: View {
             .refreshable {
                 await fetchData()
             }
-            // --- *** ADD THIS TOOLBAR ITEM *** ---
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -232,15 +244,13 @@ struct StudentsListView: View {
                     }
                 }
             }
-            // --- *** ADD THIS SHEET MODIFIER *** ---
             .sheet(isPresented: $isAddingOfflineStudent) {
-                AddOfflineStudentView {
-                    // This is the onStudentAdded closure
-                    // We refresh the data when the sheet is dismissed
+                // Pass nil to indicate we are ADDING a new student
+                OfflineStudentFormView(studentToEdit: nil, onStudentAdded: {
                     Task {
                         await fetchData()
                     }
-                }
+                })
             }
             // Alert for chat errors (like being blocked)
             .alert("Cannot Start Chat", isPresented: $chatErrorAlert.isPresented, actions: {
@@ -248,19 +258,36 @@ struct StudentsListView: View {
             }, message: {
                 Text(chatErrorAlert.message)
             })
+            // --- *** ADD THIS NEW ALERT FOR DELETING *** ---
+            .alert("Delete Student?", isPresented: $isShowingDeleteAlert, presenting: studentToDelete) { student in
+                Button("Cancel", role: .cancel) {
+                    studentToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    if let studentID = student.id {
+                        Task {
+                            await performDelete(studentID: studentID)
+                        }
+                    }
+                    studentToDelete = nil
+                }
+            } message: { student in
+                Text("Are you sure you want to delete \(student.name)? This action cannot be undone.")
+            }
+            // --- *** ---
         }
     }
     
+    // --- *** THIS FUNCTION IS UPDATED *** ---
     func fetchData() async {
         guard let instructorID = authManager.user?.id else { return }
         isLoading = true
+        deleteErrorMessage = nil // Clear any old errors
         
         async let studentsTask = dataService.fetchStudents(for: instructorID)
         async let requestsTask = communityManager.fetchRequests(for: instructorID)
         async let deniedTask = communityManager.fetchDeniedRequests(for: instructorID)
         async let blockedTask = communityManager.fetchBlockedRequests(for: instructorID)
-        
-        // --- *** ADD THIS NEW TASK *** ---
         async let offlineStudentsTask = dataService.fetchOfflineStudents(for: instructorID)
         
         do {
@@ -268,15 +295,29 @@ struct StudentsListView: View {
             self.pendingRequests = try await requestsTask
             self.deniedRequests = try await deniedTask
             self.blockedRequests = try await blockedTask
-            
-            // --- *** AWAIT THE NEW TASK *** ---
             self.offlineStudents = try await offlineStudentsTask
             
         } catch {
             print("Failed to fetch data: \(error)")
+            // You could show a persistent error banner here
         }
         isLoading = false
     }
+    
+    // --- *** ADD THIS NEW HELPER FUNCTION *** ---
+    func performDelete(studentID: String) async {
+        do {
+            try await communityManager.deleteOfflineStudent(studentID: studentID)
+            // Remove locally to make UI update instantly
+            offlineStudents.removeAll(where: { $0.id == studentID })
+        } catch {
+            print("Failed to delete offline student: \(error)")
+            self.deleteErrorMessage = error.localizedDescription
+            // Consider showing an alert for the delete error
+        }
+    }
+    
+    // --- (Other helper functions: handleRequest, removeStudent, unblockStudent, startChat are unchanged) ---
     
     func handleRequest(_ request: StudentRequest, approve: Bool) async {
         do {
@@ -343,10 +384,10 @@ enum StudentFilter: String {
     case completed = "Completed"
     case denied = "Denied"
     case blocked = "Blocked"
-    // --- *** ADD THIS NEW CASE *** ---
     case offline = "Offline"
 }
 
+// --- (CompactRequestRow and StudentListCard structs are unchanged) ---
 struct CompactRequestRow: View {
     let request: StudentRequest
     let filterMode: StudentFilter
@@ -499,9 +540,7 @@ struct StudentListCard: View {
     }
 }
 
-// --- *** THIS IS THE UPDATED STRUCT *** ---
-
-/// A simple row view for displaying an OfflineStudent
+// --- (OfflineStudentRow is unchanged) ---
 struct OfflineStudentRow: View {
     let student: OfflineStudent
     

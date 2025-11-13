@@ -1,5 +1,6 @@
 // File: Core/Managers/CommunityManager.swift
 // --- UPDATED: unblockInstructor and removeInstructor to fix permission/timestamp bugs ---
+// --- UPDATED: Added update/delete functions for offline students ---
 
 import Combine
 import Foundation
@@ -83,9 +84,7 @@ class CommunityManager: ObservableObject {
         return instructors
     }
     
-    // MARK: - --- OFFLINE STUDENT FUNCTION ---
-    
-    // --- *** THIS FUNCTION IS UPDATED *** ---
+    // MARK: - --- OFFLINE STUDENT FUNCTIONS ---
     
     /// Creates a new "offline" student record, owned by the instructor.
     func addOfflineStudent(instructorID: String, name: String, phone: String?, email: String?, address: String?) async throws {
@@ -101,8 +100,31 @@ class CommunityManager: ObservableObject {
         try offlineStudentsCollection.addDocument(from: newOfflineStudent)
         print("Offline student '\(name)' added successfully.")
     }
-    // --- *** END OF UPDATED FUNCTION *** ---
+    
+    // --- *** ADD THIS NEW FUNCTION *** ---
+    /// Updates an existing offline student document.
+    func updateOfflineStudent(_ student: OfflineStudent) async throws {
+        guard let studentID = student.id else {
+            throw NSError(domain: "CommunityManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Missing student ID for update."])
+        }
+        
+        // Use updateData with a dictionary. This correctly handles
+        // setting a value to nil (which removes it) vs. skipping it.
+        try await offlineStudentsCollection.document(studentID).updateData([
+            "name": student.name,
+            "phone": student.phone ?? FieldValue.delete(),
+            "email": student.email ?? FieldValue.delete(),
+            "address": student.address ?? FieldValue.delete()
+        ])
+        print("Offline student '\(student.name)' updated successfully.")
+    }
 
+    // --- *** ADD THIS NEW FUNCTION *** ---
+    /// Deletes an offline student document by their ID.
+    func deleteOfflineStudent(studentID: String) async throws {
+        try await offlineStudentsCollection.document(studentID).delete()
+        print("Offline student deleted successfully.")
+    }
     
     // MARK: - --- STUDENT REQUEST FUNCTIONS ---
     

@@ -1,4 +1,5 @@
 // File: Features/UserManagement/OfflineStudentFormView.swift (Updated)
+// --- UPDATED: Changed TextFields to use persistent labels with icons ---
 
 import SwiftUI
 
@@ -25,64 +26,97 @@ struct OfflineStudentFormView: View {
     }
 
     var body: some View {
-        NavigationView {
-            Form {
-                Section("Student Details") {
+        Form {
+            // --- *** THIS SECTION IS UPDATED *** ---
+            Section("Student Details") {
+                
+                HStack(spacing: 15) {
+                    Image(systemName: "person.fill")
+                        .foregroundColor(.primaryBlue)
+                        .frame(width: 20, alignment: .center)
+                    Text("Name")
+                    Spacer()
                     TextField("Student's Full Name", text: $name)
-                    TextField("Phone Number (Optional)", text: $phone)
+                        .multilineTextAlignment(.trailing)
+                }
+                
+                HStack(spacing: 15) {
+                    Image(systemName: "phone.fill")
+                        .foregroundColor(.primaryBlue)
+                        .frame(width: 20, alignment: .center)
+                    Text("Phone")
+                    Spacer()
+                    TextField("Optional", text: $phone)
                         .keyboardType(.phonePad)
-                    TextField("Email (Optional)", text: $email)
+                        .multilineTextAlignment(.trailing)
+                }
+                
+                HStack(spacing: 15) {
+                    Image(systemName: "envelope.fill")
+                        .foregroundColor(.primaryBlue)
+                        .frame(width: 20, alignment: .center)
+                    Text("Email")
+                    Spacer()
+                    TextField("Optional", text: $email)
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
-                    TextField("Address (Optional)", text: $address)
+                        .multilineTextAlignment(.trailing)
                 }
                 
-                // --- THIS SECTION NOW ONLY SHOWS THE ERROR MESSAGE ---
-                Section {
-                    if let error = errorMessage {
-                        Text(error)
-                            .foregroundColor(.warningRed)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    }
-                }
-                .listRowBackground(Color.clear) // Hide the cell background
-            }
-            .navigationTitle(isEditing ? "Edit Student" : "Add Offline Student")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                
-                // --- *** THIS IS THE FIX FOR THE CANCEL BUTTON *** ---
-                // Only show "Cancel" when *adding* a new student (i.e., when presented as a sheet)
-                if !isEditing {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button("Cancel") { dismiss() }
-                    }
-                }
-                
-                // --- *** THIS IS THE NEW SAVE/ADD BUTTON LOCATION *** ---
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        saveStudent()
-                    } label: {
-                        if isLoading {
-                            ProgressView()
-                        } else {
-                            // Use simpler text for the navigation bar
-                            Text(isEditing ? "Save" : "Add")
-                        }
-                    }
-                    .disabled(!isFormValid || isLoading)
+                HStack(spacing: 15) {
+                    Image(systemName: "mappin.and.ellipse")
+                        .foregroundColor(.primaryBlue)
+                        .frame(width: 20, alignment: .center)
+                    Text("Address")
+                    Spacer()
+                    TextField("Optional", text: $address)
+                        .multilineTextAlignment(.trailing)
                 }
             }
-            .onAppear {
-                // If we are editing, populate the fields
-                if let student = studentToEdit {
-                    isEditing = true
-                    name = student.name
-                    phone = student.phone ?? ""
-                    email = student.email ?? ""
-                    address = student.address ?? ""
+            // --- *** END OF UPDATE *** ---
+            
+            Section {
+                if let error = errorMessage {
+                    Text(error)
+                        .foregroundColor(.warningRed)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
+            }
+            .listRowBackground(Color.clear) // Hide the cell background
+        }
+        .navigationTitle(isEditing ? "Edit Student" : "Add Offline Student")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            
+            // Only show "Cancel" when *adding* a new student
+            if !isEditing {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            
+            // Save/Add Button
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    saveStudent()
+                } label: {
+                    if isLoading {
+                        ProgressView()
+                    } else {
+                        Text(isEditing ? "Save" : "Add")
+                    }
+                }
+                .disabled(!isFormValid || isLoading)
+            }
+        }
+        .onAppear {
+            // If we are editing, populate the fields
+            if let student = studentToEdit {
+                isEditing = true
+                name = student.name
+                phone = student.phone ?? ""
+                email = student.email ?? ""
+                address = student.address ?? ""
             }
         }
     }

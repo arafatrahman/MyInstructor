@@ -1,6 +1,7 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
 // --- UPDATED: Default filter is now "All Categories", showing all sections ---
 // --- UPDATED: Now includes Offline Student functionality (Edit & Delete) ---
+// --- UPDATED: Moved Toolbar '+' button into a custom header to be inline with the title ---
 
 import SwiftUI
 
@@ -74,7 +75,7 @@ struct StudentsListView: View {
 
     var body: some View {
         NavigationView {
-            VStack {
+            VStack { // <-- Main VStack
                 if let conversation = conversationToPush {
                     NavigationLink(
                         destination: ChatView(conversation: conversation),
@@ -82,6 +83,26 @@ struct StudentsListView: View {
                         label: { EmptyView() }
                     )
                 }
+                
+                // --- *** THIS IS THE NEW CUSTOM HEADER *** ---
+                HStack {
+                    Text("Your Students")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    
+                    Spacer()
+                    
+                    Button {
+                        isAddingOfflineStudent = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title) // Make icon larger
+                            .foregroundColor(.primaryBlue)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 10) // Padding to replace nav bar
+                // --- *** END OF NEW HEADER *** ---
                 
                 HStack {
                     SearchBar(text: $searchText, placeholder: "Search students by name")
@@ -228,22 +249,24 @@ struct StudentsListView: View {
                     .animation(.default, value: filterMode)
                 }
             }
-            .navigationTitle("Your Students")
+            // .navigationTitle("Your Students") // <-- REMOVED
+            .navigationBarHidden(true) // <-- ADDED
             .task {
                 await fetchData()
             }
             .refreshable {
                 await fetchData()
             }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        isAddingOfflineStudent = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                }
-            }
+            // --- *** TOOLBAR REMOVED *** ---
+            // .toolbar {
+            //     ToolbarItem(placement: .navigationBarTrailing) {
+            //         Button {
+            //             isAddingOfflineStudent = true
+            //         } label: {
+            //             Image(systemName: "plus")
+            //         }
+            //     }
+            // }
             .sheet(isPresented: $isAddingOfflineStudent) {
                 // Pass nil to indicate we are ADDING a new student
                 OfflineStudentFormView(studentToEdit: nil, onStudentAdded: {

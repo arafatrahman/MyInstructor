@@ -1,4 +1,4 @@
-// File: Features/UserManagement/OfflineStudentFormView.swift (Renamed from AddOfflineStudentView.swift)
+// File: Features/UserManagement/OfflineStudentFormView.swift (Updated)
 
 import SwiftUI
 
@@ -7,12 +7,10 @@ struct OfflineStudentFormView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var communityManager: CommunityManager
     
-    // --- *** ADDED/MODIFIED *** ---
     let studentToEdit: OfflineStudent? // Pass in a student to edit
     var onStudentAdded: () -> Void // To trigger a refresh
     
     @State private var isEditing: Bool = false
-    // --- *** ---
     
     @State private var name: String = ""
     @State private var phone: String = ""
@@ -39,38 +37,43 @@ struct OfflineStudentFormView: View {
                     TextField("Address (Optional)", text: $address)
                 }
                 
+                // --- THIS SECTION NOW ONLY SHOWS THE ERROR MESSAGE ---
                 Section {
                     if let error = errorMessage {
-                        Text(error).foregroundColor(.warningRed)
+                        Text(error)
+                            .foregroundColor(.warningRed)
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
-                    
-                    Button {
-                        saveStudent()
-                    } label: {
-                        HStack {
-                            if isLoading {
-                                ProgressView().tint(.white)
-                            } else {
-                                // --- *** MODIFIED *** ---
-                                Text(isEditing ? "Save Changes" : "Save Student")
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.primaryDrivingApp)
-                    .disabled(!isFormValid || isLoading)
-                    .listRowBackground(Color.clear)
                 }
+                .listRowBackground(Color.clear) // Hide the cell background
             }
-            // --- *** MODIFIED *** ---
             .navigationTitle(isEditing ? "Edit Student" : "Add Offline Student")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
+                
+                // --- *** THIS IS THE FIX FOR THE CANCEL BUTTON *** ---
+                // Only show "Cancel" when *adding* a new student (i.e., when presented as a sheet)
+                if !isEditing {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") { dismiss() }
+                    }
+                }
+                
+                // --- *** THIS IS THE NEW SAVE/ADD BUTTON LOCATION *** ---
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        saveStudent()
+                    } label: {
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            // Use simpler text for the navigation bar
+                            Text(isEditing ? "Save" : "Add")
+                        }
+                    }
+                    .disabled(!isFormValid || isLoading)
                 }
             }
-            // --- *** ADDED THIS MODIFIER *** ---
             .onAppear {
                 // If we are editing, populate the fields
                 if let student = studentToEdit {
@@ -84,7 +87,6 @@ struct OfflineStudentFormView: View {
         }
     }
     
-    // --- *** THIS FUNCTION IS UPDATED *** ---
     private func saveStudent() {
         guard let instructorID = authManager.user?.id else {
             errorMessage = "Could not identify instructor."

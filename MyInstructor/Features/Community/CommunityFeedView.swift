@@ -1,7 +1,9 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: PostCard completely redesigned as requested ---
+// --- UPDATED: "Photo" button is now a PhotosPicker that opens CreatePostView on selection ---
+// --- UPDATED: PostCard redesigned to match screenshot ---
 
 import SwiftUI
+import PhotosUI // --- ADD THIS ---
 
 // Flow Item 18: Community Feed
 struct CommunityFeedView: View {
@@ -11,7 +13,16 @@ struct CommunityFeedView: View {
     @State private var posts: [Post] = []
     @State private var searchText = ""
     @State private var filterMode: CommunityFilter = .all
+    
+    // --- STATE FOR NEW FLOW ---
+    // 1. For the "text-first" flow (tapping "What's on your mind?")
     @State private var isCreatePostPresented = false
+    
+    // 2. For the "photo-first" flow (tapping "Photo" button)
+    @State private var feedPhotoItems: [PhotosPickerItem] = []
+    @State private var isProcessingPhotos = false
+    @State private var loadedDataForSheet: [Data]? = nil // This will trigger the sheet
+    // --- END OF STATE ---
     
     @State private var isLoading = true
     
@@ -69,8 +80,9 @@ struct CommunityFeedView: View {
                     .clipShape(Circle())
                     .background(Color.secondaryGray.clipShape(Circle()))
                     
+                    // 1. "Text-first" button
                     Button {
-                        isCreatePostPresented = true
+                        isCreatePostPresented = true // Open create post screen
                     } label: {
                         HStack {
                             Text("What's on your mind?")
@@ -83,20 +95,49 @@ struct CommunityFeedView: View {
                     
                     Spacer()
                     
-                    Button {
-                        isCreatePostPresented = true
-                    } label: {
+                    // --- *** THIS IS THE UPDATED "PHOTO" BUTTON *** ---
+                    // 2. "Photo-first" button (is now a PhotosPicker)
+                    PhotosPicker(
+                        selection: $feedPhotoItems,
+                        maxSelectionCount: 5,
+                        matching: .images
+                    ) {
+                        // This is the label for the picker
                         HStack(spacing: 4) {
-                            Image(systemName: "photo.fill")
+                            if isProcessingPhotos {
+                                ProgressView()
+                                    .tint(.white)
+                                    .frame(width: 16, height: 16)
+                            } else {
+                                Image(systemName: "photo.fill")
+                            }
                             Text("Photo")
                         }
                         .font(.subheadline).bold()
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(Color.accentGreen)
+                        .background(isProcessingPhotos ? Color.gray : Color.accentGreen) // Show loading
                         .foregroundColor(.white)
                         .cornerRadius(20)
                     }
+                    .disabled(isProcessingPhotos)
+                    .onChange(of: feedPhotoItems) { newItems in
+                        // When photos are selected, load them
+                        guard !newItems.isEmpty else { return }
+                        Task {
+                            isProcessingPhotos = true
+                            var loadedData: [Data] = []
+                            for item in newItems {
+                                if let data = try? await item.loadTransferable(type: Data.self) {
+                                    loadedData.append(data)
+                                }
+                            }
+                            self.loadedDataForSheet = loadedData // This will trigger the .sheet
+                            self.feedPhotoItems = [] // Reset picker
+                            isProcessingPhotos = false
+                        }
+                    }
+                    // --- *** END OF UPDATE *** ---
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -121,6 +162,7 @@ struct CommunityFeedView: View {
                                     EmptyView()
                                 }
                                 .opacity(0)
+                                .frame(height: 0) // Ensure it takes no space
                             }
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
@@ -134,9 +176,22 @@ struct CommunityFeedView: View {
             }
             .navigationBarHidden(true)
             .task { await fetchPosts() }
+            // Sheet for "text-first" flow
             .sheet(isPresented: $isCreatePostPresented) {
-                CreatePostView(onPostCreated: { Task { await fetchPosts() } })
+                CreatePostView(onPostCreated: {
+                    isCreatePostPresented = false
+                    Task { await fetchPosts() }
+                })
             }
+            // --- *** NEW SHEET FOR "PHOTO-FIRST" FLOW *** ---
+            // This sheet is triggered when loadedDataForSheet is set
+            .sheet(item: $loadedDataForSheet) { photoData in
+                CreatePostView(initialPhotoData: photoData, onPostCreated: {
+                    loadedDataForSheet = nil // Dismiss sheet
+                    Task { await fetchPosts() }
+                })
+            }
+            // --- *** END OF UPDATE *** ---
         }
         .navigationViewStyle(.stack)
     }
@@ -151,6 +206,15 @@ struct CommunityFeedView: View {
         isLoading = false
     }
 }
+
+// --- *** ADD THIS WRAPPER STRUCT *** ---
+// This wrapper makes the [Data] array Identifiable for the .sheet(item:) modifier
+extension Array: Identifiable where Element == Data {
+    public var id: String {
+        self.map { String($0.count) }.joined(separator: "-")
+    }
+}
+// --- *** ---
 
 enum CommunityFilter: String {
     case all, instructors, local, trending
@@ -225,7 +289,7 @@ struct PostCard: View {
                                 case .success(let image):
                                     image
                                         .resizable()
-                                        .scaledToFit()
+                                        .scaledToFit() // Use scaledToFit to avoid cropping
                                         .cornerRadius(10)
                                 case .failure:
                                     Image(systemName: "photo.on.rectangle")
@@ -233,7 +297,7 @@ struct PostCard: View {
                                         .frame(maxWidth: .infinity, alignment: .center)
                                 case .empty:
                                     ProgressView()
-                                        .frame(maxWidth: .infinity, alignment: .center)
+                                        .frame(maxWidth: .infinity, minHeight: 250, alignment: .center) // Give a min height
                                 @unknown default:
                                     EmptyView()
                                 }
@@ -242,7 +306,7 @@ struct PostCard: View {
                     }
                 }
                 .frame(height: 350) // Give the carousel a fixed height
-                .tabViewStyle(.page(indexDisplayMode: .automatic))
+                .tabViewStyle(.page(indexDisplayMode: .automatic)) // Shows the dots
                 .cornerRadius(10)
                 .padding(.vertical, 5)
             }

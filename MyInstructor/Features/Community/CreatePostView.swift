@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CreatePostView.swift
-// --- UPDATED: Now saves the author's photo URL to the post ---
+// --- UPDATED: Accepts initial photos from the feed view ---
 
 import SwiftUI
 import PhotosUI
@@ -10,25 +10,33 @@ struct CreatePostView: View {
     @EnvironmentObject var communityManager: CommunityManager
     @Environment(\.dismiss) var dismiss
     
-    var onPostCreated: () -> Void
-
+    // --- STATE FOR PHOTOS ---
+    @State private var internalPhotoItems: [PhotosPickerItem] = [] // For the *internal* picker
+    @State private var photoDataList: [Data] // This now holds all photos
+    
+    // --- OTHER STATE ---
     @State private var content: String = ""
     @State private var visibility: PostVisibility = .public
-    
     @State private var isLoading = false
     @State private var errorMessage: String?
-    
-    // --- STATE FOR MULTIPLE PHOTOS ---
-    @State private var selectedPhotoItems: [PhotosPickerItem] = []
-    @State private var selectedPhotoData: [Data] = []
-    @State private var isUploadingMedia = false
-    
+    @State private var isUploadingMedia = false // For internal picker
     @State private var isShowingAddressSearch = false
     @State private var selectedLocationString: String? = nil
+    
+    var onPostCreated: () -> Void
     
     var visibilityOptions: [PostVisibility] {
         [.public, .private]
     }
+    
+    // --- *** NEW INITIALIZER *** ---
+    // Accepts photo data from the previous view
+    init(initialPhotoData: [Data] = [], onPostCreated: @escaping () -> Void) {
+        self.onPostCreated = onPostCreated
+        // Use the initial data to set the *initial value* of the @State variable
+        self._photoDataList = State(initialValue: initialPhotoData)
+    }
+    // --- *** END OF UPDATE *** ---
 
     var body: some View {
         NavigationView {
@@ -48,11 +56,12 @@ struct CreatePostView: View {
                                 }
                             }
                         
-                        // 2. Horizontal Scrolling Preview (if photos are selected)
-                        if !selectedPhotoData.isEmpty {
+                        // 2. Horizontal Scrolling Preview
+                        // This now iterates over photoDataList
+                        if !photoDataList.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
-                                    ForEach(Array(selectedPhotoData.enumerated()), id: \.offset) { index, photoData in
+                                    ForEach(Array(photoDataList.enumerated()), id: \.offset) { index, photoData in
                                         if let uiImage = UIImage(data: photoData) {
                                             ZStack(alignment: .topTrailing) {
                                                 Image(uiImage: uiImage)
@@ -64,7 +73,7 @@ struct CreatePostView: View {
                                                 // Remove Button
                                                 Button(action: { removePhoto(at: index) }) {
                                                     Image(systemName: "xmark.circle.fill")
-                                                        .font(.callout) // Smaller icon
+                                                        .font(.callout)
                                                         .foregroundColor(.white)
                                                         .background(Color.black.opacity(0.6).clipShape(Circle()))
                                                 }
@@ -76,10 +85,10 @@ struct CreatePostView: View {
                                 }
                                 .padding(.top, 10)
                             }
-                            .frame(height: 110) // Set a fixed height for the scroll view
+                            .frame(height: 110)
                         }
 
-                        // 3. Selected Location (if selected)
+                        // 3. Selected Location
                         if let location = selectedLocationString {
                             HStack(spacing: 8) {
                                 Image(systemName: "mappin.and.ellipse")
@@ -105,10 +114,10 @@ struct CreatePostView: View {
                         
                         // 4. Action Icons
                         HStack(spacing: 25) {
-                            // PhotosPicker Icon for MULTIPLE items
+                            // --- *** INTERNAL PHOTOS PICKER (for adding MORE) *** ---
                             PhotosPicker(
-                                selection: $selectedPhotoItems, // Binds to the array
-                                maxSelectionCount: 5, // Set a limit
+                                selection: $internalPhotoItems,
+                                maxSelectionCount: 5 - photoDataList.count, // Only allow adding up to 5
                                 matching: .images,
                                 photoLibrary: .shared()
                             ) {
@@ -117,7 +126,8 @@ struct CreatePostView: View {
                                     .foregroundColor(.accentGreen)
                                     .contentShape(Rectangle())
                             }
-                            .onChange(of: selectedPhotoItems, handlePhotoSelection)
+                            .disabled(photoDataList.count >= 5) // Disable if 5 photos are already added
+                            .onChange(of: internalPhotoItems, handleInternalPhotoSelection)
                             
                             // Location Icon Button
                             Button(action: { isShowingAddressSearch = true }) {
@@ -176,34 +186,37 @@ struct CreatePostView: View {
                     self.selectedLocationString = selectedAddressString
                 }
             }
-            .animation(.default, value: selectedPhotoData)
+            .animation(.default, value: photoDataList)
             .animation(.default, value: selectedLocationString)
         }
     }
     
     // MARK: - Helper Functions
     
-    private func handlePhotoSelection(oldItems: [PhotosPickerItem]?, newItems: [PhotosPickerItem]) {
+    // --- *** NEW HANDLER for the *internal* picker *** ---
+    private func handleInternalPhotoSelection(oldItems: [PhotosPickerItem]?, newItems: [PhotosPickerItem]) {
          Task {
             isUploadingMedia = true
             errorMessage = nil
             
-            var newData: [Data] = []
+            // This loop *appends* new photos to the existing list
             for item in newItems {
                 if let data = try? await item.loadTransferable(type: Data.self) {
-                    newData.append(data)
+                    // Add photo if not already in the list
+                    if !photoDataList.contains(data) {
+                        photoDataList.append(data)
+                    }
                 }
             }
-            selectedPhotoData = newData
-            
+            // Clear the picker's selection
+            internalPhotoItems = []
             isUploadingMedia = false
         }
     }
     
     private func removePhoto(at index: Int) {
         withAnimation {
-            selectedPhotoData.remove(at: index)
-            selectedPhotoItems.remove(at: index)
+            photoDataList.remove(at: index)
         }
     }
     
@@ -222,7 +235,7 @@ struct CreatePostView: View {
         }
         
         let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedContent.isEmpty && selectedPhotoData.isEmpty {
+        if trimmedContent.isEmpty && photoDataList.isEmpty { // --- Use photoDataList
             errorMessage = "Please write something or select a photo to post."
             return
         }
@@ -235,10 +248,10 @@ struct CreatePostView: View {
                 var finalMediaURLs: [String] = []
                 
                 // 1. If photo data exists, upload it IN A LOOP
-                if !selectedPhotoData.isEmpty {
-                    print("Photo data found, attempting to upload \(selectedPhotoData.count) photos...")
+                if !photoDataList.isEmpty { // --- Use photoDataList
+                    print("Photo data found, attempting to upload \(photoDataList.count) photos...")
                     
-                    for photoData in selectedPhotoData {
+                    for photoData in photoDataList { // --- Use photoDataList
                         let url = try await StorageManager.shared.uploadPostMedia(
                             photoData: photoData,
                             userID: userID
@@ -250,13 +263,12 @@ struct CreatePostView: View {
                 // 2. Determine PostType implicitly
                 let finalPostType: PostType = (finalMediaURLs.isEmpty) ? .text : .photoVideo
 
-                // --- *** THIS IS THE UPDATED PART *** ---
                 // 3. Create the Post object
                 let newPost = Post(
                     authorID: userID,
                     authorName: userName,
                     authorRole: authManager.role,
-                    authorPhotoURL: authManager.user?.photoURL, // <-- ADDED THIS
+                    authorPhotoURL: authManager.user?.photoURL,
                     timestamp: Date(),
                     content: trimmedContent.isEmpty ? nil : trimmedContent,
                     mediaURLs: finalMediaURLs.isEmpty ? nil : finalMediaURLs,
@@ -264,7 +276,6 @@ struct CreatePostView: View {
                     postType: finalPostType,
                     visibility: visibility
                 )
-                // --- *** END OF UPDATE *** ---
                 
                 // 4. Save the Post object to Firestore
                 try await communityManager.createPost(post: newPost)

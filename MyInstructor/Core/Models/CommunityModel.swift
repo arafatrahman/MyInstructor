@@ -9,7 +9,7 @@ struct Post: Identifiable, Codable {
     let authorID: String
     let authorName: String
     var authorRole: UserRole
-    let authorPhotoURL: String? // --- *** THIS LINE IS NEW *** ---
+    let authorPhotoURL: String? // --- *** This line must be present *** ---
     let timestamp: Date
     var content: String?
     var mediaURLs: [String]?

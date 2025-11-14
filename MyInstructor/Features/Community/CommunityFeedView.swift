@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: Handles multiple media URLs ---
+// --- UPDATED: PostCard completely redesigned as requested ---
 
 import SwiftUI
 
@@ -27,7 +27,7 @@ struct CommunityFeedView: View {
         NavigationView {
             VStack(spacing: 15) {
                 
-                // --- *** CUSTOM HEADER *** ---
+                // --- CUSTOM HEADER ---
                 HStack {
                     Text("Community Hub")
                         .font(.largeTitle).bold()
@@ -55,7 +55,7 @@ struct CommunityFeedView: View {
                 .padding(.horizontal)
                 .padding(.top, 10)
                 
-                // --- *** "CREATE POST" BAR *** ---
+                // --- "CREATE POST" BAR ---
                 HStack(spacing: 10) {
                     AsyncImage(url: URL(string: authManager.user?.photoURL ?? "")) { phase in
                         if let image = phase.image {
@@ -113,10 +113,14 @@ struct CommunityFeedView: View {
                 } else {
                     List {
                         ForEach(filteredPosts) { post in
-                            NavigationLink {
-                                PostDetailView(post: post)
-                            } label: {
-                                PostCard(post: post) // --- PostCard now handles mediaURLs ---
+                            // NavigationLink removed from here to allow tapping on carousel
+                            VStack {
+                                PostCard(post: post)
+                                NavigationLink(destination: PostDetailView(post: post)) {
+                                    // This is an invisible link overlay on the non-image parts
+                                    EmptyView()
+                                }
+                                .opacity(0)
                             }
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
@@ -152,7 +156,7 @@ enum CommunityFilter: String {
     case all, instructors, local, trending
 }
 
-// --- *** POSTCARD IS UPDATED TO HANDLE MULTIPLE IMAGES *** ---
+// --- *** POSTCARD IS HEAVILY UPDATED *** ---
 struct PostCard: View {
     let post: Post
     
@@ -160,21 +164,26 @@ struct PostCard: View {
         VStack(alignment: .leading, spacing: 10) {
             // Avatar + name + Timestamp
             HStack(alignment: .top) {
-                Image(systemName: post.authorRole == .instructor ? "person.fill.viewfinder" : "person.crop.circle")
-                    .foregroundColor(post.authorRole == .instructor ? .primaryBlue : .accentGreen)
-                    .font(.title)
-                
-                VStack(alignment: .leading) {
-                    HStack {
-                        Text(post.authorName).font(.headline)
-                        if post.authorRole == .instructor {
-                            Text("Instructor").font(.caption).bold().foregroundColor(.white).padding(4).background(Color.primaryBlue).cornerRadius(4)
-                        }
+                // 1. Author's Profile Photo
+                AsyncImage(url: URL(string: post.authorPhotoURL ?? "")) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "person.circle.fill")
+                            .resizable().foregroundColor(.secondaryGray)
                     }
-                    // Show timestamp and location
-                    HStack(spacing: 8) {
+                }
+                .frame(width: 40, height: 40)
+                .clipShape(Circle())
+                .background(Color.secondaryGray.clipShape(Circle()))
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(post.authorName).font(.headline)
+                    
+                    // 2. Stacked Time and Location
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(post.timestamp, style: .relative).font(.caption).foregroundColor(.textLight)
-                        if let location = post.location {
+                        if let location = post.location, !location.isEmpty {
                             HStack(spacing: 3) {
                                 Image(systemName: "mappin.circle.fill")
                                 Text(location)
@@ -184,15 +193,19 @@ struct PostCard: View {
                             .lineLimit(1)
                         }
                     }
+                    // 3. Instructor badge is REMOVED
                 }
                 
                 Spacer()
                 
-                if post.authorRole == .instructor {
-                    Button("Book") { print("Booking instructor...") }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.accentGreen)
+                // 4. "Follow" Button
+                Button("Follow") {
+                    print("Following user \(post.authorID)...")
+                    // TODO: Add follow logic
                 }
+                .buttonStyle(.bordered)
+                .tint(.primaryBlue)
+                .font(.caption.bold())
             }
             
             // Content
@@ -202,46 +215,36 @@ struct PostCard: View {
                     .padding(.bottom, 5)
             }
             
-            // --- *** UPDATED MEDIA SECTION *** ---
-            // Check for media URLs, get the first one
-            if let mediaURLs = post.mediaURLs, let firstURLString = mediaURLs.first, let url = URL(string: firstURLString) {
-                ZStack(alignment: .topTrailing) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFit()
-                                .cornerRadius(10)
-                                .padding(.vertical, 5)
-                        case .failure:
-                            HStack(spacing: 8) {
-                                Image(systemName: "photo.on.rectangle")
-                                Text("Failed to load image")
+            // --- *** 5. SWIPEABLE IMAGE CAROUSEL *** ---
+            if let mediaURLs = post.mediaURLs, !mediaURLs.isEmpty {
+                TabView {
+                    ForEach(mediaURLs, id: \.self) { urlString in
+                        if let url = URL(string: urlString) {
+                            AsyncImage(url: url) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .scaledToFit()
+                                        .cornerRadius(10)
+                                case .failure:
+                                    Image(systemName: "photo.on.rectangle")
+                                        .foregroundColor(.textLight)
+                                        .frame(maxWidth: .infinity, alignment: .center)
+                                case .empty:
+                                    ProgressView()
+                                        .frame(maxWidth: .infinity, alignment: .center)
+                                @unknown default:
+                                    EmptyView()
+                                }
                             }
-                            .font(.caption)
-                            .foregroundColor(.textLight)
-                            .padding(.vertical, 10)
-                        case .empty:
-                            ProgressView()
-                                .frame(maxWidth: .infinity, minHeight: 150, alignment: .center)
-                        @unknown default:
-                            EmptyView()
                         }
                     }
-                    
-                    // Add badge if more than 1 image
-                    if mediaURLs.count > 1 {
-                        Text("1/\(mediaURLs.count)")
-                            .font(.caption.bold())
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.black.opacity(0.7))
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
-                            .padding(10)
-                    }
                 }
+                .frame(height: 350) // Give the carousel a fixed height
+                .tabViewStyle(.page(indexDisplayMode: .automatic))
+                .cornerRadius(10)
+                .padding(.vertical, 5)
             }
             // --- *** END OF MEDIA SECTION *** ---
 

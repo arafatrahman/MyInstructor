@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CreatePostView.swift
-// --- UPDATED: Handles multiple photos and simplified visibility ---
+// --- UPDATED: Now saves the author's photo URL to the post ---
 
 import SwiftUI
 import PhotosUI
@@ -26,17 +26,14 @@ struct CreatePostView: View {
     @State private var isShowingAddressSearch = false
     @State private var selectedLocationString: String? = nil
     
-    // --- *** THIS IS THE UPDATED VISIBILITY *** ---
     var visibilityOptions: [PostVisibility] {
         [.public, .private]
     }
-    // --- *** END OF UPDATE *** ---
 
     var body: some View {
         NavigationView {
             Form {
                 
-                // --- THIS SECTION IS THE NEW DESIGN ---
                 Section("What's on your mind?") {
                     VStack(alignment: .leading, spacing: 0) {
                         // 1. Text Editor
@@ -51,7 +48,6 @@ struct CreatePostView: View {
                                 }
                             }
                         
-                        // --- *** UPDATED PHOTO PREVIEW LOOP *** ---
                         // 2. Horizontal Scrolling Preview (if photos are selected)
                         if !selectedPhotoData.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
@@ -82,7 +78,6 @@ struct CreatePostView: View {
                             }
                             .frame(height: 110) // Set a fixed height for the scroll view
                         }
-                        // --- *** END OF PREVIEW LOOP *** ---
 
                         // 3. Selected Location (if selected)
                         if let location = selectedLocationString {
@@ -110,7 +105,6 @@ struct CreatePostView: View {
                         
                         // 4. Action Icons
                         HStack(spacing: 25) {
-                            // --- *** UPDATED PHOTOSPICKER *** ---
                             // PhotosPicker Icon for MULTIPLE items
                             PhotosPicker(
                                 selection: $selectedPhotoItems, // Binds to the array
@@ -124,7 +118,6 @@ struct CreatePostView: View {
                                     .contentShape(Rectangle())
                             }
                             .onChange(of: selectedPhotoItems, handlePhotoSelection)
-                            // --- *** END OF UPDATE *** ---
                             
                             // Location Icon Button
                             Button(action: { isShowingAddressSearch = true }) {
@@ -145,10 +138,8 @@ struct CreatePostView: View {
                 
                 // Settings
                 Section("Privacy & Settings") {
-                    // --- *** UPDATED VISIBILITY PICKER *** ---
                     Picker("Visibility", selection: $visibility) {
                         ForEach(visibilityOptions, id: \.self) { option in
-                            // Use icons for a cleaner look
                             if option == .public {
                                 Label("Public", systemImage: "globe").tag(PostVisibility.public)
                             } else if option == .private {
@@ -156,8 +147,7 @@ struct CreatePostView: View {
                             }
                         }
                     }
-                    .pickerStyle(.segmented) // Segmented style looks good for two options
-                    // --- *** END OF UPDATE *** ---
+                    .pickerStyle(.segmented)
                 }
                 
                 if let error = errorMessage {
@@ -193,30 +183,25 @@ struct CreatePostView: View {
     
     // MARK: - Helper Functions
     
-    // --- *** UPDATED HANDLER FOR MULTIPLE PHOTOS *** ---
     private func handlePhotoSelection(oldItems: [PhotosPickerItem]?, newItems: [PhotosPickerItem]) {
          Task {
             isUploadingMedia = true
             errorMessage = nil
             
-            // This reloads all items in the selection.
             var newData: [Data] = []
             for item in newItems {
                 if let data = try? await item.loadTransferable(type: Data.self) {
                     newData.append(data)
                 }
             }
-            // This ensures the data array matches the items array
             selectedPhotoData = newData
             
             isUploadingMedia = false
         }
     }
     
-    // --- *** UPDATED REMOVE FUNCTION *** ---
     private func removePhoto(at index: Int) {
         withAnimation {
-            // Remove from both arrays to keep them in sync
             selectedPhotoData.remove(at: index)
             selectedPhotoItems.remove(at: index)
         }
@@ -230,7 +215,6 @@ struct CreatePostView: View {
     
     // MARK: - Actions
     
-    // --- *** UPDATED PUBLISH FUNCTION *** ---
     private func publishPost() {
         guard let userID = authManager.user?.id, let userName = authManager.user?.name else {
             errorMessage = "Error: Could not find user."
@@ -266,18 +250,21 @@ struct CreatePostView: View {
                 // 2. Determine PostType implicitly
                 let finalPostType: PostType = (finalMediaURLs.isEmpty) ? .text : .photoVideo
 
+                // --- *** THIS IS THE UPDATED PART *** ---
                 // 3. Create the Post object
                 let newPost = Post(
                     authorID: userID,
                     authorName: userName,
                     authorRole: authManager.role,
+                    authorPhotoURL: authManager.user?.photoURL, // <-- ADDED THIS
                     timestamp: Date(),
                     content: trimmedContent.isEmpty ? nil : trimmedContent,
-                    mediaURLs: finalMediaURLs.isEmpty ? nil : finalMediaURLs, // Save the array
+                    mediaURLs: finalMediaURLs.isEmpty ? nil : finalMediaURLs,
                     location: selectedLocationString,
                     postType: finalPostType,
                     visibility: visibility
                 )
+                // --- *** END OF UPDATE *** ---
                 
                 // 4. Save the Post object to Firestore
                 try await communityManager.createPost(post: newPost)

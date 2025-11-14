@@ -9,9 +9,10 @@ struct Post: Identifiable, Codable {
     let authorID: String
     let authorName: String
     var authorRole: UserRole
+    let authorPhotoURL: String? // --- *** THIS LINE IS NEW *** ---
     let timestamp: Date
     var content: String?
-    var mediaURLs: [String]? // --- *** THIS LINE WAS UPDATED *** ---
+    var mediaURLs: [String]?
     var location: String?
     var postType: PostType
     var reactionsCount: [String: Int] = ["thumbsup": 0, "fire": 0, "heart": 0]

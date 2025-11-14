@@ -1,9 +1,8 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: "Photo" button is now a PhotosPicker that opens CreatePostView on selection ---
-// --- UPDATED: PostCard redesigned to match screenshot ---
+// --- UPDATED: PostCard header layout, custom time-ago string, and image count badge ---
 
 import SwiftUI
-import PhotosUI // --- ADD THIS ---
+import PhotosUI
 
 // Flow Item 18: Community Feed
 struct CommunityFeedView: View {
@@ -15,14 +14,10 @@ struct CommunityFeedView: View {
     @State private var filterMode: CommunityFilter = .all
     
     // --- STATE FOR NEW FLOW ---
-    // 1. For the "text-first" flow (tapping "What's on your mind?")
     @State private var isCreatePostPresented = false
-    
-    // 2. For the "photo-first" flow (tapping "Photo" button)
     @State private var feedPhotoItems: [PhotosPickerItem] = []
     @State private var isProcessingPhotos = false
-    @State private var loadedDataForSheet: [Data]? = nil // This will trigger the sheet
-    // --- END OF STATE ---
+    @State private var loadedDataForSheet: [Data]? = nil
     
     @State private var isLoading = true
     
@@ -82,7 +77,7 @@ struct CommunityFeedView: View {
                     
                     // 1. "Text-first" button
                     Button {
-                        isCreatePostPresented = true // Open create post screen
+                        isCreatePostPresented = true
                     } label: {
                         HStack {
                             Text("What's on your mind?")
@@ -95,14 +90,12 @@ struct CommunityFeedView: View {
                     
                     Spacer()
                     
-                    // --- *** THIS IS THE UPDATED "PHOTO" BUTTON *** ---
                     // 2. "Photo-first" button (is now a PhotosPicker)
                     PhotosPicker(
                         selection: $feedPhotoItems,
                         maxSelectionCount: 5,
                         matching: .images
                     ) {
-                        // This is the label for the picker
                         HStack(spacing: 4) {
                             if isProcessingPhotos {
                                 ProgressView()
@@ -116,13 +109,12 @@ struct CommunityFeedView: View {
                         .font(.subheadline).bold()
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(isProcessingPhotos ? Color.gray : Color.accentGreen) // Show loading
+                        .background(isProcessingPhotos ? Color.gray : Color.accentGreen)
                         .foregroundColor(.white)
                         .cornerRadius(20)
                     }
                     .disabled(isProcessingPhotos)
                     .onChange(of: feedPhotoItems) { newItems in
-                        // When photos are selected, load them
                         guard !newItems.isEmpty else { return }
                         Task {
                             isProcessingPhotos = true
@@ -132,12 +124,11 @@ struct CommunityFeedView: View {
                                     loadedData.append(data)
                                 }
                             }
-                            self.loadedDataForSheet = loadedData // This will trigger the .sheet
-                            self.feedPhotoItems = [] // Reset picker
+                            self.loadedDataForSheet = loadedData
+                            self.feedPhotoItems = []
                             isProcessingPhotos = false
                         }
                     }
-                    // --- *** END OF UPDATE *** ---
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -154,15 +145,13 @@ struct CommunityFeedView: View {
                 } else {
                     List {
                         ForEach(filteredPosts) { post in
-                            // NavigationLink removed from here to allow tapping on carousel
                             VStack {
                                 PostCard(post: post)
                                 NavigationLink(destination: PostDetailView(post: post)) {
-                                    // This is an invisible link overlay on the non-image parts
                                     EmptyView()
                                 }
                                 .opacity(0)
-                                .frame(height: 0) // Ensure it takes no space
+                                .frame(height: 0)
                             }
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
@@ -176,22 +165,18 @@ struct CommunityFeedView: View {
             }
             .navigationBarHidden(true)
             .task { await fetchPosts() }
-            // Sheet for "text-first" flow
             .sheet(isPresented: $isCreatePostPresented) {
                 CreatePostView(onPostCreated: {
                     isCreatePostPresented = false
                     Task { await fetchPosts() }
                 })
             }
-            // --- *** NEW SHEET FOR "PHOTO-FIRST" FLOW *** ---
-            // This sheet is triggered when loadedDataForSheet is set
             .sheet(item: $loadedDataForSheet) { photoData in
                 CreatePostView(initialPhotoData: photoData, onPostCreated: {
-                    loadedDataForSheet = nil // Dismiss sheet
+                    loadedDataForSheet = nil
                     Task { await fetchPosts() }
                 })
             }
-            // --- *** END OF UPDATE *** ---
         }
         .navigationViewStyle(.stack)
     }
@@ -207,14 +192,12 @@ struct CommunityFeedView: View {
     }
 }
 
-// --- *** ADD THIS WRAPPER STRUCT *** ---
 // This wrapper makes the [Data] array Identifiable for the .sheet(item:) modifier
 extension Array: Identifiable where Element == Data {
     public var id: String {
         self.map { String($0.count) }.joined(separator: "-")
     }
 }
-// --- *** ---
 
 enum CommunityFilter: String {
     case all, instructors, local, trending
@@ -224,6 +207,9 @@ enum CommunityFilter: String {
 struct PostCard: View {
     let post: Post
     
+    // --- *** ADDED STATE FOR IMAGE CAROUSEL *** ---
+    @State private var currentImagePage = 0
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Avatar + name + Timestamp
@@ -241,12 +227,13 @@ struct PostCard: View {
                 .clipShape(Circle())
                 .background(Color.secondaryGray.clipShape(Circle()))
                 
+                // --- *** THIS VSTACK IS UPDATED *** ---
                 VStack(alignment: .leading, spacing: 2) {
                     Text(post.authorName).font(.headline)
                     
-                    // 2. Stacked Time and Location
+                    // 2. Stacked Location and Time
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(post.timestamp, style: .relative).font(.caption).foregroundColor(.textLight)
+                        // Location appears first
                         if let location = post.location, !location.isEmpty {
                             HStack(spacing: 3) {
                                 Image(systemName: "mappin.circle.fill")
@@ -256,16 +243,20 @@ struct PostCard: View {
                             .foregroundColor(.textLight)
                             .lineLimit(1)
                         }
+                        
+                        // 3. New Custom Time-Ago Format
+                        Text(post.timestamp.timeAgoDisplay())
+                            .font(.caption)
+                            .foregroundColor(.textLight)
                     }
-                    // 3. Instructor badge is REMOVED
                 }
+                // --- *** END OF VSTACK UPDATE *** ---
                 
                 Spacer()
                 
                 // 4. "Follow" Button
                 Button("Follow") {
                     print("Following user \(post.authorID)...")
-                    // TODO: Add follow logic
                 }
                 .buttonStyle(.bordered)
                 .tint(.primaryBlue)
@@ -279,35 +270,50 @@ struct PostCard: View {
                     .padding(.bottom, 5)
             }
             
-            // --- *** 5. SWIPEABLE IMAGE CAROUSEL *** ---
+            // --- *** 5. SWIPEABLE IMAGE CAROUSEL WITH BADGE *** ---
             if let mediaURLs = post.mediaURLs, !mediaURLs.isEmpty {
-                TabView {
-                    ForEach(mediaURLs, id: \.self) { urlString in
-                        if let url = URL(string: urlString) {
-                            AsyncImage(url: url) { phase in
-                                switch phase {
-                                case .success(let image):
-                                    image
-                                        .resizable()
-                                        .scaledToFit() // Use scaledToFit to avoid cropping
-                                        .cornerRadius(10)
-                                case .failure:
-                                    Image(systemName: "photo.on.rectangle")
-                                        .foregroundColor(.textLight)
-                                        .frame(maxWidth: .infinity, alignment: .center)
-                                case .empty:
-                                    ProgressView()
-                                        .frame(maxWidth: .infinity, minHeight: 250, alignment: .center) // Give a min height
-                                @unknown default:
-                                    EmptyView()
+                ZStack(alignment: .topTrailing) {
+                    TabView(selection: $currentImagePage) {
+                        ForEach(Array(mediaURLs.enumerated()), id: \.offset) { index, urlString in
+                            if let url = URL(string: urlString) {
+                                AsyncImage(url: url) { phase in
+                                    switch phase {
+                                    case .success(let image):
+                                        image
+                                            .resizable()
+                                            .scaledToFit()
+                                            .cornerRadius(10)
+                                    case .failure:
+                                        Image(systemName: "photo.on.rectangle")
+                                            .foregroundColor(.textLight)
+                                            .frame(maxWidth: .infinity, alignment: .center)
+                                    case .empty:
+                                        ProgressView()
+                                            .frame(maxWidth: .infinity, minHeight: 250, alignment: .center)
+                                    @unknown default:
+                                        EmptyView()
+                                    }
                                 }
+                                .tag(index) // Tag each page with its index
                             }
                         }
                     }
+                    .frame(height: 350)
+                    .tabViewStyle(.page(indexDisplayMode: .never)) // Hide the dots
+                    .cornerRadius(10)
+                    
+                    // Add badge if more than 1 image
+                    if mediaURLs.count > 1 {
+                        Text("\(currentImagePage + 1)/\(mediaURLs.count)")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.7))
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                            .padding(10) // Padding inside the ZStack
+                    }
                 }
-                .frame(height: 350) // Give the carousel a fixed height
-                .tabViewStyle(.page(indexDisplayMode: .automatic)) // Shows the dots
-                .cornerRadius(10)
                 .padding(.vertical, 5)
             }
             // --- *** END OF MEDIA SECTION *** ---
@@ -342,7 +348,7 @@ struct PostCard: View {
         .shadow(color: Color.textDark.opacity(0.1), radius: 8, x: 0, y: 4)
     }
 }
-// --- *** END OF UPDATE *** ---
+// --- *** END OF POSTCARD UPDATE *** ---
 
 struct ReactionButton: View {
     let icon: String
@@ -358,5 +364,46 @@ struct ReactionButton: View {
                 .foregroundColor(.textDark)
         }
         .padding(.trailing, 10)
+    }
+}
+
+
+// --- *** ADD THIS DATE EXTENSION *** ---
+extension Date {
+    /// Creates a formatted string like "1h ago", "2d ago", "Just now".
+    func timeAgoDisplay() -> String {
+        let secondsAgo = Int(Date().timeIntervalSince(self))
+
+        if secondsAgo < 60 {
+            return "Just now"
+        }
+        
+        let minutes = secondsAgo / 60
+        if minutes < 60 {
+            return "\(minutes)m ago"
+        }
+        
+        let hours = minutes / 60
+        if hours < 24 {
+            return "\(hours)h ago"
+        }
+        
+        let days = hours / 24
+        if days < 7 {
+            return "\(days)d ago"
+        }
+        
+        let weeks = days / 7
+        if weeks < 4 {
+            return "\(weeks)w ago"
+        }
+        
+        let months = days / 30 // Approximate
+        if months < 12 {
+            return "\(months)mo ago"
+        }
+        
+        let years = months / 12
+        return "\(years)y ago"
     }
 }

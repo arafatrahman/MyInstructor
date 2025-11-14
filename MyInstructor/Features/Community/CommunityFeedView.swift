@@ -1,5 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: PostCard header layout, custom time-ago string, and image count badge ---
+// --- FINAL VERSION ---
+// --- UPDATED: PostCard now shows nested replies and handles inline reply actions ---
 
 import SwiftUI
 import PhotosUI
@@ -26,6 +27,17 @@ struct CommunityFeedView: View {
             return posts
         } else {
             return posts.filter { $0.content?.localizedCaseInsensitiveContains(searchText) ?? false || $0.authorName.localizedCaseInsensitiveContains(searchText) }
+        }
+    }
+    
+    private var postIndices: [Int] {
+        if searchText.isEmpty {
+            return Array(posts.indices)
+        } else {
+            return posts.indices.filter { index in
+                let post = posts[index]
+                return post.content?.localizedCaseInsensitiveContains(searchText) ?? false || post.authorName.localizedCaseInsensitiveContains(searchText)
+            }
         }
     }
 
@@ -140,14 +152,20 @@ struct CommunityFeedView: View {
                 if isLoading {
                     ProgressView("Loading Community...")
                         .padding(.top, 50)
-                } else if filteredPosts.isEmpty {
-                    EmptyStateView(icon: "message.circle", message: "No posts match your filters. Start a conversation now!")
+                } else if posts.isEmpty {
+                    EmptyStateView(icon: "message.circle", message: "No posts yet. Start a conversation now!")
+                } else if postIndices.isEmpty {
+                     EmptyStateView(icon: "magnifyingglass", message: "No posts match your filters.")
                 } else {
                     List {
-                        ForEach(filteredPosts) { post in
-                            VStack {
-                                PostCard(post: post)
-                                NavigationLink(destination: PostDetailView(post: post)) {
+                        ForEach(postIndices, id: \.self) { index in
+                            // We use the index to create a binding to the
+                            // original @State array element
+                            VStack(alignment: .leading) {
+                                PostCard(post: $posts[index]) // <-- Pass binding
+                                
+                                // This is the navigation link, now separate
+                                NavigationLink(destination: PostDetailView(post: posts[index])) {
                                     EmptyView()
                                 }
                                 .opacity(0)
@@ -205,16 +223,42 @@ enum CommunityFilter: String {
 
 // --- *** POSTCARD IS HEAVILY UPDATED *** ---
 struct PostCard: View {
-    let post: Post
+    @Binding var post: Post
     
-    // --- *** ADDED STATE FOR IMAGE CAROUSEL *** ---
+    @EnvironmentObject var communityManager: CommunityManager
+    @EnvironmentObject var authManager: AuthManager
+
     @State private var currentImagePage = 0
+    
+    // --- STATE FOR INLINE COMMENTING ---
+    @State private var isCommenting: Bool = false
+    @State private var commentText: String = ""
+    @State private var isPostingComment: Bool = false
+    @State private var fetchedComments: [Comment]? = nil
+    @State private var isLoadingComments: Bool = false
+    
+    @State private var replyingToComment: Comment? = nil // <-- NEW
+    
+    @FocusState private var isCommentFieldFocused: Bool
+    
+    // --- NEW COMPUTED PROPERTIES FOR NESTING ---
+    private var parentComments: [Comment] {
+        (fetchedComments ?? [])
+            .filter { $0.parentCommentID == nil }
+            .sorted(by: { $0.timestamp < $1.timestamp }) // Show oldest parent first
+    }
+    
+    private func replies(for parent: Comment) -> [Comment] {
+        (fetchedComments ?? [])
+            .filter { $0.parentCommentID == parent.id }
+            .sorted(by: { $0.timestamp < $1.timestamp }) // Show oldest reply first
+    }
+    // --- END NEW ---
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Avatar + name + Timestamp
             HStack(alignment: .top) {
-                // 1. Author's Profile Photo
                 AsyncImage(url: URL(string: post.authorPhotoURL ?? "")) { phase in
                     if let image = phase.image {
                         image.resizable().scaledToFill()
@@ -227,13 +271,10 @@ struct PostCard: View {
                 .clipShape(Circle())
                 .background(Color.secondaryGray.clipShape(Circle()))
                 
-                // --- *** THIS VSTACK IS UPDATED *** ---
                 VStack(alignment: .leading, spacing: 2) {
                     Text(post.authorName).font(.headline)
                     
-                    // 2. Stacked Location and Time
                     VStack(alignment: .leading, spacing: 2) {
-                        // Location appears first
                         if let location = post.location, !location.isEmpty {
                             HStack(spacing: 3) {
                                 Image(systemName: "mappin.circle.fill")
@@ -244,23 +285,21 @@ struct PostCard: View {
                             .lineLimit(1)
                         }
                         
-                        // 3. New Custom Time-Ago Format
                         Text(post.timestamp.timeAgoDisplay())
                             .font(.caption)
                             .foregroundColor(.textLight)
                     }
                 }
-                // --- *** END OF VSTACK UPDATE *** ---
                 
                 Spacer()
                 
-                // 4. "Follow" Button
                 Button("Follow") {
                     print("Following user \(post.authorID)...")
                 }
                 .buttonStyle(.bordered)
                 .tint(.primaryBlue)
                 .font(.caption.bold())
+                .buttonStyle(.plain) // <-- STOPS NAVIGATION
             }
             
             // Content
@@ -270,7 +309,7 @@ struct PostCard: View {
                     .padding(.bottom, 5)
             }
             
-            // --- *** 5. SWIPEABLE IMAGE CAROUSEL WITH BADGE *** ---
+            // SWIPEABLE IMAGE CAROUSEL WITH BADGE
             if let mediaURLs = post.mediaURLs, !mediaURLs.isEmpty {
                 ZStack(alignment: .topTrailing) {
                     TabView(selection: $currentImagePage) {
@@ -294,15 +333,14 @@ struct PostCard: View {
                                         EmptyView()
                                     }
                                 }
-                                .tag(index) // Tag each page with its index
+                                .tag(index)
                             }
                         }
                     }
                     .frame(height: 350)
-                    .tabViewStyle(.page(indexDisplayMode: .never)) // Hide the dots
+                    .tabViewStyle(.page(indexDisplayMode: .never))
                     .cornerRadius(10)
                     
-                    // Add badge if more than 1 image
                     if mediaURLs.count > 1 {
                         Text("\(currentImagePage + 1)/\(mediaURLs.count)")
                             .font(.caption.bold())
@@ -311,12 +349,11 @@ struct PostCard: View {
                             .background(Color.black.opacity(0.7))
                             .foregroundColor(.white)
                             .cornerRadius(10)
-                            .padding(10) // Padding inside the ZStack
+                            .padding(10)
                     }
                 }
                 .padding(.vertical, 5)
             }
-            // --- *** END OF MEDIA SECTION *** ---
 
             if post.postType == .progressUpdate {
                 Text("📈 Progress Update: 65% Mastery Achieved!")
@@ -329,46 +366,278 @@ struct PostCard: View {
             
             Divider()
             
-            // Reactions row + Comment count
             HStack {
-                ReactionButton(icon: "hand.thumbsup.fill", count: post.reactionsCount["thumbsup"] ?? 0)
-                ReactionButton(icon: "flame.fill", count: post.reactionsCount["fire"] ?? 0, color: .orange)
-                ReactionButton(icon: "heart.fill", count: post.reactionsCount["heart"] ?? 0, color: .warningRed)
+                ReactionButton(
+                    post: $post,
+                    reactionType: "thumbsup",
+                    icon: "hand.thumbsup.fill",
+                    color: .primaryBlue
+                )
+                .buttonStyle(.plain) // <-- STOPS NAVIGATION
+
+                ReactionButton(
+                    post: $post,
+                    reactionType: "fire",
+                    icon: "flame.fill",
+                    color: .orange
+                )
+                .buttonStyle(.plain) // <-- STOPS NAVIGATION
+                
+                ReactionButton(
+                    post: $post,
+                    reactionType: "heart",
+                    icon: "heart.fill",
+                    color: .warningRed
+                )
+                .buttonStyle(.plain) // <-- STOPS NAVIGATION
                 
                 Spacer()
                 
-                Text("\(post.commentsCount) Comments")
+                Button {
+                    withAnimation { isCommenting.toggle() }
+                    if isCommenting && fetchedComments == nil {
+                        Task { await fetchComments() }
+                    }
+                    // Clear reply state if user is just commenting
+                    if isCommenting == false {
+                        replyingToComment = nil
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "message")
+                        Text("\(post.commentsCount) Comments")
+                    }
                     .font(.caption)
                     .foregroundColor(.textLight)
+                }
+                .buttonStyle(.plain) // <-- STOPS NAVIGATION
+            }
+            
+            // --- *** NEW COMMENT INPUT FIELD & DISPLAY *** ---
+            if isCommenting {
+                VStack(alignment: .leading, spacing: 10) {
+                    
+                    // --- DISPLAY COMMENTS ---
+                    if isLoadingComments {
+                        ProgressView()
+                            .padding(.vertical, 5)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    } else if let comments = fetchedComments, !comments.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            
+                            // --- NESTED LOOP LOGIC ---
+                            ForEach(parentComments) { parent in
+                                // 1. Show Parent Comment
+                                CommentRow(comment: parent, onReply: {
+                                    handleReply(to: parent)
+                                })
+                                .buttonStyle(.plain) // <-- STOPS NAVIGATION
+                                
+                                // 2. Show Replies
+                                ForEach(replies(for: parent)) { reply in
+                                    CommentRow(comment: reply, onReply: {
+                                        handleReply(to: reply)
+                                    })
+                                    .padding(.leading, 30) // Indent replies
+                                    .buttonStyle(.plain) // <-- STOPS NAVIGATION
+                                }
+                            }
+                            // --- END NESTED LOOP ---
+                            
+                            // Compare total comments in DB vs. displayed
+                            if post.commentsCount > comments.count {
+                                Text("View all \(post.commentsCount) comments...")
+                                    .font(.caption).bold()
+                                    .foregroundColor(.primaryBlue)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(.top, 5)
+                    } else if fetchedComments != nil {
+                        Text("No comments yet. Be the first!")
+                            .font(.caption).foregroundColor(.textLight)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 5)
+                    }
+                    
+                    // --- COMMENT INPUT ---
+                    if let replyingTo = replyingToComment {
+                        HStack {
+                            Text("Replying to @\(replyingTo.authorName)")
+                                .font(.caption).bold()
+                                .foregroundColor(.textLight)
+                            Spacer()
+                            Button {
+                                replyingToComment = nil
+                                commentText = ""
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.caption).bold()
+                                    .foregroundColor(.textLight)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    
+                    HStack(spacing: 8) {
+                        TextField(replyingToComment == nil ? "Write a comment..." : "Write your reply...", text: $commentText)
+                            .padding(8)
+                            .background(Color.secondaryGray.opacity(0.7))
+                            .cornerRadius(10)
+                            .focused($isCommentFieldFocused)
+                        
+                        Button {
+                            Task { await postComment() }
+                        } label: {
+                            if isPostingComment {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "paperplane.fill")
+                                    .foregroundColor(.primaryBlue)
+                            }
+                        }
+                        .buttonStyle(.plain) // <-- STOPS NAVIGATION
+                        .disabled(commentText.isEmpty || isPostingComment)
+                    }
+                }
+                .padding(.top, 8)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .animation(.default, value: replyingToComment)
             }
         }
         .padding(15)
         .background(Color(.systemBackground))
         .cornerRadius(15)
         .shadow(color: Color.textDark.opacity(0.1), radius: 8, x: 0, y: 4)
-    }
-}
-// --- *** END OF POSTCARD UPDATE *** ---
-
-struct ReactionButton: View {
-    let icon: String
-    let count: Int
-    var color: Color = .primaryBlue
-    
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .foregroundColor(color)
-            Text("\(count)")
-                .font(.subheadline)
-                .foregroundColor(.textDark)
+        .animation(.default, value: isCommenting) // <-- Animate the whole comment section
+        .onChange(of: isCommenting) { _, newValue in
+             if newValue && commentText.isEmpty {
+                 isCommentFieldFocused = true
+             }
         }
-        .padding(.trailing, 10)
+    }
+    
+    // --- HELPER FUNCTIONS ---
+    
+    private func handleReply(to comment: Comment) {
+        // We always reply to the top-level parent
+        if let parentID = comment.parentCommentID {
+            // This is a reply to a reply, find the original parent
+            self.replyingToComment = fetchedComments?.first(where: { $0.id == parentID })
+        } else {
+            // This is a top-level comment
+            self.replyingToComment = comment
+        }
+        commentText = "@\(comment.authorName) "
+        isCommentFieldFocused = true
+    }
+    
+    private func fetchComments() async {
+        guard let postID = post.id else { return }
+        isLoadingComments = true
+        do {
+            self.fetchedComments = try await communityManager.fetchComments(for: postID)
+        } catch {
+            print("Failed to fetch comments: \(error)")
+            self.fetchedComments = []
+        }
+        isLoadingComments = false
+    }
+    
+    private func postComment() async {
+        guard let postID = post.id,
+              let author = authManager.user,
+              let authorID = author.id else {
+            print("Cannot post comment: Missing IDs or user object")
+            return
+        }
+        
+        let content = commentText
+        // --- UPDATED: Get parent ID from state ---
+        let parentID = replyingToComment?.id
+        
+        isPostingComment = true
+        
+        do {
+            try await communityManager.addComment(
+                postID: postID,
+                authorID: authorID,
+                authorName: author.name ?? "User",
+                authorRole: author.role,
+                authorPhotoURL: author.photoURL,
+                content: content,
+                parentCommentID: parentID // <-- Pass the parent ID
+            )
+            
+            // Success
+            commentText = ""
+            replyingToComment = nil // Clear reply state
+            post.commentsCount += 1
+            await fetchComments() // Re-fetch to show the new comment
+            
+        } catch {
+            print("Failed to post comment from feed: \(error.localizedDescription)")
+            // TODO: Show an error to the user
+        }
+        isPostingComment = false
+        isCommentFieldFocused = false
+    }
+}
+
+// --- *** FUNCTIONAL REACTION BUTTON *** ---
+struct ReactionButton: View {
+    @EnvironmentObject var communityManager: CommunityManager
+    
+    @Binding var post: Post
+    let reactionType: String
+    let icon: String
+    var color: Color
+    
+    private var count: Int {
+        post.reactionsCount[reactionType] ?? 0
+    }
+    
+    @State private var isDisabled = false
+
+    var body: some View {
+        Button {
+            isDisabled = true
+            
+            Task {
+                guard let postID = post.id else {
+                    isDisabled = false
+                    return
+                }
+                
+                do {
+                    try await communityManager.addReaction(postID: postID, reactionType: reactionType)
+                    
+                    post.reactionsCount[reactionType, default: 0] += 1
+                    
+                } catch {
+                    print("Failed to add reaction: \(error.localizedDescription)")
+                }
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    isDisabled = false
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                Text("\(count)")
+                    .font(.subheadline)
+                    .foregroundColor(.textDark)
+            }
+            .padding(.trailing, 10)
+        }
+        .disabled(isDisabled)
     }
 }
 
 
-// --- *** ADD THIS DATE EXTENSION *** ---
+// --- *** DATE EXTENSION *** ---
 extension Date {
     /// Creates a formatted string like "1h ago", "2d ago", "Just now".
     func timeAgoDisplay() -> String {

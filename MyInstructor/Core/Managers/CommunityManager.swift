@@ -1,6 +1,7 @@
 // File: Core/Managers/CommunityManager.swift
-// --- UPDATED: unblockInstructor and removeInstructor to fix permission/timestamp bugs ---
-// --- UPDATED: Added update/delete functions for offline students ---
+// --- FINAL VERSION ---
+// --- UPDATED: addComment now handles parentCommentID and increments reply counts ---
+// --- UPDATED: Added functions for reactions and comments ---
 
 import Combine
 import Foundation
@@ -39,7 +40,6 @@ class CommunityManager: ObservableObject {
         db.collection("conversations")
     }
     
-    // --- *** ADD THIS NEW COLLECTION REFERENCE *** ---
     private var offlineStudentsCollection: CollectionReference {
         db.collection("offline_students")
     }
@@ -96,20 +96,16 @@ class CommunityManager: ObservableObject {
             address: address
         )
         
-        // Add the new document to the 'offline_students' collection
         try offlineStudentsCollection.addDocument(from: newOfflineStudent)
         print("Offline student '\(name)' added successfully.")
     }
     
-    // --- *** ADD THIS NEW FUNCTION *** ---
     /// Updates an existing offline student document.
     func updateOfflineStudent(_ student: OfflineStudent) async throws {
         guard let studentID = student.id else {
             throw NSError(domain: "CommunityManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Missing student ID for update."])
         }
         
-        // Use updateData with a dictionary. This correctly handles
-        // setting a value to nil (which removes it) vs. skipping it.
         try await offlineStudentsCollection.document(studentID).updateData([
             "name": student.name,
             "phone": student.phone ?? FieldValue.delete(),
@@ -119,11 +115,87 @@ class CommunityManager: ObservableObject {
         print("Offline student '\(student.name)' updated successfully.")
     }
 
-    // --- *** ADD THIS NEW FUNCTION *** ---
     /// Deletes an offline student document by their ID.
     func deleteOfflineStudent(studentID: String) async throws {
         try await offlineStudentsCollection.document(studentID).delete()
         print("Offline student deleted successfully.")
+    }
+    
+    // MARK: - --- POST INTERACTIONS ---
+    
+    /// Adds a reaction to a post.
+    func addReaction(postID: String, reactionType: String) async throws {
+        guard ["thumbsup", "fire", "heart"].contains(reactionType) else {
+            throw NSError(domain: "CommunityManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid reaction type."])
+        }
+        
+        let postRef = postsCollection.document(postID)
+        
+        let fieldToUpdate = "reactionsCount.\(reactionType)"
+        try await postRef.updateData([
+            fieldToUpdate: FieldValue.increment(1.0)
+        ])
+        print("Reaction '\(reactionType)' added to post \(postID)")
+    }
+    
+    /// Fetches all comments for a specific post.
+    func fetchComments(for postID: String) async throws -> [Comment] {
+        let snapshot = try await postsCollection.document(postID)
+            .collection("comments")
+            .order(by: "timestamp", descending: false) // Order by oldest first
+            .getDocuments()
+        
+        return snapshot.documents.compactMap { try? $0.data(as: Comment.self) }
+    }
+    
+    /// Adds a new comment to a post and increments the post's comment count.
+    /// If parentCommentID is provided, it also increments the parent's reply count.
+    func addComment(
+        postID: String,
+        authorID: String,
+        authorName: String,
+        authorRole: UserRole,
+        authorPhotoURL: String?,
+        content: String,
+        parentCommentID: String? // <-- THIS IS THE KEY
+    ) async throws {
+        
+        let postRef = postsCollection.document(postID)
+        let commentCollection = postRef.collection("comments")
+        
+        // This requires CommunityModel.swift to be updated
+        let newComment = Comment(
+            postID: postID,
+            authorID: authorID,
+            authorName: authorName,
+            authorPhotoURL: authorPhotoURL,
+            authorRole: authorRole,
+            timestamp: Date(),
+            content: content,
+            parentCommentID: parentCommentID // <-- Set the parent ID
+        )
+        
+        let batch = db.batch()
+        
+        // 1. Add the new comment document
+        let newCommentRef = commentCollection.document()
+        try batch.setData(from: newComment, forDocument: newCommentRef)
+        
+        // 2. Increment the post's main comment count
+        batch.updateData([
+            "commentsCount": FieldValue.increment(1.0)
+        ], forDocument: postRef)
+        
+        // 3. If it's a reply, increment the PARENT comment's reply count
+        if let parentID = parentCommentID {
+            let parentCommentRef = commentCollection.document(parentID)
+            batch.updateData([
+                "repliesCount": FieldValue.increment(1.0)
+            ], forDocument: parentCommentRef)
+        }
+        
+        try await batch.commit()
+        print("Comment added successfully to post \(postID)")
     }
     
     // MARK: - --- STUDENT REQUEST FUNCTIONS ---
@@ -392,7 +464,6 @@ class CommunityManager: ObservableObject {
     }
     
     
-    // --- *** THIS IS THE UPDATED FUNCTION *** ---
     // Unblock (BY STUDENT)
     func unblockInstructor(instructorID: String, studentID: String) async throws {
         let requestQuery = try await requestsCollection
@@ -407,12 +478,10 @@ class CommunityManager: ObservableObject {
             return
         }
         
-        // Update status to 'denied' AND update the timestamp
-        // This makes it the "newest" request.
         try await doc.reference.updateData([
             "status": RequestStatus.denied.rawValue,
             "blockedBy": FieldValue.delete(),
-            "timestamp": FieldValue.serverTimestamp() // <-- THIS IS THE FIX
+            "timestamp": FieldValue.serverTimestamp()
         ])
     }
     
@@ -421,11 +490,9 @@ class CommunityManager: ObservableObject {
     func removeInstructor(instructorID: String, studentID: String) async throws {
         let batch = db.batch()
         
-        // 1. Remove instructor from student's list (Allowed)
         let studentRef = usersCollection.document(studentID)
         batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
         
-        // 2. Find *only* pending/denied requests to delete (Allowed)
         let requestQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
             .whereField("instructorID", isEqualTo: instructorID)
@@ -436,17 +503,13 @@ class CommunityManager: ObservableObject {
         for doc in requestQuery.documents {
             let request = try? doc.data(as: StudentRequest.self)
             if request?.status == .approved {
-                approvedDocRef = doc.reference // Save ref to approved doc
+                approvedDocRef = doc.reference
             } else {
-                batch.deleteDocument(doc.reference) // Delete all others
+                batch.deleteDocument(doc.reference)
             }
         }
         
-        // 3. Create a new "denied" request
-        // We create a new doc instead of updating the 'approved' one
-        // to avoid permission errors.
         if let approvedRequestDoc = approvedDocRef {
-             // Create a new denied request
              let studentDoc = try await usersCollection.document(studentID).getDocument()
              let student = try studentDoc.data(as: AppUser.self)
              
@@ -456,7 +519,7 @@ class CommunityManager: ObservableObject {
                  studentPhotoURL: student.photoURL,
                  instructorID: instructorID,
                  status: .denied,
-                 timestamp: Date(), // Set new timestamp
+                 timestamp: Date(),
                  blockedBy: nil
              )
              let newReqRef = requestsCollection.document()
@@ -477,7 +540,6 @@ class CommunityManager: ObservableObject {
             
         let requests = snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
         
-        // De-duplicate in code: Only keep the *newest* request for each instructor
         var uniqueRequests: [StudentRequest] = []
         var seenInstructorIDs = Set<String>()
 

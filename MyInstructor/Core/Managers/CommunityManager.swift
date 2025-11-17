@@ -1,30 +1,11 @@
 // File: Core/Managers/CommunityManager.swift
-// --- FINAL VERSION ---
-// --- UPDATED: addComment now handles parentCommentID and increments reply counts ---
-// --- UPDATED: Added functions for reactions and comments ---
-// --- UPDATED: Added deletePost and updatePostDetails ---
+// --- UPDATED: updatePostDetails now handles media deletion ---
 
 import Combine
 import Foundation
 import FirebaseFirestore
-
-enum RequestError: Error, LocalizedError {
-    case alreadyPending
-    case alreadyApproved
-    case blocked
-    
-    var errorDescription: String? {
-        switch self {
-        case .alreadyPending:
-            return "A request is already pending with this instructor."
-        case .alreadyApproved:
-            return "You are already an approved student of this instructor."
-        case .blocked:
-            return "You are not allowed to send a request to this instructor."
-        }
-    }
-}
-
+// --- *** Import Storage to get error codes *** ---
+import FirebaseStorage
 
 class CommunityManager: ObservableObject {
     private let db = Firestore.firestore()
@@ -44,6 +25,23 @@ class CommunityManager: ObservableObject {
     private var offlineStudentsCollection: CollectionReference {
         db.collection("offline_students")
     }
+    
+    enum RequestError: Error, LocalizedError {
+        case alreadyPending
+        case alreadyApproved
+        case blocked
+        
+        var errorDescription: String? {
+            switch self {
+            case .alreadyPending:
+                return "A request is already pending with this instructor."
+            case .alreadyApproved:
+                return "You are already an approved student of this instructor."
+            case .blocked:
+                return "You are not allowed to send a request to this instructor."
+            }
+        }
+    }
 
     // Fetches recent community posts
     func fetchPosts(filter: String) async throws -> [Post] {
@@ -62,24 +60,88 @@ class CommunityManager: ObservableObject {
         try postsCollection.addDocument(from: post)
     }
     
-    // --- *** NEW FUNCTION *** ---
     /// Deletes a post document from Firestore.
     func deletePost(postID: String) async throws {
-        // TODO: This only deletes the post document.
+        // --- *** UPDATED: Now also deletes media *** ---
         
+        // 1. Get the post document to find its media URLs
+        let postDoc = try await postsCollection.document(postID).getDocument()
+        let post = try? postDoc.data(as: Post.self)
+        
+        // 2. Delete the post document
         try await postsCollection.document(postID).delete()
-        print("Post \(postID) deleted successfully.")
+        print("Post \(postID) deleted successfully from Firestore.")
+
+        // 3. If it had media, delete each file from Storage
+        if let mediaURLs = post?.mediaURLs {
+            print("Post had \(mediaURLs.count) media files. Deleting from Storage...")
+            // Run all deletions in parallel
+            await withTaskGroup(of: Void.self) { group in
+                for urlString in mediaURLs {
+                    group.addTask {
+                        do {
+                            try await StorageManager.shared.deleteMedia(from: urlString)
+                        } catch {
+                            print("Failed to delete media file \(urlString): \(error.localizedDescription)")
+                        }
+                    }
+                }
+            }
+            print("Media deletion process complete.")
+        }
+        
+        // TODO: A complete solution would also delete all comments
+        // in the subcollection. This is a complex "recursive delete"
+        // and is often better handled by a Firebase Cloud Function.
     }
 
-    // --- *** NEW FUNCTION *** ---
-    /// Updates the text-based content of an existing post.
-    func updatePostDetails(postID: String, content: String?, location: String?, visibility: PostVisibility) async throws {
+    // --- *** THIS FUNCTION IS HEAVILY UPDATED *** ---
+    /// Updates the details of an existing post.
+    func updatePostDetails(
+        postID: String,
+        content: String?,
+        location: String?,
+        visibility: PostVisibility,
+        newMediaURLs: [String]? // The new, complete list of URLs
+    ) async throws {
         
-        try await postsCollection.document(postID).updateData([
+        // 1. Get the *current* post data to find old URLs
+        let postRef = postsCollection.document(postID)
+        let oldPostDoc = try await postRef.getDocument()
+        let oldPost = try? oldPostDoc.data(as: Post.self)
+        
+        let oldURLs = Set(oldPost?.mediaURLs ?? [])
+        let newURLs = Set(newMediaURLs ?? [])
+        
+        // 2. Find which URLs were removed
+        let removedURLs = oldURLs.subtracting(newURLs)
+        
+        if !removedURLs.isEmpty {
+            print("Found \(removedURLs.count) URLs to delete from Storage.")
+            // Run all deletions in parallel
+            await withTaskGroup(of: Void.self) { group in
+                for urlString in removedURLs {
+                    group.addTask {
+                        do {
+                            try await StorageManager.shared.deleteMedia(from: urlString)
+                        } catch {
+                            print("Failed to delete media file \(urlString): \(error.localizedDescription)")
+                        }
+                    }
+                }
+            }
+            print("Media deletion process complete.")
+        }
+
+        // 3. Update the Firestore document with all new data
+        try await postRef.updateData([
             "content": content ?? FieldValue.delete(),
             "location": location ?? FieldValue.delete(),
-            "visibility": visibility.rawValue
+            "visibility": visibility.rawValue,
+            "isEdited": true,
+            "mediaURLs": newMediaURLs ?? FieldValue.delete() // Save the new list
         ])
+        
         print("Post \(postID) updated successfully.")
     }
 
@@ -547,9 +609,6 @@ class CommunityManager: ObservableObject {
              )
              let newReqRef = requestsCollection.document()
              try batch.setData(from: newDeniedRequest, forDocument: newReqRef)
-             
-             // We can't delete the approved doc, so we leave it.
-             // The new "denied" doc will be newer and take precedence.
         }
 
         try await batch.commit()

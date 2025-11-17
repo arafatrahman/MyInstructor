@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: Edit/Delete actions now update the UI instantly ---
+// --- UPDATED: onPostSaved closure in .sheet now updates mediaURLs ---
 
 import SwiftUI
 import PhotosUI
@@ -13,7 +13,6 @@ struct CommunityFeedView: View {
     @State private var searchText = ""
     @State private var filterMode: CommunityFilter = .all
     
-    // --- STATE FOR NEW FLOW ---
     @State private var isCreatePostPresented = false
     @State private var feedPhotoItems: [PhotosPickerItem] = []
     @State private var isProcessingPhotos = false
@@ -86,7 +85,6 @@ struct CommunityFeedView: View {
                     .clipShape(Circle())
                     .background(Color.secondaryGray.clipShape(Circle()))
                     
-                    // 1. "Text-first" button
                     Button {
                         isCreatePostPresented = true
                     } label: {
@@ -101,7 +99,6 @@ struct CommunityFeedView: View {
                     
                     Spacer()
                     
-                    // 2. "Photo-first" button (is now a PhotosPicker)
                     PhotosPicker(
                         selection: $feedPhotoItems,
                         maxSelectionCount: 5,
@@ -158,16 +155,12 @@ struct CommunityFeedView: View {
                 } else {
                     List {
                         ForEach(postIndices, id: \.self) { index in
-                            // We use the index to create a binding to the
-                            // original @State array element
                             VStack(alignment: .leading) {
-                                // --- MODIFIED: Pass the onDelete closure ---
                                 PostCard(
                                     post: $posts[index],
-                                    onDelete: deletePostFromFeed // <-- ADDED
+                                    onDelete: deletePostFromFeed
                                 )
                                 
-                                // This is the navigation link, now separate
                                 NavigationLink(destination: PostDetailView(post: posts[index])) {
                                     EmptyView()
                                 }
@@ -187,12 +180,11 @@ struct CommunityFeedView: View {
             .navigationBarHidden(true)
             .task { await fetchPosts() }
             .sheet(isPresented: $isCreatePostPresented) {
-                // --- MODIFIED: Refresh feed after *new* post ---
                 CreatePostView(
                     postToEdit: nil,
-                    onPostCreated: { // <-- MODIFIED
+                    onPostCreated: {
                         isCreatePostPresented = false
-                        Task { await fetchPosts() } // Refresh feed
+                        Task { await fetchPosts() }
                     }
                 )
             }
@@ -216,15 +208,11 @@ struct CommunityFeedView: View {
         isLoading = false
     }
     
-    // --- *** ADDED THIS FUNCTION *** ---
-    /// Instantly removes a post from the local `@State` array to update the UI.
     private func deletePostFromFeed(postID: String) {
         posts.removeAll { $0.id == postID }
     }
-    // --- *** ---
 }
 
-// This wrapper makes the [Data] array Identifiable for the .sheet(item:) modifier
 extension Array: Identifiable where Element == Data {
     public var id: String {
         self.map { String($0.count) }.joined(separator: "-")
@@ -235,17 +223,15 @@ enum CommunityFilter: String {
     case all, instructors, local, trending
 }
 
-// --- *** POSTCARD IS HEAVILY UPDATED *** ---
 struct PostCard: View {
     @Binding var post: Post
-    let onDelete: (String) -> Void // <-- ADDED
+    let onDelete: (String) -> Void
     
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var authManager: AuthManager
 
     @State private var currentImagePage = 0
     
-    // --- STATE FOR INLINE COMMENTING ---
     @State private var isCommenting: Bool = false
     @State private var commentText: String = ""
     @State private var isPostingComment: Bool = false
@@ -256,23 +242,20 @@ struct PostCard: View {
     
     @FocusState private var isCommentFieldFocused: Bool
     
-    // --- *** ADD THESE NEW STATE VARIABLES *** ---
     @State private var isShowingEditSheet = false
     @State private var isShowingDeleteAlert = false
     
-    // --- NEW COMPUTED PROPERTIES FOR NESTING ---
     private var parentComments: [Comment] {
         (fetchedComments ?? [])
             .filter { $0.parentCommentID == nil }
-            .sorted(by: { $0.timestamp < $1.timestamp }) // Show oldest parent first
+            .sorted(by: { $0.timestamp < $1.timestamp })
     }
     
     private func replies(for parent: Comment) -> [Comment] {
         (fetchedComments ?? [])
             .filter { $0.parentCommentID == parent.id }
-            .sorted(by: { $0.timestamp < $1.timestamp }) // Show oldest reply first
+            .sorted(by: { $0.timestamp < $1.timestamp })
     }
-    // --- END NEW ---
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -304,25 +287,30 @@ struct PostCard: View {
                             .lineLimit(1)
                         }
                         
-                        Text(post.timestamp.timeAgoDisplay())
-                            .font(.caption)
-                            .foregroundColor(.textLight)
+                        HStack(spacing: 4) {
+                            Text(post.timestamp.timeAgoDisplay())
+                            
+                            if post.isEdited == true {
+                                Text("• (edited)")
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundColor(.textLight)
                     }
                 }
                 
                 Spacer()
                 
-                // --- *** THIS IS THE NEW MENU *** ---
                 if post.authorID == authManager.user?.id {
                     Menu {
                         Button {
-                            isShowingEditSheet = true // <-- MODIFIED
+                            isShowingEditSheet = true
                         } label: {
                             Label("Edit Post", systemImage: "pencil")
                         }
                         
                         Button(role: .destructive) {
-                            isShowingDeleteAlert = true // <-- MODIFIED
+                            isShowingDeleteAlert = true
                         } label: {
                             Label("Delete Post", systemImage: "trash")
                         }
@@ -454,11 +442,9 @@ struct PostCard: View {
                 .buttonStyle(.plain)
             }
             
-            // --- *** NEW COMMENT INPUT FIELD & DISPLAY *** ---
             if isCommenting {
                 VStack(alignment: .leading, spacing: 10) {
                     
-                    // --- DISPLAY COMMENTS ---
                     if isLoadingComments {
                         ProgressView()
                             .padding(.vertical, 5)
@@ -466,15 +452,12 @@ struct PostCard: View {
                     } else if let comments = fetchedComments, !comments.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             
-                            // --- NESTED LOOP LOGIC ---
                             ForEach(parentComments) { parent in
-                                // 1. Show Parent Comment
                                 CommentRow(comment: parent, onReply: {
                                     handleReply(to: parent)
                                 })
                                 .buttonStyle(.plain)
                                 
-                                // 2. Show Replies
                                 ForEach(replies(for: parent)) { reply in
                                     CommentRow(comment: reply, onReply: {
                                         handleReply(to: reply)
@@ -483,7 +466,6 @@ struct PostCard: View {
                                     .buttonStyle(.plain)
                                 }
                             }
-                            // --- END NESTED LOOP ---
                             
                             if post.commentsCount > comments.count {
                                 Text("View all \(post.commentsCount) comments...")
@@ -500,7 +482,6 @@ struct PostCard: View {
                             .padding(.vertical, 5)
                     }
                     
-                    // --- COMMENT INPUT ---
                     if let replyingTo = replyingToComment {
                         HStack {
                             Text("Replying to @\(replyingTo.authorName)")
@@ -550,18 +531,17 @@ struct PostCard: View {
         .cornerRadius(15)
         .shadow(color: Color.textDark.opacity(0.1), radius: 8, x: 0, y: 4)
         .animation(.default, value: isCommenting)
-        // --- *** MODIFIED .sheet *** ---
         .sheet(isPresented: $isShowingEditSheet) {
-            // Present the CreatePostView in "Edit Mode"
+            // --- *** THIS IS THE KEY CHANGE FOR INSTANT EDIT *** ---
             CreatePostView(
                 postToEdit: post,
-                onPostSaved: { newContent, newLocation, newVisibility in // <-- ADDED
-                    // This closure is called when the edit sheet saves.
-                    // We instantly update the @Binding.
+                onPostSaved: { newContent, newLocation, newVisibility, newMediaURLs in
                     isShowingEditSheet = false
                     post.content = newContent.isEmpty ? nil : newContent
                     post.location = newLocation
                     post.visibility = newVisibility
+                    post.isEdited = true
+                    post.mediaURLs = newMediaURLs // <-- Instantly update media
                 }
             )
         }
@@ -582,7 +562,6 @@ struct PostCard: View {
         }
     }
     
-    // --- *** MODIFIED THIS FUNCTION *** ---
     private func deletePost() async {
         guard let postID = post.id else {
             print("Post ID not found, cannot delete.")
@@ -591,20 +570,15 @@ struct PostCard: View {
         
         do {
             try await communityManager.deletePost(postID: postID)
-            // --- *** ADD THIS LINE *** ---
-            // Call the closure passed from the parent view.
             await MainActor.run {
-                onDelete(postID) // <-- This instantly updates the UI
+                onDelete(postID)
             }
             
         } catch {
             print("Error deleting post: \(error.localizedDescription)")
-            // TODO: Show an error alert
         }
     }
 
-    
-    // --- HELPER FUNCTIONS ---
     
     private func handleReply(to comment: Comment) {
         if let parentID = comment.parentCommentID {
@@ -665,7 +639,6 @@ struct PostCard: View {
     }
 }
 
-// --- *** FUNCTIONAL REACTION BUTTON *** ---
 struct ReactionButton: View {
     @EnvironmentObject var communityManager: CommunityManager
     
@@ -718,9 +691,7 @@ struct ReactionButton: View {
 }
 
 
-// --- *** DATE EXTENSION *** ---
 extension Date {
-    /// Creates a formatted string like "1h ago", "2d ago", "Just now".
     func timeAgoDisplay() -> String {
         let secondsAgo = Int(Date().timeIntervalSince(self))
 

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CreatePostView.swift
-// --- UPDATED: Now supports two separate closures for Create vs. Edit ---
+// --- UPDATED: Now supports adding/removing photos in edit mode ---
 
 import SwiftUI
 import PhotosUI
@@ -10,15 +10,15 @@ struct CreatePostView: View {
     @EnvironmentObject var communityManager: CommunityManager
     @Environment(\.dismiss) var dismiss
     
-    // --- *** MODIFIED: Split closures ---
     let postToEdit: Post?
     var onPostCreated: (() -> Void)? = nil // For creating
-    var onPostSaved: ((String, String?, PostVisibility) -> Void)? = nil // For editing
-    // --- *** ---
+    // --- *** MODIFIED: Closure now includes media URLs *** ---
+    var onPostSaved: ((String, String?, PostVisibility, [String]?) -> Void)? = nil // For editing
     
     // --- STATE FOR PHOTOS ---
     @State private var internalPhotoItems: [PhotosPickerItem] = []
-    @State private var photoDataList: [Data]
+    @State private var photoDataList: [Data] // For *new* photos
+    @State private var editableMediaURLs: [String] // For *existing* photos
     
     // --- OTHER STATE ---
     @State private var content: String = ""
@@ -36,26 +36,31 @@ struct CreatePostView: View {
     }
     
     // --- *** UPDATED INITIALIZER *** ---
-    init(postToEdit: Post? = nil, initialPhotoData: [Data] = [], onPostCreated: (() -> Void)? = nil, onPostSaved: ((String, String?, PostVisibility) -> Void)? = nil) {
+    init(postToEdit: Post? = nil, initialPhotoData: [Data] = [], onPostCreated: (() -> Void)? = nil, onPostSaved: ((String, String?, PostVisibility, [String]?) -> Void)? = nil) {
         self.postToEdit = postToEdit
-        self.onPostCreated = onPostCreated // <-- MODIFIED
-        self.onPostSaved = onPostSaved     // <-- MODIFIED
+        self.onPostCreated = onPostCreated
+        self.onPostSaved = onPostSaved
         
         if let post = postToEdit {
+            // Editing: Set initial values from the post
             self._content = State(initialValue: post.content ?? "")
             self._visibility = State(initialValue: post.visibility)
             self._selectedLocationString = State(initialValue: post.location)
             self._isEditing = State(initialValue: true)
+            // Store existing URLs
+            self._editableMediaURLs = State(initialValue: post.mediaURLs ?? [])
+            // New photo list starts empty
             self._photoDataList = State(initialValue: [])
         } else {
+            // Creating: Set default values
             self._content = State(initialValue: "")
             self._visibility = State(initialValue: .public)
             self._selectedLocationString = State(initialValue: nil)
             self._isEditing = State(initialValue: false)
+            self._editableMediaURLs = State(initialValue: [])
             self._photoDataList = State(initialValue: initialPhotoData)
         }
     }
-    // --- *** END OF UPDATE *** ---
 
     var body: some View {
         NavigationView {
@@ -76,34 +81,40 @@ struct CreatePostView: View {
                             }
                         
                         // 2. Horizontal Scrolling Preview
-                        if isEditing, let mediaURLs = postToEdit?.mediaURLs, !mediaURLs.isEmpty {
+                        
+                        // --- *** UPDATED: Show existing photos (if editing) *** ---
+                        if isEditing && !editableMediaURLs.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
-                                    ForEach(mediaURLs, id: \.self) { urlString in
-                                        AsyncImage(url: URL(string: urlString)) { phase in
-                                            if let image = phase.image {
-                                                image.resizable().scaledToFill()
-                                            } else {
-                                                ProgressView()
+                                    ForEach(Array(editableMediaURLs.enumerated()), id: \.offset) { index, urlString in
+                                        ZStack(alignment: .topTrailing) {
+                                            AsyncImage(url: URL(string: urlString)) { phase in
+                                                if let image = phase.image {
+                                                    image.resizable().scaledToFill()
+                                                } else { ProgressView() }
                                             }
+                                            .frame(width: 100, height: 100)
+                                            .cornerRadius(10)
+                                            
+                                            // Remove Button for existing photos
+                                            Button(action: { removeExistingPhoto(at: index) }) {
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .font(.callout)
+                                                    .foregroundColor(.white)
+                                                    .background(Color.black.opacity(0.6).clipShape(Circle()))
+                                            }
+                                            .buttonStyle(.plain)
+                                            .padding(4)
                                         }
-                                        .frame(width: 100, height: 100)
-                                        .cornerRadius(10)
                                     }
                                 }
                                 .padding(.top, 10)
                             }
                             .frame(height: 110)
-                            .overlay(
-                                Text("Photo editing is not supported.")
-                                    .font(.caption)
-                                    .foregroundColor(.white)
-                                    .padding(5)
-                                    .background(Color.black.opacity(0.5))
-                                    .cornerRadius(5)
-                            )
-                        
-                        } else if !photoDataList.isEmpty {
+                        }
+
+                        // --- *** Show *newly added* photos (in both create and edit) *** ---
+                        if !photoDataList.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
                                     ForEach(Array(photoDataList.enumerated()), id: \.offset) { index, photoData in
@@ -115,7 +126,8 @@ struct CreatePostView: View {
                                                     .frame(width: 100, height: 100)
                                                     .cornerRadius(10)
 
-                                                Button(action: { removePhoto(at: index) }) {
+                                                // Remove Button for new photos
+                                                Button(action: { removeNewPhoto(at: index) }) {
                                                     Image(systemName: "xmark.circle.fill")
                                                         .font(.callout)
                                                         .foregroundColor(.white)
@@ -158,18 +170,19 @@ struct CreatePostView: View {
                         
                         // 4. Action Icons
                         HStack(spacing: 25) {
+                            // --- *** Photo Picker is no longer disabled in edit mode *** ---
                             PhotosPicker(
                                 selection: $internalPhotoItems,
-                                maxSelectionCount: 5 - photoDataList.count,
+                                maxSelectionCount: 5 - (photoDataList.count + editableMediaURLs.count), // Combined total
                                 matching: .images,
                                 photoLibrary: .shared()
                             ) {
                                 Image(systemName: "photo.on.rectangle.angled")
                                     .font(.title2)
-                                    .foregroundColor(isEditing ? .gray : .accentGreen)
+                                    .foregroundColor(.accentGreen)
                                     .contentShape(Rectangle())
                             }
-                            .disabled(isEditing || photoDataList.count >= 5)
+                            .disabled((photoDataList.count + editableMediaURLs.count) >= 5) // Disable if 5 photos total
                             .onChange(of: internalPhotoItems, handleInternalPhotoSelection)
                             
                             Button(action: { isShowingAddressSearch = true }) {
@@ -219,7 +232,7 @@ struct CreatePostView: View {
                             Text(isEditing ? "Save" : "Publish").bold()
                         }
                     }
-                    .disabled(isLoading || (isUploadingMedia && !isEditing))
+                    .disabled(isLoading || isUploadingMedia) // --- *** MODIFIED *** ---
                 }
             }
             .sheet(isPresented: $isShowingAddressSearch) {
@@ -228,6 +241,7 @@ struct CreatePostView: View {
                 }
             }
             .animation(.default, value: photoDataList)
+            .animation(.default, value: editableMediaURLs) // <-- ADDED
             .animation(.default, value: selectedLocationString)
         }
     }
@@ -251,11 +265,20 @@ struct CreatePostView: View {
         }
     }
     
-    private func removePhoto(at index: Int) {
+    // --- *** RENAMED *** ---
+    private func removeNewPhoto(at index: Int) {
         withAnimation {
             photoDataList.remove(at: index)
         }
     }
+    
+    // --- *** NEW FUNCTION *** ---
+    private func removeExistingPhoto(at index: Int) {
+        withAnimation {
+            editableMediaURLs.remove(at: index)
+        }
+    }
+
     
     private func removeLocation() {
         withAnimation {
@@ -265,6 +288,7 @@ struct CreatePostView: View {
     
     // MARK: - Actions
     
+    // --- *** HEAVILY MODIFIED FUNCTION *** ---
     private func publishOrUpdatePost() {
         guard let userID = authManager.user?.id, let userName = authManager.user?.name else {
             errorMessage = "Error: Could not find user."
@@ -275,30 +299,57 @@ struct CreatePostView: View {
         
         // --- *** EDITING LOGIC *** ---
         if isEditing, let postToEdit = postToEdit, let postID = postToEdit.id {
+            
+            // Check if there is anything to post
+            if trimmedContent.isEmpty && photoDataList.isEmpty && editableMediaURLs.isEmpty {
+                errorMessage = "Your post cannot be empty."
+                return
+            }
+            
             isLoading = true
             errorMessage = nil
             
             Task {
                 do {
+                    var newlyUploadedURLs: [String] = []
+                    
+                    // 1. Upload any *new* photos
+                    if !photoDataList.isEmpty {
+                        isUploadingMedia = true
+                        for photoData in photoDataList {
+                            let url = try await StorageManager.shared.uploadPostMedia(
+                                photoData: photoData,
+                                userID: userID
+                            )
+                            newlyUploadedURLs.append(url)
+                        }
+                        isUploadingMedia = false
+                    }
+                    
+                    // 2. Combine with remaining *existing* photos
+                    let finalMediaURLs = editableMediaURLs + newlyUploadedURLs
+                    
+                    // 3. Call the updated manager function
                     try await communityManager.updatePostDetails(
                         postID: postID,
                         content: trimmedContent.isEmpty ? nil : trimmedContent,
                         location: selectedLocationString,
-                        visibility: visibility
+                        visibility: visibility,
+                        newMediaURLs: finalMediaURLs.isEmpty ? nil : finalMediaURLs // Pass the combined list
                     )
                     
-                    // --- *** MODIFIED: Call onPostSaved *** ---
-                    // This instantly updates the @Binding in the feed
-                    onPostSaved?(trimmedContent, selectedLocationString, visibility)
+                    // 4. Call the onPostSaved closure to update the UI instantly
+                    onPostSaved?(trimmedContent, selectedLocationString, visibility, finalMediaURLs.isEmpty ? nil : finalMediaURLs)
                     dismiss()
                     
                 } catch {
                     errorMessage = "Failed to update post: \(error.localizedDescription)"
                     isLoading = false
+                    isUploadingMedia = false
                 }
             }
             
-        // --- *** CREATING LOGIC *** ---
+        // --- *** CREATING LOGIC (Unchanged from before) *** ---
         } else {
             if trimmedContent.isEmpty && photoDataList.isEmpty {
                 errorMessage = "Please write something or select a photo to post."
@@ -313,6 +364,7 @@ struct CreatePostView: View {
                     var finalMediaURLs: [String] = []
                     
                     if !photoDataList.isEmpty {
+                        isUploadingMedia = true
                         print("Photo data found, attempting to upload \(photoDataList.count) photos...")
                         
                         for photoData in photoDataList {
@@ -322,6 +374,7 @@ struct CreatePostView: View {
                             )
                             finalMediaURLs.append(url)
                         }
+                        isUploadingMedia = false
                     }
                     
                     let finalPostType: PostType = (finalMediaURLs.isEmpty) ? .text : .photoVideo
@@ -336,19 +389,19 @@ struct CreatePostView: View {
                         mediaURLs: finalMediaURLs.isEmpty ? nil : finalMediaURLs,
                         location: selectedLocationString,
                         postType: finalPostType,
-                        visibility: visibility
+                        visibility: visibility,
+                        isEdited: false // New posts are not edited
                     )
                     
                     try await communityManager.createPost(post: newPost)
                     
-                    // --- *** MODIFIED: Call onPostCreated *** ---
-                    // This tells the feed to refresh its list
                     onPostCreated?()
                     dismiss()
                     
                 } catch {
                     errorMessage = "Failed to publish post: \(error.localizedDescription)"
                     isLoading = false
+                    isUploadingMedia = false
                 }
             }
         }

@@ -1,5 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
 // --- UPDATED: Fixed logic to correctly show the "Re-apply" button after unblocking ---
+// --- UPDATED: Fixed `RequestError` scope by referencing the nested type ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -222,11 +223,13 @@ struct InstructorPublicProfileView: View {
             self.alertMessage = "Your request has been successfully sent!"
             self.showSuccessAlert = true
             await loadData()
-        } catch let error as RequestError {
+        // --- *** THIS IS THE KEY CHANGE *** ---
+        } catch let error as CommunityManager.RequestError { // <-- Reference the nested type
             self.alertMessage = error.localizedDescription
             if error == .alreadyPending { self.requestState = .pending }
             if error == .alreadyApproved { self.requestState = .approved }
             if error == .blocked { self.requestState = .blocked }
+        // --- *** END OF CHANGE *** ---
         } catch {
             self.alertMessage = error.localizedDescription
         }

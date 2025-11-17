@@ -1,4 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/StorageManager.swift
+// --- UPDATED: Added deleteMedia function ---
+
 import Foundation
 import FirebaseStorage
 import UIKit
@@ -23,14 +25,12 @@ class StorageManager: ObservableObject {
         storageReference.child("profile_photos").child(userID)
     }
 
-    // --- ADD THIS NEW HELPER FUNCTION ---
     /// A reference to the 'post_media' folder, creating a unique file name
     private func postMediaReference(userID: String) -> StorageReference {
         let mediaID = UUID().uuidString
         return storageReference.child("post_media").child(userID).child("\(mediaID).jpg")
     }
 
-    // --- ADD THIS NEW FUNCTION ---
     /// Uploads media for a community post and returns the download URL.
     func uploadPostMedia(photoData: Data, userID: String) async throws -> String {
         
@@ -65,7 +65,27 @@ class StorageManager: ObservableObject {
             throw error
         }
     }
-    // --- END OF NEW FUNCTION ---
+    
+    // --- *** THIS IS THE NEW FUNCTION *** ---
+    /// Deletes a file from Firebase Storage using its download URL.
+    func deleteMedia(from urlString: String) async throws {
+        // Get a reference to the file from the URL
+        let fileRef = storage.reference(forURL: urlString)
+        
+        do {
+            try await fileRef.delete()
+            print("StorageManager: Successfully deleted file at \(urlString)")
+        } catch {
+            // We can choose to ignore "object not found" errors
+            if let storageError = error as? NSError, storageError.code == StorageErrorCode.objectNotFound.rawValue {
+                print("StorageManager: File not found, likely already deleted. Ignoring.")
+            } else {
+                print("!!! StorageManager: Error deleting file: \(error.localizedDescription)")
+                throw error
+            }
+        }
+    }
+    // --- *** END OF NEW FUNCTION *** ---
 
     // MARK: - Public Functions
     

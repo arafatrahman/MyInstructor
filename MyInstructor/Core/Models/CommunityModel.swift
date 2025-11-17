@@ -1,5 +1,4 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/CommunityModel.swift
-// --- UPDATED: Comment struct now conforms to Equatable and supports replies ---
 
 import Foundation
 import FirebaseFirestore
@@ -20,6 +19,9 @@ struct Post: Identifiable, Codable {
     var reactionsCount: [String: Int] = ["thumbsup": 0, "fire": 0, "heart": 0]
     var commentsCount: Int = 0
     var visibility: PostVisibility = .public
+    
+    // --- *** ADD THIS LINE *** ---
+    var isEdited: Bool? = false
 }
 
 enum PostType: String, Codable {
@@ -30,8 +32,8 @@ enum PostVisibility: String, Codable {
     case `public`, instructors, students, `private`
 }
 
-// --- *** THIS STRUCT IS UPDATED *** ---
-struct Comment: Identifiable, Codable, Equatable { // <-- ADDED EQUATABLE
+// --- THIS STRUCT IS UPDATED ---
+struct Comment: Identifiable, Codable, Equatable {
     @DocumentID var id: String?
     let postID: String
     let authorID: String

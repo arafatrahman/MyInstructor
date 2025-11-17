@@ -1,9 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/PostDetailView.swift
-// --- FINAL VERSION ---
-// --- UPDATED: Defines CommentRow, ReactionActionButton, and CommentInputView ---
-// --- UPDATED: CommentRow now visual (with photo) and supports onReply callback ---
-// --- UPDATED: Shows nested comments and handles reply-to-user logic ---
-// --- UPDATED: Added onDelete closure to PostCard to fix compiler error ---
+// --- UPDATED: onPostSaved closure in PostCard now updates mediaURLs ---
 
 import SwiftUI
 
@@ -11,7 +7,7 @@ import SwiftUI
 struct PostDetailView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var communityManager: CommunityManager
-    @Environment(\.dismiss) var dismiss // <-- Make sure this is here
+    @Environment(\.dismiss) var dismiss
     
     @State var post: Post
     
@@ -20,7 +16,6 @@ struct PostDetailView: View {
     
     @State private var comments: [Comment] = []
     
-    // --- NEW: State for reply logic ---
     @State private var replyingToComment: Comment? = nil
     @FocusState private var isCommentFieldFocused: Bool
 
@@ -29,7 +24,7 @@ struct PostDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 15) {
                     
-                    // --- *** THIS IS THE FIX *** ---
+                    // --- *** THIS IS THE KEY CHANGE *** ---
                     PostCard(
                         post: $post,
                         onDelete: { _ in
@@ -38,7 +33,7 @@ struct PostDetailView: View {
                             dismiss()
                         }
                     )
-                    // --- *** END OF FIX *** ---
+                    // --- *** END OF CHANGE *** ---
                     
                     // Reactions Summary
                     HStack {
@@ -80,25 +75,21 @@ struct PostDetailView: View {
                                 .foregroundColor(.textLight)
                                 .padding(.top, 10)
                         } else {
-                            // --- *** UPDATED TO SUPPORT NESTED REPLIES *** ---
                             let parentComments = comments.filter { $0.parentCommentID == nil }.sorted(by: { $0.timestamp < $1.timestamp })
                             
                             ForEach(parentComments) { comment in
-                                // 1. Show Parent Comment
                                 CommentRow(comment: comment, onReply: {
                                     replyTo(comment)
                                 })
                                 
-                                // 2. Show Replies
                                 let replies = comments.filter { $0.parentCommentID == comment.id }.sorted(by: { $0.timestamp < $1.timestamp })
                                 ForEach(replies) { reply in
                                     CommentRow(comment: reply, onReply: {
-                                        replyTo(reply) // Replying to a reply still replies to the parent
+                                        replyTo(reply)
                                     })
-                                    .padding(.leading, 30) // Indent replies
+                                    .padding(.leading, 30)
                                 }
                             }
-                            // --- *** END OF UPDATE *** ---
                         }
                     }
                     .padding(.horizontal)
@@ -106,7 +97,6 @@ struct PostDetailView: View {
                 }
             }
             
-            // --- NEW: Show who you are replying to ---
             if let replyingTo = replyingToComment {
                 HStack {
                     Text("Replying to @\(replyingTo.authorName)")
@@ -127,13 +117,12 @@ struct PostDetailView: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             
-            // Bottom Actions: Comment box
             Divider()
             CommentInputView(
                 commentText: $commentText,
                 isReportFlowPresented: $isReportFlowPresented,
-                isCommentFieldFocused: $isCommentFieldFocused, // Pass focus state
-                onPost: { // Pass post action
+                isCommentFieldFocused: $isCommentFieldFocused,
+                onPost: {
                     Task {
                         await postComment()
                     }
@@ -144,13 +133,13 @@ struct PostDetailView: View {
         .navigationTitle("Post Detail")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isReportFlowPresented) {
-            ReportFlowView() // Flow Item 25
+            ReportFlowView()
         }
         .task {
             await fetchComments()
         }
         .onTapGesture {
-            isCommentFieldFocused = false // Dismiss keyboard on tap
+            isCommentFieldFocused = false
         }
     }
     
@@ -164,21 +153,16 @@ struct PostDetailView: View {
         }
     }
     
-    // --- NEW HELPER ---
     private func replyTo(_ comment: Comment) {
-        // We always reply to the top-level parent
         if let parentID = comment.parentCommentID {
-            // This is a reply to a reply, find the original parent
             self.replyingToComment = comments.first(where: { $0.id == parentID })
         } else {
-            // This is a top-level comment
             self.replyingToComment = comment
         }
         commentText = "@\(comment.authorName) "
         isCommentFieldFocused = true
     }
     
-    // --- NEW POST COMMENT LOGIC ---
     private func postComment() async {
         guard let postID = post.id,
               let author = authManager.user,
@@ -188,7 +172,7 @@ struct PostDetailView: View {
         }
         
         let content = commentText
-        let parentID = replyingToComment?.id // Get ID of comment we're replying to
+        let parentID = replyingToComment?.id
         
         do {
             try await communityManager.addComment(
@@ -198,25 +182,22 @@ struct PostDetailView: View {
                 authorRole: author.role,
                 authorPhotoURL: author.photoURL,
                 content: content,
-                parentCommentID: parentID // Pass the parentID
+                parentCommentID: parentID
             )
             
-            // Success: Clear state and re-fetch
             commentText = ""
             replyingToComment = nil
             isCommentFieldFocused = false
-            post.commentsCount += 1 // Update local post
-            await fetchComments() // Refresh the list
+            post.commentsCount += 1
+            await fetchComments()
             
         } catch {
             print("Failed to post comment: \(error.localizedDescription)")
-            // TODO: Show an error alert
         }
     }
 }
 
-// --- *** THIS STRUCT IS NOW DEFINED HERE *** ---
-// Helper: Reaction Action Button
+// ... (ReactionActionButton struct) ...
 struct ReactionActionButton: View {
     @EnvironmentObject var communityManager: CommunityManager
     
@@ -268,8 +249,7 @@ struct ReactionActionButton: View {
     }
 }
 
-// --- *** THIS STRUCT IS NOW DEFINED HERE *** ---
-// Helper: Comment Row
+// ... (CommentRow struct) ...
 struct CommentRow: View {
     let comment: Comment
     let onReply: (() -> Void)?
@@ -281,7 +261,6 @@ struct CommentRow: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            // --- NEW: Author Photo ---
             AsyncImage(url: URL(string: comment.authorPhotoURL ?? "")) { phase in
                 if let image = phase.image {
                     image.resizable().scaledToFill()
@@ -294,25 +273,19 @@ struct CommentRow: View {
             .clipShape(Circle())
             .background(Color.secondaryGray.clipShape(Circle()))
             
-            // --- Main Content ---
             VStack(alignment: .leading, spacing: 4) {
-                // Author Name + Time
                 HStack(alignment: .firstTextBaseline) {
                     Text(comment.authorName)
                         .font(.subheadline).bold()
-                    // --- Use custom time ago string ---
                     Text("• \(comment.timestamp.timeAgoDisplay())")
                         .font(.caption).foregroundColor(.textLight)
                     Spacer()
                 }
                 
-                // Content
                 Text(comment.content)
                     .font(.body)
                 
-                // Actions
                 HStack {
-                    // --- Call the onReply closure ---
                     Button("Reply") {
                         onReply?()
                     }
@@ -320,9 +293,8 @@ struct CommentRow: View {
                     .buttonStyle(.plain)
                     
                     if comment.repliesCount > 0 {
-                        // This is a tappable button
                         Button {
-                            onReply?() // Replying is the same as viewing replies
+                            onReply?()
                         } label: {
                             Text("• \(comment.repliesCount) replies")
                                 .font(.caption).bold().foregroundColor(.primaryBlue)
@@ -336,8 +308,7 @@ struct CommentRow: View {
 }
 
 
-// --- *** THIS STRUCT IS NOW DEFINED HERE *** ---
-// Helper: Comment Input and More Menu
+// ... (CommentInputView struct) ...
 struct CommentInputView: View {
     @Binding var commentText: String
     @Binding var isReportFlowPresented: Bool
@@ -360,7 +331,6 @@ struct CommentInputView: View {
             .foregroundColor(.primaryBlue)
             .disabled(commentText.isEmpty)
             
-            // More actions menu: Save, Share, Report
             Menu {
                 Button("Save Post") { /* ... */ }
                 Button("Share") { /* ... */ }

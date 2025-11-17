@@ -1,6 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- FINAL VERSION ---
-// --- UPDATED: PostCard now shows nested replies and handles inline reply actions ---
+// --- UPDATED: Edit/Delete actions now update the UI instantly ---
 
 import SwiftUI
 import PhotosUI
@@ -162,7 +161,11 @@ struct CommunityFeedView: View {
                             // We use the index to create a binding to the
                             // original @State array element
                             VStack(alignment: .leading) {
-                                PostCard(post: $posts[index]) // <-- Pass binding
+                                // --- MODIFIED: Pass the onDelete closure ---
+                                PostCard(
+                                    post: $posts[index],
+                                    onDelete: deletePostFromFeed // <-- ADDED
+                                )
                                 
                                 // This is the navigation link, now separate
                                 NavigationLink(destination: PostDetailView(post: posts[index])) {
@@ -184,10 +187,14 @@ struct CommunityFeedView: View {
             .navigationBarHidden(true)
             .task { await fetchPosts() }
             .sheet(isPresented: $isCreatePostPresented) {
-                CreatePostView(onPostCreated: {
-                    isCreatePostPresented = false
-                    Task { await fetchPosts() }
-                })
+                // --- MODIFIED: Refresh feed after *new* post ---
+                CreatePostView(
+                    postToEdit: nil,
+                    onPostCreated: { // <-- MODIFIED
+                        isCreatePostPresented = false
+                        Task { await fetchPosts() } // Refresh feed
+                    }
+                )
             }
             .sheet(item: $loadedDataForSheet) { photoData in
                 CreatePostView(initialPhotoData: photoData, onPostCreated: {
@@ -208,6 +215,13 @@ struct CommunityFeedView: View {
         }
         isLoading = false
     }
+    
+    // --- *** ADDED THIS FUNCTION *** ---
+    /// Instantly removes a post from the local `@State` array to update the UI.
+    private func deletePostFromFeed(postID: String) {
+        posts.removeAll { $0.id == postID }
+    }
+    // --- *** ---
 }
 
 // This wrapper makes the [Data] array Identifiable for the .sheet(item:) modifier
@@ -224,6 +238,7 @@ enum CommunityFilter: String {
 // --- *** POSTCARD IS HEAVILY UPDATED *** ---
 struct PostCard: View {
     @Binding var post: Post
+    let onDelete: (String) -> Void // <-- ADDED
     
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var authManager: AuthManager
@@ -237,9 +252,13 @@ struct PostCard: View {
     @State private var fetchedComments: [Comment]? = nil
     @State private var isLoadingComments: Bool = false
     
-    @State private var replyingToComment: Comment? = nil // <-- NEW
+    @State private var replyingToComment: Comment? = nil
     
     @FocusState private var isCommentFieldFocused: Bool
+    
+    // --- *** ADD THESE NEW STATE VARIABLES *** ---
+    @State private var isShowingEditSheet = false
+    @State private var isShowingDeleteAlert = false
     
     // --- NEW COMPUTED PROPERTIES FOR NESTING ---
     private var parentComments: [Comment] {
@@ -293,13 +312,36 @@ struct PostCard: View {
                 
                 Spacer()
                 
-                Button("Follow") {
-                    print("Following user \(post.authorID)...")
+                // --- *** THIS IS THE NEW MENU *** ---
+                if post.authorID == authManager.user?.id {
+                    Menu {
+                        Button {
+                            isShowingEditSheet = true // <-- MODIFIED
+                        } label: {
+                            Label("Edit Post", systemImage: "pencil")
+                        }
+                        
+                        Button(role: .destructive) {
+                            isShowingDeleteAlert = true // <-- MODIFIED
+                        } label: {
+                            Label("Delete Post", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.headline)
+                            .foregroundColor(.textLight)
+                            .padding(5)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button("Follow") {
+                        print("Following user \(post.authorID)...")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.primaryBlue)
+                    .font(.caption.bold())
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.bordered)
-                .tint(.primaryBlue)
-                .font(.caption.bold())
-                .buttonStyle(.plain) // <-- STOPS NAVIGATION
             }
             
             // Content
@@ -373,7 +415,7 @@ struct PostCard: View {
                     icon: "hand.thumbsup.fill",
                     color: .primaryBlue
                 )
-                .buttonStyle(.plain) // <-- STOPS NAVIGATION
+                .buttonStyle(.plain)
 
                 ReactionButton(
                     post: $post,
@@ -381,7 +423,7 @@ struct PostCard: View {
                     icon: "flame.fill",
                     color: .orange
                 )
-                .buttonStyle(.plain) // <-- STOPS NAVIGATION
+                .buttonStyle(.plain)
                 
                 ReactionButton(
                     post: $post,
@@ -389,7 +431,7 @@ struct PostCard: View {
                     icon: "heart.fill",
                     color: .warningRed
                 )
-                .buttonStyle(.plain) // <-- STOPS NAVIGATION
+                .buttonStyle(.plain)
                 
                 Spacer()
                 
@@ -398,7 +440,6 @@ struct PostCard: View {
                     if isCommenting && fetchedComments == nil {
                         Task { await fetchComments() }
                     }
-                    // Clear reply state if user is just commenting
                     if isCommenting == false {
                         replyingToComment = nil
                     }
@@ -410,7 +451,7 @@ struct PostCard: View {
                     .font(.caption)
                     .foregroundColor(.textLight)
                 }
-                .buttonStyle(.plain) // <-- STOPS NAVIGATION
+                .buttonStyle(.plain)
             }
             
             // --- *** NEW COMMENT INPUT FIELD & DISPLAY *** ---
@@ -431,20 +472,19 @@ struct PostCard: View {
                                 CommentRow(comment: parent, onReply: {
                                     handleReply(to: parent)
                                 })
-                                .buttonStyle(.plain) // <-- STOPS NAVIGATION
+                                .buttonStyle(.plain)
                                 
                                 // 2. Show Replies
                                 ForEach(replies(for: parent)) { reply in
                                     CommentRow(comment: reply, onReply: {
                                         handleReply(to: reply)
                                     })
-                                    .padding(.leading, 30) // Indent replies
-                                    .buttonStyle(.plain) // <-- STOPS NAVIGATION
+                                    .padding(.leading, 30)
+                                    .buttonStyle(.plain)
                                 }
                             }
                             // --- END NESTED LOOP ---
                             
-                            // Compare total comments in DB vs. displayed
                             if post.commentsCount > comments.count {
                                 Text("View all \(post.commentsCount) comments...")
                                     .font(.caption).bold()
@@ -496,7 +536,7 @@ struct PostCard: View {
                                     .foregroundColor(.primaryBlue)
                             }
                         }
-                        .buttonStyle(.plain) // <-- STOPS NAVIGATION
+                        .buttonStyle(.plain)
                         .disabled(commentText.isEmpty || isPostingComment)
                     }
                 }
@@ -509,7 +549,32 @@ struct PostCard: View {
         .background(Color(.systemBackground))
         .cornerRadius(15)
         .shadow(color: Color.textDark.opacity(0.1), radius: 8, x: 0, y: 4)
-        .animation(.default, value: isCommenting) // <-- Animate the whole comment section
+        .animation(.default, value: isCommenting)
+        // --- *** MODIFIED .sheet *** ---
+        .sheet(isPresented: $isShowingEditSheet) {
+            // Present the CreatePostView in "Edit Mode"
+            CreatePostView(
+                postToEdit: post,
+                onPostSaved: { newContent, newLocation, newVisibility in // <-- ADDED
+                    // This closure is called when the edit sheet saves.
+                    // We instantly update the @Binding.
+                    isShowingEditSheet = false
+                    post.content = newContent.isEmpty ? nil : newContent
+                    post.location = newLocation
+                    post.visibility = newVisibility
+                }
+            )
+        }
+        .alert("Delete Post?", isPresented: $isShowingDeleteAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                Task {
+                    await deletePost()
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete this post? This action cannot be undone.")
+        }
         .onChange(of: isCommenting) { _, newValue in
              if newValue && commentText.isEmpty {
                  isCommentFieldFocused = true
@@ -517,15 +582,34 @@ struct PostCard: View {
         }
     }
     
+    // --- *** MODIFIED THIS FUNCTION *** ---
+    private func deletePost() async {
+        guard let postID = post.id else {
+            print("Post ID not found, cannot delete.")
+            return
+        }
+        
+        do {
+            try await communityManager.deletePost(postID: postID)
+            // --- *** ADD THIS LINE *** ---
+            // Call the closure passed from the parent view.
+            await MainActor.run {
+                onDelete(postID) // <-- This instantly updates the UI
+            }
+            
+        } catch {
+            print("Error deleting post: \(error.localizedDescription)")
+            // TODO: Show an error alert
+        }
+    }
+
+    
     // --- HELPER FUNCTIONS ---
     
     private func handleReply(to comment: Comment) {
-        // We always reply to the top-level parent
         if let parentID = comment.parentCommentID {
-            // This is a reply to a reply, find the original parent
             self.replyingToComment = fetchedComments?.first(where: { $0.id == parentID })
         } else {
-            // This is a top-level comment
             self.replyingToComment = comment
         }
         commentText = "@\(comment.authorName) "
@@ -553,7 +637,6 @@ struct PostCard: View {
         }
         
         let content = commentText
-        // --- UPDATED: Get parent ID from state ---
         let parentID = replyingToComment?.id
         
         isPostingComment = true
@@ -566,18 +649,16 @@ struct PostCard: View {
                 authorRole: author.role,
                 authorPhotoURL: author.photoURL,
                 content: content,
-                parentCommentID: parentID // <-- Pass the parent ID
+                parentCommentID: parentID
             )
             
-            // Success
             commentText = ""
-            replyingToComment = nil // Clear reply state
+            replyingToComment = nil
             post.commentsCount += 1
-            await fetchComments() // Re-fetch to show the new comment
+            await fetchComments()
             
         } catch {
             print("Failed to post comment from feed: \(error.localizedDescription)")
-            // TODO: Show an error to the user
         }
         isPostingComment = false
         isCommentFieldFocused = false

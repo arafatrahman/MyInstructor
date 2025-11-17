@@ -3,6 +3,7 @@
 // --- UPDATED: Defines CommentRow, ReactionActionButton, and CommentInputView ---
 // --- UPDATED: CommentRow now visual (with photo) and supports onReply callback ---
 // --- UPDATED: Shows nested comments and handles reply-to-user logic ---
+// --- UPDATED: Added onDelete closure to PostCard to fix compiler error ---
 
 import SwiftUI
 
@@ -10,6 +11,7 @@ import SwiftUI
 struct PostDetailView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var communityManager: CommunityManager
+    @Environment(\.dismiss) var dismiss // <-- Make sure this is here
     
     @State var post: Post
     
@@ -27,7 +29,16 @@ struct PostDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 15) {
                     
-                    PostCard(post: $post)
+                    // --- *** THIS IS THE FIX *** ---
+                    PostCard(
+                        post: $post,
+                        onDelete: { _ in
+                            // When deleted from the detail view, just dismiss.
+                            // The feed view will refresh itself.
+                            dismiss()
+                        }
+                    )
+                    // --- *** END OF FIX *** ---
                     
                     // Reactions Summary
                     HStack {

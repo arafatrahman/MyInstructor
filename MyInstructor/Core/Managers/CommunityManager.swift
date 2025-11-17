@@ -2,6 +2,7 @@
 // --- FINAL VERSION ---
 // --- UPDATED: addComment now handles parentCommentID and increments reply counts ---
 // --- UPDATED: Added functions for reactions and comments ---
+// --- UPDATED: Added deletePost and updatePostDetails ---
 
 import Combine
 import Foundation
@@ -60,6 +61,28 @@ class CommunityManager: ObservableObject {
     func createPost(post: Post) async throws {
         try postsCollection.addDocument(from: post)
     }
+    
+    // --- *** NEW FUNCTION *** ---
+    /// Deletes a post document from Firestore.
+    func deletePost(postID: String) async throws {
+        // TODO: This only deletes the post document.
+        
+        try await postsCollection.document(postID).delete()
+        print("Post \(postID) deleted successfully.")
+    }
+
+    // --- *** NEW FUNCTION *** ---
+    /// Updates the text-based content of an existing post.
+    func updatePostDetails(postID: String, content: String?, location: String?, visibility: PostVisibility) async throws {
+        
+        try await postsCollection.document(postID).updateData([
+            "content": content ?? FieldValue.delete(),
+            "location": location ?? FieldValue.delete(),
+            "visibility": visibility.rawValue
+        ])
+        print("Post \(postID) updated successfully.")
+    }
+
 
     // Fetches instructors from the 'users' collection
     func fetchInstructorDirectory(filters: [String: Any]) async throws -> [Student] {

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: Simplified reply toggle to a single arrow button ---
+// --- UPDATED: Integrated reply toggle into CommentRow and removed duplicate button ---
 
 import SwiftUI
 import PhotosUI
@@ -463,18 +463,14 @@ struct PostCard: View {
                         VStack(alignment: .leading, spacing: 12) {
                             
                             ForEach(visibleParentComments) { parent in
-                                CommentRow(comment: parent, onReply: {
-                                    handleReply(to: parent)
-                                })
-                                .buttonStyle(.plain)
+                                let isExpanded = expandedReplyIDs.contains(parent.id ?? "")
                                 
-                                // --- *** REPLIES LOGIC (UPDATED) *** ---
-                                let replyComments = replies(for: parent)
-                                if !replyComments.isEmpty {
-                                    let isExpanded = expandedReplyIDs.contains(parent.id ?? "")
-                                    
-                                    // 1. Toggle Button
-                                    Button {
+                                // --- UPDATED COMMENT ROW USAGE ---
+                                CommentRow(
+                                    comment: parent,
+                                    isExpanded: isExpanded,
+                                    onReply: { handleReply(to: parent) },
+                                    onToggleReplies: {
                                         withAnimation {
                                             if isExpanded {
                                                 expandedReplyIDs.remove(parent.id ?? "")
@@ -482,30 +478,23 @@ struct PostCard: View {
                                                 expandedReplyIDs.insert(parent.id ?? "")
                                             }
                                         }
-                                    } label: {
-                                        HStack(spacing: 5) {
-                                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                            Text("\(replyComments.count) replies")
-                                        }
-                                        .font(.caption).bold()
-                                        .foregroundColor(.textLight)
-                                        .padding(.leading, 30)
-                                        .padding(.vertical, 4)
                                     }
-                                    .buttonStyle(.plain)
-                                    
-                                    // 2. Expanded Replies
-                                    if isExpanded {
-                                        ForEach(replyComments) { reply in
-                                            CommentRow(comment: reply, onReply: {
-                                                handleReply(to: reply)
-                                            })
-                                            .padding(.leading, 30)
-                                            .buttonStyle(.plain)
-                                        }
+                                )
+                                .buttonStyle(.plain)
+                                
+                                // --- REPLIES LOGIC ---
+                                let replyComments = replies(for: parent)
+                                
+                                // Only show replies if expanded (button is now inside CommentRow)
+                                if !replyComments.isEmpty && isExpanded {
+                                    ForEach(replyComments) { reply in
+                                        CommentRow(comment: reply, onReply: {
+                                            handleReply(to: reply)
+                                        })
+                                        .padding(.leading, 30)
+                                        .buttonStyle(.plain)
                                     }
                                 }
-                                // --- *** END REPLIES LOGIC *** ---
                             }
                             
                             if allParentComments.count > visibleCommentLimit {

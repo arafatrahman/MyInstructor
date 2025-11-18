@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/PostDetailView.swift
-// --- UPDATED: Default visible comments set to 3. Simplified reply toggle. ---
+// --- UPDATED: Integrated reply toggle into CommentRow and removed duplicate button ---
 
 import SwiftUI
 
@@ -16,7 +16,6 @@ struct PostDetailView: View {
     
     @State private var comments: [Comment] = []
     
-    // --- *** MODIFIED: START WITH 3 COMMENTS *** ---
     @State private var visibleCommentLimit: Int = 3
     @State private var expandedReplyIDs: Set<String> = [] // Track expanded replies
     
@@ -28,7 +27,6 @@ struct PostDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 15) {
                     
-                    // --- *** FIXED: Hide internal list *** ---
                     PostCard(
                         post: $post,
                         onDelete: { _ in
@@ -86,20 +84,14 @@ struct PostDetailView: View {
                             let visibleParents = Array(allParentComments.prefix(visibleCommentLimit))
                             
                             ForEach(visibleParents) { comment in
-                                CommentRow(comment: comment, onReply: {
-                                    replyTo(comment)
-                                })
+                                let isExpanded = expandedReplyIDs.contains(comment.id ?? "")
                                 
-                                // --- *** REPLIES LOGIC (UPDATED) *** ---
-                                let replyComments = comments
-                                    .filter { $0.parentCommentID == comment.id }
-                                    .sorted(by: { $0.timestamp < $1.timestamp })
-                                
-                                if !replyComments.isEmpty {
-                                    let isExpanded = expandedReplyIDs.contains(comment.id ?? "")
-                                    
-                                    // 1. Toggle Button
-                                    Button {
+                                // --- UPDATED COMMENT ROW ---
+                                CommentRow(
+                                    comment: comment,
+                                    isExpanded: isExpanded,
+                                    onReply: { replyTo(comment) },
+                                    onToggleReplies: {
                                         withAnimation {
                                             if isExpanded {
                                                 expandedReplyIDs.remove(comment.id ?? "")
@@ -107,28 +99,22 @@ struct PostDetailView: View {
                                                 expandedReplyIDs.insert(comment.id ?? "")
                                             }
                                         }
-                                    } label: {
-                                        HStack(spacing: 5) {
-                                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                            Text("\(replyComments.count) replies")
-                                        }
-                                        .font(.caption).bold()
-                                        .foregroundColor(.textLight)
-                                        .padding(.leading, 30)
-                                        .padding(.vertical, 4)
                                     }
-                                    
-                                    // 2. Expanded Replies
-                                    if isExpanded {
-                                        ForEach(replyComments) { reply in
-                                            CommentRow(comment: reply, onReply: {
-                                                replyTo(reply)
-                                            })
-                                            .padding(.leading, 30)
-                                        }
+                                )
+                                
+                                // --- REPLIES LOGIC ---
+                                let replyComments = comments
+                                    .filter { $0.parentCommentID == comment.id }
+                                    .sorted(by: { $0.timestamp < $1.timestamp })
+                                
+                                if !replyComments.isEmpty && isExpanded {
+                                    ForEach(replyComments) { reply in
+                                        CommentRow(comment: reply, onReply: {
+                                            replyTo(reply)
+                                        })
+                                        .padding(.leading, 30)
                                     }
                                 }
-                                // --- *** END REPLIES LOGIC *** ---
                             }
                             
                             // 3. View More Button
@@ -255,7 +241,7 @@ struct PostDetailView: View {
     }
 }
 
-// ... (ReactionActionButton struct) ...
+// ... (ReactionActionButton struct remains unchanged) ...
 struct ReactionActionButton: View {
     @EnvironmentObject var communityManager: CommunityManager
     
@@ -308,14 +294,18 @@ struct ReactionActionButton: View {
     }
 }
 
-// ... (CommentRow struct) ...
+// ... (CommentRow struct UPDATED) ...
 struct CommentRow: View {
     let comment: Comment
+    let isExpanded: Bool // --- ADDED ---
     let onReply: (() -> Void)?
+    let onToggleReplies: (() -> Void)? // --- ADDED ---
     
-    init(comment: Comment, onReply: (() -> Void)? = nil) {
+    init(comment: Comment, isExpanded: Bool = false, onReply: (() -> Void)? = nil, onToggleReplies: (() -> Void)? = nil) {
         self.comment = comment
+        self.isExpanded = isExpanded
         self.onReply = onReply
+        self.onToggleReplies = onToggleReplies
     }
     
     var body: some View {
@@ -344,19 +334,24 @@ struct CommentRow: View {
                 Text(comment.content)
                     .font(.body)
                 
-                HStack {
+                HStack(spacing: 12) {
                     Button("Reply") {
                         onReply?()
                     }
                     .font(.caption).bold().foregroundColor(.textLight)
                     .buttonStyle(.plain)
                     
+                    // --- UPDATED REPLY COUNT BUTTON ---
                     if comment.repliesCount > 0 {
                         Button {
-                            onReply?()
+                            onToggleReplies?() // Toggle expansion on tap
                         } label: {
-                            Text("• \(comment.repliesCount) replies")
-                                .font(.caption).bold().foregroundColor(.primaryBlue)
+                            HStack(spacing: 3) {
+                                Text("•")
+                                Text("\(comment.repliesCount) replies")
+                                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            }
+                            .font(.caption).bold().foregroundColor(.primaryBlue)
                         }
                         .buttonStyle(.plain)
                     }
@@ -367,7 +362,7 @@ struct CommentRow: View {
 }
 
 
-// ... (CommentInputView struct) ...
+// ... (CommentInputView struct remains unchanged) ...
 struct CommentInputView: View {
     @Binding var commentText: String
     @Binding var isReportFlowPresented: Bool

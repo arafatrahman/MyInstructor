@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/PostDetailView.swift
-// --- UPDATED: Default visible comments set to 3. 'View More' adds 5. ---
+// --- UPDATED: Default visible comments set to 3. Simplified reply toggle. ---
 
 import SwiftUI
 
@@ -18,6 +18,7 @@ struct PostDetailView: View {
     
     // --- *** MODIFIED: START WITH 3 COMMENTS *** ---
     @State private var visibleCommentLimit: Int = 3
+    @State private var expandedReplyIDs: Set<String> = [] // Track expanded replies
     
     @State private var replyingToComment: Comment? = nil
     @FocusState private var isCommentFieldFocused: Bool
@@ -27,13 +28,13 @@ struct PostDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 15) {
                     
+                    // --- *** FIXED: Hide internal list *** ---
                     PostCard(
                         post: $post,
                         onDelete: { _ in
-                            // When deleted from the detail view, just dismiss.
-                            // The feed view will refresh itself.
                             dismiss()
-                        }
+                        },
+                        showCommentsList: false // Disable internal list
                     )
                     
                     // Reactions Summary
@@ -89,16 +90,45 @@ struct PostDetailView: View {
                                     replyTo(comment)
                                 })
                                 
-                                let replies = comments
+                                // --- *** REPLIES LOGIC (UPDATED) *** ---
+                                let replyComments = comments
                                     .filter { $0.parentCommentID == comment.id }
                                     .sorted(by: { $0.timestamp < $1.timestamp })
                                 
-                                ForEach(replies) { reply in
-                                    CommentRow(comment: reply, onReply: {
-                                        replyTo(reply)
-                                    })
-                                    .padding(.leading, 30)
+                                if !replyComments.isEmpty {
+                                    let isExpanded = expandedReplyIDs.contains(comment.id ?? "")
+                                    
+                                    // 1. Toggle Button
+                                    Button {
+                                        withAnimation {
+                                            if isExpanded {
+                                                expandedReplyIDs.remove(comment.id ?? "")
+                                            } else {
+                                                expandedReplyIDs.insert(comment.id ?? "")
+                                            }
+                                        }
+                                    } label: {
+                                        HStack(spacing: 5) {
+                                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                            Text("\(replyComments.count) replies")
+                                        }
+                                        .font(.caption).bold()
+                                        .foregroundColor(.textLight)
+                                        .padding(.leading, 30)
+                                        .padding(.vertical, 4)
+                                    }
+                                    
+                                    // 2. Expanded Replies
+                                    if isExpanded {
+                                        ForEach(replyComments) { reply in
+                                            CommentRow(comment: reply, onReply: {
+                                                replyTo(reply)
+                                            })
+                                            .padding(.leading, 30)
+                                        }
+                                    }
                                 }
+                                // --- *** END REPLIES LOGIC *** ---
                             }
                             
                             // 3. View More Button
@@ -263,6 +293,7 @@ struct ReactionActionButton: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: icon)
+                    .foregroundColor(color)
                 if count > 0 {
                     Text("\(count)")
                 }

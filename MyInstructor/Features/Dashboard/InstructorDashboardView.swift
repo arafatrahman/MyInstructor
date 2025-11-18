@@ -1,5 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: All 3 Quick Action buttons are now functional ---
+// --- UPDATED: The "Next Lesson" card is now a NavigationLink ---
+// --- UPDATED: Fixed closure argument error for AddLessonFormView ---
 
 import SwiftUI
 
@@ -17,11 +18,9 @@ struct InstructorDashboardView: View {
     
     @State private var notificationCount: Int = 0 // State to hold the count
 
-    // --- *** ADDED STATE FOR QUICK ACTIONS *** ---
     @State private var isAddingLesson = false
     @State private var isAddingOfflineStudent = false
     @State private var isRecordingPayment = false
-    // --- *** END OF ADDED STATE *** ---
 
     var body: some View {
         NavigationView {
@@ -38,9 +37,18 @@ struct InstructorDashboardView: View {
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
                             
                             // 1. Next Lesson Card
-                            DashboardCard(title: "Next Lesson", systemIcon: "calendar.badge.clock", accentColor: .primaryBlue, content: {
-                                NextLessonContent(lesson: nextLesson)
-                            })
+                            if let lesson = nextLesson {
+                                NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
+                                    DashboardCard(title: "Next Lesson", systemIcon: "calendar.badge.clock", accentColor: .primaryBlue, content: {
+                                        NextLessonContent(lesson: lesson)
+                                    })
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                DashboardCard(title: "Next Lesson", systemIcon: "calendar.badge.clock", accentColor: .primaryBlue, content: {
+                                    NextLessonContent(lesson: nextLesson)
+                                })
+                            }
                             
                             // 2. Earnings Summary Card
                             DashboardCard(title: "Weekly Earnings", systemIcon: "dollarsign.circle.fill", accentColor: .accentGreen, content: {
@@ -62,17 +70,14 @@ struct InstructorDashboardView: View {
                                 .padding(.horizontal)
                             
                             HStack(spacing: 15) {
-                                // --- *** ACTION UPDATED *** ---
                                 QuickActionButton(title: "Add Lesson", icon: "plus.circle.fill", color: .primaryBlue, action: {
                                     isAddingLesson = true
                                 })
                                 
-                                // --- *** ACTION UPDATED *** ---
                                 QuickActionButton(title: "Add Student", icon: "person.badge.plus.fill", color: .accentGreen, action: {
                                     isAddingOfflineStudent = true
                                 })
                                 
-                                // --- *** ACTION UPDATED *** ---
                                 QuickActionButton(title: "Record Payment", icon: "creditcard.fill", color: .purple, action: {
                                     isRecordingPayment = true
                                 })
@@ -98,11 +103,13 @@ struct InstructorDashboardView: View {
             .refreshable {
                 await fetchData()
             }
-            // --- *** ADDED SHEET MODIFIERS *** ---
             .sheet(isPresented: $isAddingLesson) {
-                AddLessonFormView(onLessonAdded: {
+                // --- *** THIS IS THE FIX *** ---
+                // We must accept the lesson argument (with `_ in`)
+                AddLessonFormView(onLessonAdded: { _ in
                     Task { await fetchData() } // Refresh dashboard
                 })
+                // --- *** END OF FIX *** ---
             }
             .sheet(isPresented: $isAddingOfflineStudent) {
                 OfflineStudentFormView(studentToEdit: nil, onStudentAdded: {
@@ -114,7 +121,6 @@ struct InstructorDashboardView: View {
                     Task { await fetchData() } // Refresh dashboard
                 })
             }
-            // --- *** END OF MODIFIERS *** ---
         }
     }
     

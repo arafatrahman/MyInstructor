@@ -1,6 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: Fixed logic to correctly show the "Re-apply" button after unblocking ---
-// --- UPDATED: Fixed `RequestError` scope by referencing the nested type ---
+// --- UPDATED: Removed the private FlowLayout struct at the end ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -87,9 +86,7 @@ struct InstructorPublicProfileView: View {
                             }
                         }
                         
-                        // --- *** THIS IS THE UPDATED SECTION *** ---
                         // 2. Existing Request Button
-                        // Show the button only for these specific states:
                         if requestState == .idle || requestState == .pending || requestState == .denied || requestState == .blockedByStudent {
                             Button(action: handleRequestButtonTap) {
                                 Text(buttonText)
@@ -98,10 +95,8 @@ struct InstructorPublicProfileView: View {
                             .disabled(buttonIsDisabled)
                             .tint(requestState == .pending ? .red : (requestState == .blocked || requestState == .blockedByStudent ? .gray : appBlue))
                         }
-                        // --- *** END OF UPDATE *** ---
                         
                         // 3. Block/Unblock Menu
-                        // Don't show menu if instructor blocked you
                         if requestState != .blocked {
                             Menu {
                                 if requestState == .blockedByStudent {
@@ -183,8 +178,6 @@ struct InstructorPublicProfileView: View {
             // Check the status of any requests between the student and this instructor
             let requests = try await communityManager.fetchSentRequests(for: studentID)
             
-            // Find the highest-priority request for this instructor
-            // (e.g., a "blocked" request overrides an old "approved" one)
             if let existingRequest = requests.first(where: { $0.instructorID == instructorID }) {
                 self.currentRequestID = existingRequest.id
                 
@@ -196,11 +189,9 @@ struct InstructorPublicProfileView: View {
                 case .denied:
                     self.requestState = .denied
                 case .blocked:
-                    // Check WHO blocked
                     if existingRequest.blockedBy == "student" {
                         self.requestState = .blockedByStudent
                     } else {
-                        // Blocked by instructor (or old block)
                         self.requestState = .blocked
                     }
                 }
@@ -223,13 +214,11 @@ struct InstructorPublicProfileView: View {
             self.alertMessage = "Your request has been successfully sent!"
             self.showSuccessAlert = true
             await loadData()
-        // --- *** THIS IS THE KEY CHANGE *** ---
-        } catch let error as CommunityManager.RequestError { // <-- Reference the nested type
+        } catch let error as CommunityManager.RequestError { // <-- Use nested type
             self.alertMessage = error.localizedDescription
             if error == .alreadyPending { self.requestState = .pending }
             if error == .alreadyApproved { self.requestState = .approved }
             if error == .blocked { self.requestState = .blocked }
-        // --- *** END OF CHANGE *** ---
         } catch {
             self.alertMessage = error.localizedDescription
         }
@@ -284,10 +273,6 @@ struct InstructorPublicProfileView: View {
         isLoading = false
     }
 }
-
-
-// ... (Rest of InstructorPublicProfileView.swift: ProfileHeaderCard, ContactCard, RateHighlightCard, etc. are unchanged) ...
-// (These are all fine)
 
 private struct ProfileHeaderCard: View {
     let user: AppUser
@@ -347,7 +332,6 @@ private struct ContactCard: View {
                 .padding(.top, 12)
                 .padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
-            // This now uses the shared ContactRow
             ContactRow(icon: "envelope.fill", label: "Email", value: user.email)
             ContactRow(icon: "phone.fill", label: "Phone", value: user.phone ?? "Not provided")
             ContactRow(icon: "mappin.and.ellipse", label: "Address", value: user.address ?? "Not provided")
@@ -483,6 +467,7 @@ private struct ExpertiseCard: View {
                 .padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
             if let skills = skills, !skills.isEmpty {
+                // This will now use the central FlowLayout
                 FlowLayout(alignment: .leading, spacing: 8) {
                     ForEach(skills, id: \.self) { skill in
                         Text(skill)
@@ -509,47 +494,4 @@ private struct ExpertiseCard: View {
     }
 }
 
-private struct FlowLayout: Layout {
-    var alignment: Alignment
-    var spacing: CGFloat
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-        var totalHeight: CGFloat = 0
-        var totalWidth: CGFloat = 0
-        var lineWidth: CGFloat = 0
-        var lineHeight: CGFloat = 0
-        let effectiveWidth = (proposal.width ?? 0) - (spacing * 2)
-        for size in sizes {
-            if lineWidth + size.width + spacing > effectiveWidth && lineWidth > 0 {
-                totalHeight += lineHeight + spacing
-                lineWidth = size.width
-                lineHeight = size.height
-            } else {
-                lineWidth += size.width + spacing
-                lineHeight = max(lineHeight, size.height)
-            }
-            totalWidth = max(totalWidth, lineWidth)
-        }
-        totalHeight += lineHeight
-        return .init(width: totalWidth, height: totalHeight)
-    }
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-        var (x, y) = (bounds.minX, bounds.minY)
-        var lineHeight: CGFloat = 0
-        for index in subviews.indices {
-            if x + sizes[index].width > bounds.maxX && x > bounds.minX {
-                x = bounds.minX
-                y += lineHeight + spacing
-                lineHeight = 0
-            }
-            subviews[index].place(
-                at: .init(x: x, y: y),
-                anchor: .topLeading,
-                proposal: .init(sizes[index])
-            )
-            lineHeight = max(lineHeight, sizes[index].height)
-            x += sizes[index].width + spacing
-        }
-    }
-}
+// --- *** DELETED THE private struct FlowLayout FROM HERE *** ---

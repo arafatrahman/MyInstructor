@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/InstructorCalendarView.swift
+// --- UPDATED: Fixed closure argument error for AddLessonFormView ---
+
 import SwiftUI
 
 // Flow Item 7: Instructor Calendar View
@@ -65,9 +68,12 @@ struct InstructorCalendarView: View {
                 Task { await fetchLessons() }
             }
             .sheet(isPresented: $isAddLessonSheetPresented) {
-                AddLessonFormView(onLessonAdded: {
+                // --- *** THIS IS THE FIX *** ---
+                // We must accept the lesson argument (with `_ in`)
+                AddLessonFormView(onLessonAdded: { _ in
                     Task { await fetchLessons() }
                 })
+                // --- *** END OF FIX *** ---
             }
         }
     }
@@ -160,6 +166,7 @@ struct LessonRow: View {
                     Text(lesson.topic)
                         .font(.body).bold()
                         .foregroundColor(.textDark)
+                        .lineLimit(1) // Ensure topic doesn't wrap
                     
                     Text("Student: \(studentName)")
                         .font(.subheadline)
@@ -171,6 +178,7 @@ struct LessonRow: View {
                     }
                     .font(.caption)
                     .foregroundColor(.textLight)
+                    .lineLimit(1) // Ensure location doesn't wrap
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)

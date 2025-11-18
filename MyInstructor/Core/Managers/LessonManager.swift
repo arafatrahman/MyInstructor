@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/LessonManager.swift
+// --- UPDATED: Added updateLesson function ---
+
 import Foundation
 import FirebaseFirestore
 import Combine
@@ -27,6 +30,20 @@ class LessonManager: ObservableObject {
         try lessonsCollection.addDocument(from: newLesson)
         print("Lesson added successfully: \(newLesson.topic)")
     }
+    
+    // --- *** NEW FUNCTION TO SUPPORT EDITING *** ---
+    /// Updates an existing lesson document in Firestore.
+    func updateLesson(_ lesson: Lesson) async throws {
+        guard let lessonID = lesson.id else {
+            throw NSError(domain: "LessonManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Lesson ID missing, cannot update."])
+        }
+        
+        // Use setData(from: lesson) on the specific document
+        // This will overwrite the entire document with the new lesson data.
+        try lessonsCollection.document(lessonID).setData(from: lesson)
+        print("Lesson \(lessonID) updated successfully.")
+    }
+
     
     // Updates the lesson status (e.g., completes a lesson)
     func updateLessonStatus(lessonID: String, status: LessonStatus) async throws {

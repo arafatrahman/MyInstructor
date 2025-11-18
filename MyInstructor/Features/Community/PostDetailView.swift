@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/PostDetailView.swift
-// --- UPDATED: onPostSaved closure in PostCard now updates mediaURLs ---
+// --- UPDATED: Default visible comments set to 3. 'View More' adds 5. ---
 
 import SwiftUI
 
@@ -16,6 +16,9 @@ struct PostDetailView: View {
     
     @State private var comments: [Comment] = []
     
+    // --- *** MODIFIED: START WITH 3 COMMENTS *** ---
+    @State private var visibleCommentLimit: Int = 3
+    
     @State private var replyingToComment: Comment? = nil
     @FocusState private var isCommentFieldFocused: Bool
 
@@ -24,7 +27,6 @@ struct PostDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 15) {
                     
-                    // --- *** THIS IS THE KEY CHANGE *** ---
                     PostCard(
                         post: $post,
                         onDelete: { _ in
@@ -33,7 +35,6 @@ struct PostDetailView: View {
                             dismiss()
                         }
                     )
-                    // --- *** END OF CHANGE *** ---
                     
                     // Reactions Summary
                     HStack {
@@ -75,19 +76,46 @@ struct PostDetailView: View {
                                 .foregroundColor(.textLight)
                                 .padding(.top, 10)
                         } else {
-                            let parentComments = comments.filter { $0.parentCommentID == nil }.sorted(by: { $0.timestamp < $1.timestamp })
+                            // 1. Prepare Parent Comments
+                            let allParentComments = comments
+                                .filter { $0.parentCommentID == nil }
+                                .sorted(by: { $0.timestamp < $1.timestamp })
                             
-                            ForEach(parentComments) { comment in
+                            // 2. Slice for Visibility
+                            let visibleParents = Array(allParentComments.prefix(visibleCommentLimit))
+                            
+                            ForEach(visibleParents) { comment in
                                 CommentRow(comment: comment, onReply: {
                                     replyTo(comment)
                                 })
                                 
-                                let replies = comments.filter { $0.parentCommentID == comment.id }.sorted(by: { $0.timestamp < $1.timestamp })
+                                let replies = comments
+                                    .filter { $0.parentCommentID == comment.id }
+                                    .sorted(by: { $0.timestamp < $1.timestamp })
+                                
                                 ForEach(replies) { reply in
                                     CommentRow(comment: reply, onReply: {
                                         replyTo(reply)
                                     })
                                     .padding(.leading, 30)
+                                }
+                            }
+                            
+                            // 3. View More Button
+                            if allParentComments.count > visibleCommentLimit {
+                                Button {
+                                    withAnimation {
+                                        visibleCommentLimit += 5
+                                    }
+                                } label: {
+                                    HStack {
+                                        Spacer()
+                                        Text("View 5 more comments")
+                                            .font(.subheadline).bold()
+                                            .foregroundColor(.primaryBlue)
+                                        Spacer()
+                                    }
+                                    .padding(.vertical, 10)
                                 }
                             }
                         }

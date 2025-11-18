@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: onPostSaved closure in .sheet now updates mediaURLs ---
+// --- UPDATED: Default visible comments set to 3. 'View More' adds 5. ---
 
 import SwiftUI
 import PhotosUI
@@ -238,6 +238,9 @@ struct PostCard: View {
     @State private var fetchedComments: [Comment]? = nil
     @State private var isLoadingComments: Bool = false
     
+    // --- *** MODIFIED: START WITH 3 COMMENTS *** ---
+    @State private var visibleCommentLimit: Int = 3
+    
     @State private var replyingToComment: Comment? = nil
     
     @FocusState private var isCommentFieldFocused: Bool
@@ -245,10 +248,14 @@ struct PostCard: View {
     @State private var isShowingEditSheet = false
     @State private var isShowingDeleteAlert = false
     
-    private var parentComments: [Comment] {
+    private var allParentComments: [Comment] {
         (fetchedComments ?? [])
             .filter { $0.parentCommentID == nil }
             .sorted(by: { $0.timestamp < $1.timestamp })
+    }
+    
+    private var visibleParentComments: [Comment] {
+        Array(allParentComments.prefix(visibleCommentLimit))
     }
     
     private func replies(for parent: Comment) -> [Comment] {
@@ -452,7 +459,7 @@ struct PostCard: View {
                     } else if let comments = fetchedComments, !comments.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             
-                            ForEach(parentComments) { parent in
+                            ForEach(visibleParentComments) { parent in
                                 CommentRow(comment: parent, onReply: {
                                     handleReply(to: parent)
                                 })
@@ -467,11 +474,30 @@ struct PostCard: View {
                                 }
                             }
                             
+                            if allParentComments.count > visibleCommentLimit {
+                                Button {
+                                    withAnimation {
+                                        visibleCommentLimit += 5
+                                    }
+                                } label: {
+                                    HStack {
+                                        Spacer()
+                                        Text("View 5 more comments")
+                                            .font(.caption).bold()
+                                            .foregroundColor(.primaryBlue)
+                                        Spacer()
+                                    }
+                                    .padding(.vertical, 5)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            
                             if post.commentsCount > comments.count {
                                 Text("View all \(post.commentsCount) comments...")
                                     .font(.caption).bold()
                                     .foregroundColor(.primaryBlue)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.top, 4)
                             }
                         }
                         .padding(.top, 5)
@@ -532,7 +558,6 @@ struct PostCard: View {
         .shadow(color: Color.textDark.opacity(0.1), radius: 8, x: 0, y: 4)
         .animation(.default, value: isCommenting)
         .sheet(isPresented: $isShowingEditSheet) {
-            // --- *** THIS IS THE KEY CHANGE FOR INSTANT EDIT *** ---
             CreatePostView(
                 postToEdit: post,
                 onPostSaved: { newContent, newLocation, newVisibility, newMediaURLs in
@@ -541,7 +566,7 @@ struct PostCard: View {
                     post.location = newLocation
                     post.visibility = newVisibility
                     post.isEdited = true
-                    post.mediaURLs = newMediaURLs // <-- Instantly update media
+                    post.mediaURLs = newMediaURLs
                 }
             )
         }

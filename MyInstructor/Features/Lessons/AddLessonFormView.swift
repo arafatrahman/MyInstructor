@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/AddLessonFormView.swift
-// --- This is the file from the previous step, for reference ---
+// --- UPDATED: Added 10 more predefined topics ---
 
 import SwiftUI
 
@@ -31,14 +31,79 @@ struct AddLessonFormView: View {
     @EnvironmentObject var authManager: AuthManager
     
     var lessonToEdit: Lesson?
-    var onLessonAdded: (Lesson) -> Void // Now returns the lesson
+    var onLessonAdded: (Lesson) -> Void
     
     // Topic State
     @State private var selectedTopics: [String] = []
     @State private var customTopic: String = ""
+    
+    // --- *** THIS LIST IS NOW EXPANDED *** ---
     private let predefinedTopics = [
-        "Junctions", "Parking", "Roundabouts", "Clutch Control", "Speed Control", "Manoeuvres"
+        // Core Driving Skills
+        "Junctions",
+        "Roundabouts",
+        "Parking",
+        "Reverse Parking",
+        "Parallel Parking",
+        "Bay Parking",
+        "Clutch Control",
+        "Speed Control",
+        "Steering Control",
+        "Hill Starts",
+        "Moving Off and Stopping",
+        "Gear Changing",
+        "Smooth Braking",
+        "Emergency Stops",
+        "Use of Mirrors",
+        "Signalling and Observation",
+        "Following Distance",
+        "Lane Discipline",
+        
+        // Complex Road Types
+        "Motorway Driving",
+        "Dual Carriageways",
+        "Rural Roads",
+        "Urban Driving",
+        "City Centre Driving",
+        "One-Way Systems",
+        "Slip Roads and Merging",
+        "Overtaking Safely",
+        
+        // Awareness and Judgement
+        "Hazard Perception",
+        "Anticipation and Planning",
+        "Defensive Driving",
+        "Blind Spots and Observation",
+        "Pedestrian Awareness",
+        "Cyclist Awareness",
+        "Weather Conditions (Rain, Fog, Ice)",
+        "Night Driving",
+        "Driving in Traffic",
+        
+        // Manoeuvres and Control
+        "Turning in the Road",
+        "Reverse Around a Corner",
+        "Pull Up on the Right and Reverse",
+        "Controlled Stops",
+        "Angle Start (Uphill/Downhill)",
+        
+        // Legal and Safety Knowledge
+        "Road Signs and Markings",
+        "Speed Limits",
+        "Vehicle Safety Checks (Show Me, Tell Me)",
+        "Seat Belt and Safety Rules",
+        "Eco-Friendly Driving",
+        "Understanding the Highway Code",
+        
+        // Test and Beyond
+        "Mock Test Preparation",
+        "Driving Test Manoeuvres",
+        "Independent Driving",
+        "Sat Nav Practice",
+        "Post-Test Motorway Lessons",
+        "Confidence Building"
     ]
+    // --- *** END OF UPDATE *** ---
     
     // Student State
     @State private var allStudents: [SelectableStudent] = []
@@ -68,8 +133,10 @@ struct AddLessonFormView: View {
             Form {
                 // MARK: - Topic Section
                 Section("Topics") {
+                    
+                    // 1. List of *selected* topics (always visible)
                     if selectedTopics.isEmpty {
-                        Text("Select one or more topics below.")
+                        Text("Add a custom topic or select from suggestions.")
                             .foregroundColor(.textLight)
                     } else {
                         FlowLayout(alignment: .leading, spacing: 8) {
@@ -90,23 +157,7 @@ struct AddLessonFormView: View {
                         }
                     }
                     
-                    ForEach(predefinedTopics, id: \.self) { topic in
-                        Button(action: { toggleTopic(topic) }) {
-                            HStack {
-                                Text(topic)
-                                Spacer()
-                                if selectedTopics.contains(topic) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.accentGreen)
-                                } else {
-                                    Image(systemName: "circle")
-                                        .foregroundColor(.textLight)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    
+                    // 2. Custom topic input (always visible)
                     HStack {
                         TextField("Add custom topic...", text: $customTopic)
                         Button(action: addCustomTopic) {
@@ -114,6 +165,27 @@ struct AddLessonFormView: View {
                         }
                         .disabled(customTopic.isEmpty)
                     }
+                    
+                    // 3. Pre-defined topics (now collapsible)
+                    DisclosureGroup("Select from suggestions") {
+                        ForEach(predefinedTopics, id: \.self) { topic in
+                            Button(action: { toggleTopic(topic) }) {
+                                HStack {
+                                    Text(topic)
+                                    Spacer()
+                                    if selectedTopics.contains(topic) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.accentGreen)
+                                    } else {
+                                        Image(systemName: "circle")
+                                            .foregroundColor(.textLight)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .foregroundColor(.primaryBlue) // Makes the disclosure arrow blue
                 }
                 
                 // MARK: - Student & Location

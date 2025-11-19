@@ -1,10 +1,8 @@
-// File: Core/Managers/CommunityManager.swift
-// --- UPDATED: updatePostDetails now handles media deletion ---
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
 
 import Combine
 import Foundation
 import FirebaseFirestore
-// --- *** Import Storage to get error codes *** ---
 import FirebaseStorage
 
 class CommunityManager: ObservableObject {
@@ -62,8 +60,6 @@ class CommunityManager: ObservableObject {
     
     /// Deletes a post document from Firestore.
     func deletePost(postID: String) async throws {
-        // --- *** UPDATED: Now also deletes media *** ---
-        
         // 1. Get the post document to find its media URLs
         let postDoc = try await postsCollection.document(postID).getDocument()
         let post = try? postDoc.data(as: Post.self)
@@ -89,13 +85,8 @@ class CommunityManager: ObservableObject {
             }
             print("Media deletion process complete.")
         }
-        
-        // TODO: A complete solution would also delete all comments
-        // in the subcollection. This is a complex "recursive delete"
-        // and is often better handled by a Firebase Cloud Function.
     }
 
-    // --- *** THIS FUNCTION IS HEAVILY UPDATED *** ---
     /// Updates the details of an existing post.
     func updatePostDetails(
         postID: String,
@@ -234,7 +225,6 @@ class CommunityManager: ObservableObject {
     }
     
     /// Adds a new comment to a post and increments the post's comment count.
-    /// If parentCommentID is provided, it also increments the parent's reply count.
     func addComment(
         postID: String,
         authorID: String,
@@ -242,13 +232,12 @@ class CommunityManager: ObservableObject {
         authorRole: UserRole,
         authorPhotoURL: String?,
         content: String,
-        parentCommentID: String? // <-- THIS IS THE KEY
+        parentCommentID: String?
     ) async throws {
         
         let postRef = postsCollection.document(postID)
         let commentCollection = postRef.collection("comments")
         
-        // This requires CommunityModel.swift to be updated
         let newComment = Comment(
             postID: postID,
             authorID: authorID,
@@ -257,7 +246,7 @@ class CommunityManager: ObservableObject {
             authorRole: authorRole,
             timestamp: Date(),
             content: content,
-            parentCommentID: parentCommentID // <-- Set the parent ID
+            parentCommentID: parentCommentID
         )
         
         let batch = db.batch()
@@ -283,6 +272,39 @@ class CommunityManager: ObservableObject {
         print("Comment added successfully to post \(postID)")
     }
     
+    // --- *** NEW FUNCTIONS FOR COMMENT EDIT/DELETE *** ---
+    
+    func deleteComment(postID: String, commentID: String, parentCommentID: String?) async throws {
+        let postRef = postsCollection.document(postID)
+        let commentRef = postRef.collection("comments").document(commentID)
+        
+        let batch = db.batch()
+        
+        // 1. Delete the comment document
+        batch.deleteDocument(commentRef)
+        
+        // 2. Decrement post's comment count
+        batch.updateData(["commentsCount": FieldValue.increment(-1.0)], forDocument: postRef)
+        
+        // 3. If it was a reply, decrement parent's reply count
+        if let parentID = parentCommentID {
+            let parentRef = postRef.collection("comments").document(parentID)
+            batch.updateData(["repliesCount": FieldValue.increment(-1.0)], forDocument: parentRef)
+        }
+        
+        try await batch.commit()
+        print("Comment \(commentID) deleted.")
+    }
+    
+    func updateComment(postID: String, commentID: String, newContent: String) async throws {
+        let commentRef = postsCollection.document(postID).collection("comments").document(commentID)
+        try await commentRef.updateData([
+            "content": newContent,
+            "isEdited": true
+        ])
+        print("Comment \(commentID) updated.")
+    }
+    
     // MARK: - --- STUDENT REQUEST FUNCTIONS ---
     
     func sendRequest(from student: AppUser, to instructorID: String) async throws {
@@ -294,27 +316,20 @@ class CommunityManager: ObservableObject {
             
             if request.status == .blocked {
                 if request.blockedBy == "instructor" {
-                    print("Student is blocked by this instructor.")
                     throw RequestError.blocked
                 } else {
-                    print("Found a student-blocked request. Deleting it to re-apply...")
                     try await requestsCollection.document(request.id!).delete()
                 }
             }
             else if request.status == .pending {
-                print("Request already pending.")
                 throw RequestError.alreadyPending
             } else if request.status == .approved {
-                print("Student is already approved by this instructor.")
                 throw RequestError.alreadyApproved
             } else if request.status == .denied {
-                print("Found a denied request. Deleting it to re-apply...")
                 try await requestsCollection.document(request.id!).delete()
-                print("Old request deleted.")
             }
         }
         
-        print("Creating new request...")
         let newRequest = StudentRequest(
             studentID: studentID,
             studentName: student.name ?? "New Student",
@@ -326,10 +341,8 @@ class CommunityManager: ObservableObject {
         )
         
         try requestsCollection.addDocument(from: newRequest)
-        print("New request sent successfully.")
     }
 
-    // Fetches PENDING requests
     func fetchRequests(for instructorID: String) async throws -> [StudentRequest] {
         let snapshot = try await requestsCollection
             .whereField("instructorID", isEqualTo: instructorID)
@@ -340,7 +353,6 @@ class CommunityManager: ObservableObject {
         return snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
     }
     
-    // Fetches DENIED requests
     func fetchDeniedRequests(for instructorID: String) async throws -> [StudentRequest] {
         let snapshot = try await requestsCollection
             .whereField("instructorID", isEqualTo: instructorID)
@@ -351,12 +363,11 @@ class CommunityManager: ObservableObject {
         return snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
     }
 
-    // Fetches BLOCKED requests
     func fetchBlockedRequests(for instructorID: String) async throws -> [StudentRequest] {
         let snapshot = try await requestsCollection
             .whereField("instructorID", isEqualTo: instructorID)
             .whereField("status", isEqualTo: RequestStatus.blocked.rawValue)
-            .whereField("blockedBy", isEqualTo: "instructor") // Only fetch if instructor blocked
+            .whereField("blockedBy", isEqualTo: "instructor")
             .order(by: "timestamp", descending: true)
             .getDocuments()
             
@@ -366,9 +377,7 @@ class CommunityManager: ObservableObject {
     func approveRequest(_ request: StudentRequest) async throws {
         guard let requestID = request.id else { throw URLError(.badServerResponse) }
         
-        let query = conversationsCollection
-            .whereField("participantIDs", arrayContains: request.instructorID)
-        
+        let query = conversationsCollection.whereField("participantIDs", arrayContains: request.instructorID)
         let snapshot = try await query.getDocuments()
         var conversationExists = false
         
@@ -376,7 +385,6 @@ class CommunityManager: ObservableObject {
             let participantIDs = doc.data()["participantIDs"] as? [String] ?? []
             if participantIDs.contains(request.studentID) {
                 conversationExists = true
-                print("CommunityManager: Found existing conversation. Will not create a new one.")
                 break
             }
         }
@@ -393,7 +401,6 @@ class CommunityManager: ObservableObject {
         batch.updateData(["studentIDs": FieldValue.arrayUnion([request.studentID])], forDocument: instructorRef)
         
         if !conversationExists {
-            print("CommunityManager: No existing chat. Creating a new one.")
             let instructorDoc = try await usersCollection.document(request.instructorID).getDocument()
             guard let instructor = try? instructorDoc.data(as: AppUser.self) else {
                 throw URLError(.cannotFindHost)
@@ -428,10 +435,8 @@ class CommunityManager: ObservableObject {
         ])
     }
     
-    // "Remove" - sets status to denied
     func removeStudent(studentID: String, instructorID: String) async throws {
         let batch = db.batch()
-        
         let instructorRef = usersCollection.document(instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayRemove([studentID])], forDocument: instructorRef)
         
@@ -447,14 +452,11 @@ class CommunityManager: ObservableObject {
                 "blockedBy": FieldValue.delete()
             ], forDocument: doc.reference)
         }
-        
         try await batch.commit()
     }
     
-    // "Block" - sets status to blocked (BY INSTRUCTOR)
     func blockStudent(studentID: String, instructorID: String) async throws {
         let batch = db.batch()
-        
         let instructorRef = usersCollection.document(instructorID)
         batch.updateData(["studentIDs": FieldValue.arrayRemove([studentID])], forDocument: instructorRef)
         
@@ -487,11 +489,9 @@ class CommunityManager: ObservableObject {
                 ], forDocument: doc.reference)
             }
         }
-        
         try await batch.commit()
     }
     
-    // "Unblock" - sets status to denied (BY INSTRUCTOR)
     func unblockStudent(studentID: String, instructorID: String) async throws {
         let requestQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
@@ -500,18 +500,13 @@ class CommunityManager: ObservableObject {
             .whereField("blockedBy", isEqualTo: "instructor")
             .getDocuments()
             
-        guard let doc = requestQuery.documents.first else {
-            print("No 'instructor-blocked' request found to unblock.")
-            return
-        }
-        
+        guard let doc = requestQuery.documents.first else { return }
         try await doc.reference.updateData([
             "status": RequestStatus.denied.rawValue,
             "blockedBy": FieldValue.delete()
         ])
     }
     
-    // Block (BY STUDENT)
     func blockInstructor(instructorID: String, student: AppUser) async throws {
         guard let studentID = student.id else { throw URLError(.badServerResponse) }
         let batch = db.batch()
@@ -548,8 +543,6 @@ class CommunityManager: ObservableObject {
         try await batch.commit()
     }
     
-    
-    // Unblock (BY STUDENT)
     func unblockInstructor(instructorID: String, studentID: String) async throws {
         let requestQuery = try await requestsCollection
             .whereField("studentID", isEqualTo: studentID)
@@ -558,11 +551,7 @@ class CommunityManager: ObservableObject {
             .whereField("blockedBy", isEqualTo: "student")
             .getDocuments()
             
-        guard let doc = requestQuery.documents.first else {
-            print("No 'student-blocked' request found to unblock.")
-            return
-        }
-        
+        guard let doc = requestQuery.documents.first else { return }
         try await doc.reference.updateData([
             "status": RequestStatus.denied.rawValue,
             "blockedBy": FieldValue.delete(),
@@ -570,11 +559,8 @@ class CommunityManager: ObservableObject {
         ])
     }
     
-    
-    // "Remove Instructor" (Called by Student)
     func removeInstructor(instructorID: String, studentID: String) async throws {
         let batch = db.batch()
-        
         let studentRef = usersCollection.document(studentID)
         batch.updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])], forDocument: studentRef)
         
@@ -609,8 +595,9 @@ class CommunityManager: ObservableObject {
              )
              let newReqRef = requestsCollection.document()
              try batch.setData(from: newDeniedRequest, forDocument: newReqRef)
+             
+             batch.deleteDocument(approvedRequestDoc)
         }
-
         try await batch.commit()
     }
     
@@ -631,7 +618,6 @@ class CommunityManager: ObservableObject {
                 seenInstructorIDs.insert(request.instructorID)
             }
         }
-        
         return uniqueRequests
     }
     

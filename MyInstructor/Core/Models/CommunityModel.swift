@@ -20,7 +20,6 @@ struct Post: Identifiable, Codable {
     var commentsCount: Int = 0
     var visibility: PostVisibility = .public
     
-    // --- *** ADD THIS LINE *** ---
     var isEdited: Bool? = false
 }
 
@@ -32,23 +31,22 @@ enum PostVisibility: String, Codable {
     case `public`, instructors, students, `private`
 }
 
-// --- THIS STRUCT IS UPDATED ---
 struct Comment: Identifiable, Codable, Equatable {
     @DocumentID var id: String?
     let postID: String
     let authorID: String
     let authorName: String
     
-    // --- NEW FIELDS ---
     let authorPhotoURL: String?
     let authorRole: UserRole
-    // --- ---
     
     let timestamp: Date
     let content: String
     
-    // --- NEW FIELD for replies ---
     var parentCommentID: String?
     
     var repliesCount: Int = 0
+    
+    // --- Added for Edit Feature ---
+    var isEdited: Bool? = false
 }

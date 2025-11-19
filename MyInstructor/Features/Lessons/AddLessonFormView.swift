@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/AddLessonFormView.swift
-// --- UPDATED: Added 10 more predefined topics ---
+// --- UPDATED: Suggestions list is now scrollable with fixed height and filters based on input ---
 
 import SwiftUI
 
@@ -37,7 +37,15 @@ struct AddLessonFormView: View {
     @State private var selectedTopics: [String] = []
     @State private var customTopic: String = ""
     
-    // --- *** THIS LIST IS NOW EXPANDED *** ---
+    // --- *** HELPER: Filter suggestions based on typing *** ---
+    private var filteredTopics: [String] {
+        if customTopic.isEmpty {
+            return predefinedTopics
+        } else {
+            return predefinedTopics.filter { $0.localizedCaseInsensitiveContains(customTopic) }
+        }
+    }
+    
     private let predefinedTopics = [
         // Core Driving Skills
         "Junctions",
@@ -103,7 +111,6 @@ struct AddLessonFormView: View {
         "Post-Test Motorway Lessons",
         "Confidence Building"
     ]
-    // --- *** END OF UPDATE *** ---
     
     // Student State
     @State private var allStudents: [SelectableStudent] = []
@@ -119,6 +126,9 @@ struct AddLessonFormView: View {
     @State private var errorMessage: String?
     
     @State private var isEditing: Bool = false
+    
+    // State to control suggestion expansion (optional, to auto-expand when typing)
+    @State private var isSuggestionsExpanded: Bool = false
     
     private var durationSeconds: TimeInterval {
         durationHours * 3600
@@ -160,32 +170,55 @@ struct AddLessonFormView: View {
                     // 2. Custom topic input (always visible)
                     HStack {
                         TextField("Add custom topic...", text: $customTopic)
+                            .onChange(of: customTopic) { newValue, _ in // iOS 17 syntax
+                                if !newValue.isEmpty {
+                                    withAnimation { isSuggestionsExpanded = true }
+                                }
+                            }
                         Button(action: addCustomTopic) {
                             Image(systemName: "plus.circle.fill")
                         }
                         .disabled(customTopic.isEmpty)
                     }
                     
-                    // 3. Pre-defined topics (now collapsible)
-                    DisclosureGroup("Select from suggestions") {
-                        ForEach(predefinedTopics, id: \.self) { topic in
-                            Button(action: { toggleTopic(topic) }) {
-                                HStack {
-                                    Text(topic)
-                                    Spacer()
-                                    if selectedTopics.contains(topic) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(.accentGreen)
-                                    } else {
-                                        Image(systemName: "circle")
-                                            .foregroundColor(.textLight)
+                    // 3. Pre-defined topics (Scrollable & Filtered)
+                    DisclosureGroup("Select from suggestions", isExpanded: $isSuggestionsExpanded) {
+                        ScrollView {
+                            LazyVStack(alignment: .leading) {
+                                ForEach(filteredTopics, id: \.self) { topic in
+                                    Button(action: { toggleTopic(topic) }) {
+                                        HStack {
+                                            Text(topic)
+                                                .foregroundColor(.primary) // Keep text readable
+                                            Spacer()
+                                            if selectedTopics.contains(topic) {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .foregroundColor(.accentGreen)
+                                            } else {
+                                                Image(systemName: "circle")
+                                                    .foregroundColor(.textLight)
+                                            }
+                                        }
+                                        .contentShape(Rectangle()) // Make full row tappable
                                     }
+                                    .buttonStyle(.plain)
+                                    .padding(.vertical, 4)
+                                    
+                                    Divider() // Clean separator
+                                }
+                                
+                                if filteredTopics.isEmpty {
+                                    Text("No matching suggestions.")
+                                        .font(.caption)
+                                        .foregroundColor(.textLight)
+                                        .padding(.top, 10)
                                 }
                             }
-                            .buttonStyle(.plain)
+                            .padding(.vertical, 5)
                         }
+                        .frame(height: 200) // --- *** FIX: LIMIT HEIGHT & ENABLE SCROLL *** ---
                     }
-                    .foregroundColor(.primaryBlue) // Makes the disclosure arrow blue
+                    .foregroundColor(.primaryBlue)
                 }
                 
                 // MARK: - Student & Location
@@ -292,6 +325,8 @@ struct AddLessonFormView: View {
                 selectedTopics.remove(at: index)
             } else {
                 selectedTopics.append(topic)
+                // Optional: clear search when a suggestion is picked?
+                // customTopic = ""
             }
         }
     }
@@ -302,6 +337,8 @@ struct AddLessonFormView: View {
             withAnimation {
                 selectedTopics.append(trimmedTopic)
                 customTopic = ""
+                // Optional: Close suggestions if done typing
+                // isSuggestionsExpanded = false
             }
         }
     }

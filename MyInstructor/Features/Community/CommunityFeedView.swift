@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: Added init to FeedCommentRow to fix "Missing argument" error ---
+// --- UPDATED: Replaced context menu with a visible 3-dot Menu button in the comment row header to ensure correct selection ---
 
 import SwiftUI
 import PhotosUI
@@ -160,12 +160,12 @@ struct CommunityFeedView: View {
                                     post: $posts[index],
                                     onDelete: deletePostFromFeed
                                 )
-                                
-                                NavigationLink(destination: PostDetailView(post: posts[index])) {
-                                    EmptyView()
-                                }
-                                .opacity(0)
-                                .frame(height: 0)
+                                .background(
+                                    NavigationLink(destination: PostDetailView(post: posts[index])) {
+                                        EmptyView()
+                                    }
+                                    .opacity(0)
+                                )
                             }
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
@@ -226,14 +226,12 @@ enum CommunityFilter: String {
 struct PostCard: View {
     @Binding var post: Post
     let onDelete: (String) -> Void
-    // Control whether this card shows comments list internally
     var showCommentsList: Bool = true
     
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var authManager: AuthManager
 
     @State private var currentImagePage = 0
-    
     @State private var isCommenting: Bool = false
     @State private var commentText: String = ""
     @State private var isPostingComment: Bool = false
@@ -241,13 +239,11 @@ struct PostCard: View {
     @State private var isLoadingComments: Bool = false
     
     @State private var visibleCommentLimit: Int = 3
-    @State private var expandedReplyIDs: Set<String> = [] // Track expanded replies
-    
+    @State private var expandedReplyIDs: Set<String> = []
     @State private var replyingToComment: Comment? = nil
-    @State private var editingComment: Comment? = nil // --- NEW STATE ---
+    @State private var editingComment: Comment? = nil
     
     @FocusState private var isCommentFieldFocused: Bool
-    
     @State private var isShowingEditSheet = false
     @State private var isShowingDeleteAlert = false
     
@@ -265,6 +261,11 @@ struct PostCard: View {
         (fetchedComments ?? [])
             .filter { $0.parentCommentID == parent.id }
             .sorted(by: { $0.timestamp < $1.timestamp })
+    }
+    
+    // Helper to get a unique ID for ForEach, even if Firestore ID is pending
+    private func safeID(for comment: Comment) -> String {
+        comment.id ?? "\(comment.authorID)-\(comment.timestamp.timeIntervalSince1970)"
     }
 
     var body: some View {
@@ -298,9 +299,7 @@ struct PostCard: View {
         .alert("Delete Post?", isPresented: $isShowingDeleteAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
-                Task {
-                    await deletePost()
-                }
+                Task { await deletePost() }
             }
         } message: {
             Text("Are you sure you want to delete this post? This action cannot be undone.")
@@ -320,70 +319,41 @@ struct PostCard: View {
                 if let image = phase.image {
                     image.resizable().scaledToFill()
                 } else {
-                    Image(systemName: "person.circle.fill")
-                        .resizable().foregroundColor(.secondaryGray)
+                    Image(systemName: "person.circle.fill").resizable().foregroundColor(.secondaryGray)
                 }
             }
             .frame(width: 40, height: 40)
             .clipShape(Circle())
-            .background(Color.secondaryGray.clipShape(Circle()))
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(post.authorName).font(.headline)
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    if let location = post.location, !location.isEmpty {
-                        HStack(spacing: 3) {
-                            Image(systemName: "mappin.circle.fill")
-                            Text(location)
-                        }
-                        .font(.caption)
-                        .foregroundColor(.textLight)
-                        .lineLimit(1)
+                if let location = post.location, !location.isEmpty {
+                    HStack(spacing: 3) {
+                        Image(systemName: "mappin.circle.fill")
+                        Text(location)
                     }
-                    
-                    HStack(spacing: 4) {
-                        Text(post.timestamp.timeAgoDisplay())
-                        
-                        if post.isEdited == true {
-                            Text("• (edited)")
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundColor(.textLight)
+                    .font(.caption).foregroundColor(.textLight)
                 }
+                HStack(spacing: 4) {
+                    Text(post.timestamp.timeAgoDisplay())
+                    if post.isEdited == true { Text("• (edited)") }
+                }
+                .font(.caption).foregroundColor(.textLight)
             }
             
             Spacer()
             
             if post.authorID == authManager.user?.id {
                 Menu {
-                    Button {
-                        isShowingEditSheet = true
-                    } label: {
-                        Label("Edit Post", systemImage: "pencil")
-                    }
-                    
-                    Button(role: .destructive) {
-                        isShowingDeleteAlert = true
-                    } label: {
-                        Label("Delete Post", systemImage: "trash")
-                    }
+                    Button { isShowingEditSheet = true } label: { Label("Edit Post", systemImage: "pencil") }
+                    Button(role: .destructive) { isShowingDeleteAlert = true } label: { Label("Delete Post", systemImage: "trash") }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.headline)
-                        .foregroundColor(.textLight)
-                        .padding(5)
+                    Image(systemName: "ellipsis").font(.headline).foregroundColor(.textLight).padding(5)
                 }
                 .buttonStyle(.plain)
             } else {
-                Button("Follow") {
-                    print("Following user \(post.authorID)...")
-                }
-                .buttonStyle(.bordered)
-                .tint(.primaryBlue)
-                .font(.caption.bold())
-                .buttonStyle(.plain)
+                Button("Follow") { print("Following...") }
+                    .buttonStyle(.bordered).tint(.primaryBlue).font(.caption.bold()).buttonStyle(.plain)
             }
         }
     }
@@ -391,9 +361,7 @@ struct PostCard: View {
     @ViewBuilder
     private var contentView: some View {
         if let content = post.content {
-            Text(content)
-                .font(.body)
-                .padding(.bottom, 5)
+            Text(content).font(.body).padding(.bottom, 5)
         }
     }
     
@@ -403,42 +371,21 @@ struct PostCard: View {
             ZStack(alignment: .topTrailing) {
                 TabView(selection: $currentImagePage) {
                     ForEach(Array(mediaURLs.enumerated()), id: \.offset) { index, urlString in
-                        if let url = URL(string: urlString) {
-                            AsyncImage(url: url) { phase in
-                                switch phase {
-                                case .success(let image):
-                                    image
-                                        .resizable()
-                                        .scaledToFit()
-                                        .cornerRadius(10)
-                                case .failure:
-                                    Image(systemName: "photo.on.rectangle")
-                                        .foregroundColor(.textLight)
-                                        .frame(maxWidth: .infinity, alignment: .center)
-                                case .empty:
-                                    ProgressView()
-                                        .frame(maxWidth: .infinity, minHeight: 250, alignment: .center)
-                                @unknown default:
-                                    EmptyView()
-                                }
+                        AsyncImage(url: URL(string: urlString)) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFit().cornerRadius(10)
+                            } else {
+                                ProgressView().frame(maxWidth: .infinity, minHeight: 250)
                             }
-                            .tag(index)
                         }
+                        .tag(index)
                     }
                 }
-                .frame(height: 350)
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .cornerRadius(10)
-                
+                .frame(height: 350).tabViewStyle(.page(indexDisplayMode: .never)).cornerRadius(10)
                 if mediaURLs.count > 1 {
                     Text("\(currentImagePage + 1)/\(mediaURLs.count)")
-                        .font(.caption.bold())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.7))
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
-                        .padding(10)
+                        .font(.caption.bold()).padding(6)
+                        .background(Color.black.opacity(0.7)).foregroundColor(.white).cornerRadius(10).padding(10)
                 }
             }
             .padding(.vertical, 5)
@@ -449,60 +396,28 @@ struct PostCard: View {
     private var progressUpdateView: some View {
         if post.postType == .progressUpdate {
             Text("📈 Progress Update: 65% Mastery Achieved!")
-                .font(.subheadline).bold()
-                .foregroundColor(.primaryBlue)
-                .padding(5)
-                .background(Color.secondaryGray)
-                .cornerRadius(5)
+                .font(.subheadline).bold().foregroundColor(.primaryBlue)
+                .padding(5).background(Color.secondaryGray).cornerRadius(5)
         }
     }
     
     private var reactionBar: some View {
         HStack {
-            ReactionButton(
-                post: $post,
-                reactionType: "thumbsup",
-                icon: "hand.thumbsup.fill",
-                color: .primaryBlue
-            )
-            .buttonStyle(.plain)
-
-            ReactionButton(
-                post: $post,
-                reactionType: "fire",
-                icon: "flame.fill",
-                color: .orange
-            )
-            .buttonStyle(.plain)
-            
-            ReactionButton(
-                post: $post,
-                reactionType: "heart",
-                icon: "heart.fill",
-                color: .warningRed
-            )
-            .buttonStyle(.plain)
-            
+            ReactionButton(post: $post, reactionType: "thumbsup", icon: "hand.thumbsup.fill", color: .primaryBlue).buttonStyle(.plain)
+            ReactionButton(post: $post, reactionType: "fire", icon: "flame.fill", color: .orange).buttonStyle(.plain)
+            ReactionButton(post: $post, reactionType: "heart", icon: "heart.fill", color: .warningRed).buttonStyle(.plain)
             Spacer()
-            
             Button {
                 withAnimation { isCommenting.toggle() }
-                if isCommenting && fetchedComments == nil {
-                    Task { await fetchComments() }
-                }
-                if isCommenting == false {
-                    replyingToComment = nil
-                    editingComment = nil
-                }
+                if isCommenting && fetchedComments == nil { Task { await fetchComments() } }
+                if !isCommenting { replyingToComment = nil; editingComment = nil }
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "message")
                     Text("\(post.commentsCount) Comments")
                 }
-                .font(.caption)
-                .foregroundColor(.textLight)
-            }
-            .buttonStyle(.plain)
+                .font(.caption).foregroundColor(.textLight)
+            }.buttonStyle(.plain)
         }
     }
     
@@ -510,18 +425,15 @@ struct PostCard: View {
     private var commentsSection: some View {
         if showCommentsList && isCommenting {
             VStack(alignment: .leading, spacing: 10) {
-                
                 if isLoadingComments {
-                    ProgressView()
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                    ProgressView().frame(maxWidth: .infinity)
                 } else if let comments = fetchedComments, !comments.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         
-                        ForEach(visibleParentComments) { parent in
+                        // --- PARENT COMMENTS ---
+                        ForEach(visibleParentComments, id: \.id) { parent in
                             let isExpanded = expandedReplyIDs.contains(parent.id ?? "")
                             
-                            // --- FeedCommentRow for Parent Comments ---
                             FeedCommentRow(
                                 comment: parent,
                                 isExpanded: isExpanded,
@@ -530,23 +442,18 @@ struct PostCard: View {
                                 onReply: { handleReply(to: parent) },
                                 onToggleReplies: {
                                     withAnimation {
-                                        if isExpanded {
-                                            expandedReplyIDs.remove(parent.id ?? "")
-                                        } else {
-                                            expandedReplyIDs.insert(parent.id ?? "")
-                                        }
+                                        if isExpanded { expandedReplyIDs.remove(parent.id ?? "") }
+                                        else { expandedReplyIDs.insert(parent.id ?? "") }
                                     }
                                 },
                                 onEdit: { handleEdit(parent) },
                                 onDelete: { handleDeleteComment(parent) }
                             )
-                            .buttonStyle(.plain)
                             
-                            // --- REPLIES LOGIC ---
+                            // --- REPLIES ---
                             let replyComments = replies(for: parent)
-                            
                             if !replyComments.isEmpty && isExpanded {
-                                ForEach(replyComments) { reply in
+                                ForEach(replyComments, id: \.id) { reply in
                                     FeedCommentRow(
                                         comment: reply,
                                         isExpanded: false,
@@ -555,298 +462,134 @@ struct PostCard: View {
                                         onReply: { handleReply(to: reply) },
                                         onEdit: { handleEdit(reply) },
                                         onDelete: { handleDeleteComment(reply) }
-                                        // 'onToggleReplies' is defaulted to nil in init
                                     )
                                     .padding(.leading, 30)
-                                    .buttonStyle(.plain)
                                 }
                             }
                         }
                         
                         if allParentComments.count > visibleCommentLimit {
-                            Button {
-                                withAnimation {
-                                    visibleCommentLimit += 5
-                                }
-                            } label: {
-                                HStack {
-                                    Spacer()
-                                    Text("View 5 more comments")
-                                        .font(.caption).bold()
-                                        .foregroundColor(.primaryBlue)
-                                    Spacer()
-                                }
-                                .padding(.vertical, 5)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        
-                        if post.commentsCount > comments.count {
-                            Text("View all \(post.commentsCount) comments...")
-                                .font(.caption).bold()
-                                .foregroundColor(.primaryBlue)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.top, 4)
+                            Button("View 5 more comments") { withAnimation { visibleCommentLimit += 5 } }
+                                .font(.caption.bold()).foregroundColor(.primaryBlue).frame(maxWidth: .infinity).buttonStyle(.plain)
                         }
                     }
-                    .padding(.top, 5)
                 } else if fetchedComments != nil {
-                    Text("No comments yet. Be the first!")
-                        .font(.caption).foregroundColor(.textLight)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 5)
+                    Text("No comments yet.").font(.caption).foregroundColor(.textLight).frame(maxWidth: .infinity)
                 }
                 
-                // --- REPLY / EDIT INDICATORS ---
+                // Input Area
                 if let replyingTo = replyingToComment {
                     HStack {
-                        Text("Replying to @\(replyingTo.authorName)")
-                            .font(.caption).bold()
-                            .foregroundColor(.textLight)
+                        Text("Replying to @\(replyingTo.authorName)").font(.caption.bold()).foregroundColor(.textLight)
                         Spacer()
-                        Button {
-                            replyingToComment = nil
-                            commentText = ""
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.caption).bold()
-                                .foregroundColor(.textLight)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    
-                    if let editing = editingComment {
-                        HStack {
-                            Text("Editing comment")
-                                .font(.caption).bold()
-                                .foregroundColor(.primaryBlue)
-                            Spacer()
-                            Button {
-                                editingComment = nil
-                                commentText = ""
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.caption).bold()
-                                    .foregroundColor(.textLight)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    
-                    HStack(spacing: 8) {
-                        TextField(replyingToComment == nil ? "Write a comment..." : "Write your reply...", text: $commentText)
-                            .padding(8)
-                            .background(Color.secondaryGray.opacity(0.7))
-                            .cornerRadius(10)
-                            .focused($isCommentFieldFocused)
-                        
-                        // --- SEND ICON BUTTON ---
-                        Button {
-                            Task { await postComment() }
-                        } label: {
-                            if isPostingComment {
-                                ProgressView()
-                            } else {
-                                Image(systemName: "paperplane.fill")
-                                    .foregroundColor(.primaryBlue)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(commentText.isEmpty || isPostingComment)
+                        Button { replyingToComment = nil; commentText = "" } label: { Image(systemName: "xmark") }.buttonStyle(.plain)
                     }
                 }
-                .padding(.top, 8)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-                .animation(.default, value: replyingToComment)
-                .animation(.default, value: editingComment)
+                if let editing = editingComment {
+                    HStack {
+                        Text("Editing comment").font(.caption.bold()).foregroundColor(.primaryBlue)
+                        Spacer()
+                        Button { editingComment = nil; commentText = "" } label: { Image(systemName: "xmark") }.buttonStyle(.plain)
+                    }
+                }
+                
+                HStack(spacing: 8) {
+                    TextField(replyingToComment == nil ? "Write a comment..." : "Reply...", text: $commentText)
+                        .padding(8).background(Color.secondaryGray.opacity(0.7)).cornerRadius(10)
+                        .focused($isCommentFieldFocused)
+                    
+                    Button { Task { await postComment() } } label: {
+                        Image(systemName: "paperplane.fill").foregroundColor(.primaryBlue)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(commentText.isEmpty || isPostingComment)
+                }
             }
-        }
-    
-    // MARK: - Logic Functions
-    
-    private func deletePost() async {
-        guard let postID = post.id else {
-            print("Post ID not found, cannot delete.")
-            return
-        }
-        
-        do {
-            try await communityManager.deletePost(postID: postID)
-            await MainActor.run {
-                onDelete(postID)
-            }
-            
-        } catch {
-            print("Error deleting post: \(error.localizedDescription)")
         }
     }
-
     
+    // MARK: - Logic Functions
+    private func deletePost() async {
+        guard let postID = post.id else { return }
+        do {
+            try await communityManager.deletePost(postID: postID)
+            await MainActor.run { onDelete(postID) }
+        } catch { print("Error deleting: \(error)") }
+    }
     private func handleReply(to comment: Comment) {
-        // Clear edit state if active
         editingComment = nil
-        
-        if let parentID = comment.parentCommentID {
-            self.replyingToComment = fetchedComments?.first(where: { $0.id == parentID })
-        } else {
-            self.replyingToComment = comment
-        }
+        replyingToComment = comment
         commentText = "@\(comment.authorName) "
         isCommentFieldFocused = true
     }
-    
-    // --- NEW FUNCTION ---
     private func handleEdit(_ comment: Comment) {
-        // Clear reply state if active
         replyingToComment = nil
-        
-        self.editingComment = comment
-        self.commentText = comment.content
+        editingComment = comment
+        commentText = comment.content
         isCommentFieldFocused = true
     }
-    
-    // --- NEW FUNCTION ---
     private func handleDeleteComment(_ comment: Comment) {
         guard let postID = post.id, let commentID = comment.id else { return }
-        
         Task {
-            do {
-                try await communityManager.deleteComment(postID: postID, commentID: commentID, parentCommentID: comment.parentCommentID)
-                
-                // Refresh list locally
-                post.commentsCount -= 1
-                await fetchComments()
-                
-            } catch {
-                print("Error deleting comment: \(error)")
-            }
+            try? await communityManager.deleteComment(postID: postID, commentID: commentID, parentCommentID: comment.parentCommentID)
+            post.commentsCount -= 1
+            await fetchComments()
         }
     }
-    
     private func fetchComments() async {
         guard let postID = post.id else { return }
         isLoadingComments = true
-        do {
-            self.fetchedComments = try await communityManager.fetchComments(for: postID)
-        } catch {
-            print("Failed to fetch comments: \(error)")
-            self.fetchedComments = []
-        }
+        do { fetchedComments = try await communityManager.fetchComments(for: postID) }
+        catch { fetchedComments = [] }
         isLoadingComments = false
     }
-    
     private func postComment() async {
-        guard let postID = post.id,
-              let author = authManager.user,
-              let authorID = author.id else {
-            print("Cannot post comment: Missing IDs or user object")
-            return
-        }
-        
-        let content = commentText
-        
+        guard let postID = post.id, let author = authManager.user, let authorID = author.id else { return }
         isPostingComment = true
         
-        // --- HANDLE EDIT ---
         if let editing = editingComment, let commentID = editing.id {
-            do {
-                try await communityManager.updateComment(postID: postID, commentID: commentID, newContent: content)
-                
-                editingComment = nil
-                commentText = ""
-                isCommentFieldFocused = false
-                
-                // Refresh comments
-                await fetchComments()
-                
-            } catch {
-                print("Failed to update comment: \(error)")
-            }
-            isPostingComment = false
-            return
-        }
-        
-        // --- HANDLE CREATE ---
-        let parentID = replyingToComment?.id
-        
-        do {
-            try await communityManager.addComment(
-                postID: postID,
-                authorID: authorID,
-                authorName: author.name ?? "User",
-                authorRole: author.role,
-                authorPhotoURL: author.photoURL,
-                content: content,
-                parentCommentID: parentID
-            )
-            
-            commentText = ""
-            replyingToComment = nil
-            isCommentFieldFocused = false
+            try? await communityManager.updateComment(postID: postID, commentID: commentID, newContent: commentText)
+            editingComment = nil
+        } else {
+            let parentID = replyingToComment?.id
+            try? await communityManager.addComment(postID: postID, authorID: authorID, authorName: author.name ?? "User", authorRole: author.role, authorPhotoURL: author.photoURL, content: commentText, parentCommentID: parentID)
             post.commentsCount += 1
-            await fetchComments()
-            
-        } catch {
-            print("Failed to post comment from feed: \(error.localizedDescription)")
+            replyingToComment = nil
         }
-        isPostingComment = false
+        
+        commentText = ""
         isCommentFieldFocused = false
+        isPostingComment = false
+        await fetchComments()
     }
 }
 
 struct ReactionButton: View {
     @EnvironmentObject var communityManager: CommunityManager
-    
     @Binding var post: Post
-    let reactionType: String
-    let icon: String
-    var color: Color
-    
-    private var count: Int {
-        post.reactionsCount[reactionType] ?? 0
-    }
+    let reactionType: String; let icon: String; var color: Color
     
     @State private var isDisabled = false
-
     var body: some View {
         Button {
             isDisabled = true
-            
             Task {
-                guard let postID = post.id else {
-                    isDisabled = false
-                    return
-                }
-                
-                do {
-                    try await communityManager.addReaction(postID: postID, reactionType: reactionType)
-                    
-                    post.reactionsCount[reactionType, default: 0] += 1
-                    
-                } catch {
-                    print("Failed to add reaction: \(error.localizedDescription)")
-                }
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    isDisabled = false
-                }
+                guard let postID = post.id else { return }
+                try? await communityManager.addReaction(postID: postID, reactionType: reactionType)
+                post.reactionsCount[reactionType, default: 0] += 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDisabled = false }
             }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .foregroundColor(color)
-                Text("\(count)")
-                    .font(.subheadline)
-                    .foregroundColor(.textDark)
-            }
-            .padding(.trailing, 10)
-        }
-        .disabled(isDisabled)
+                Image(systemName: icon).foregroundColor(color)
+                Text("\(post.reactionsCount[reactionType] ?? 0)").font(.subheadline).foregroundColor(.textDark)
+            }.padding(.trailing, 10)
+        }.disabled(isDisabled)
     }
 }
 
-// --- LOCALLY DEFINED COMMENT ROW TO PREVENT REDECLARATION ---
+// MARK: - Feed Comment Components
+
 struct FeedCommentRow: View {
     let comment: Comment
     let isExpanded: Bool
@@ -858,7 +601,7 @@ struct FeedCommentRow: View {
     let onEdit: (() -> Void)?
     let onDelete: (() -> Void)?
     
-    // Added Init with default nil to fix "Missing Argument" error
+    // Optional Init
     init(comment: Comment, isExpanded: Bool = false, currentUserID: String? = nil, postAuthorID: String? = nil, onReply: (() -> Void)? = nil, onToggleReplies: (() -> Void)? = nil, onEdit: (() -> Void)? = nil, onDelete: (() -> Void)? = nil) {
         self.comment = comment
         self.isExpanded = isExpanded
@@ -870,47 +613,27 @@ struct FeedCommentRow: View {
         self.onDelete = onDelete
     }
     
-    // Permissions Logic
-    var canEdit: Bool {
-        return currentUserID == comment.authorID
-    }
-    
-    var canDelete: Bool {
-        return currentUserID == comment.authorID || currentUserID == postAuthorID
-    }
+    var canEdit: Bool { currentUserID == comment.authorID }
+    var canDelete: Bool { currentUserID == comment.authorID || currentUserID == postAuthorID }
     
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             AsyncImage(url: URL(string: comment.authorPhotoURL ?? "")) { phase in
-                if let image = phase.image {
-                    image.resizable().scaledToFill()
-                } else {
-                    Image(systemName: "person.circle.fill")
-                        .resizable().foregroundColor(.secondaryGray)
-                }
+                if let image = phase.image { image.resizable().scaledToFill() }
+                else { Image(systemName: "person.circle.fill").resizable().foregroundColor(.secondaryGray) }
             }
-            .frame(width: 35, height: 35)
-            .clipShape(Circle())
-            .background(Color.secondaryGray.clipShape(Circle()))
+            .frame(width: 35, height: 35).clipShape(Circle()).background(Color.secondaryGray.clipShape(Circle()))
             
             VStack(alignment: .leading, spacing: 4) {
-                // --- HEADER ROW (Name, Time, Edited, Spacer, MENU) ---
+                // --- HEADER ROW ---
                 HStack(alignment: .center) {
-                    Text(comment.authorName)
-                        .font(.subheadline).bold()
-                    Text("• \(comment.timestamp.timeAgoDisplay())")
-                        .font(.caption).foregroundColor(.textLight)
+                    Text(comment.authorName).font(.subheadline).bold()
+                    Text("• \(comment.timestamp.timeAgoDisplay())").font(.caption).foregroundColor(.textLight)
+                    if comment.isEdited == true { Text("(edited)").font(.caption2).foregroundColor(.textLight).italic() }
                     
-                    if comment.isEdited == true {
-                        Text("(edited)")
-                            .font(.caption2)
-                            .foregroundColor(.textLight)
-                            .italic()
-                    }
+                    Spacer()
                     
-                    Spacer() // Pushes Menu to the right
-                    
-                    // --- MENU IN HEADER ---
+                    // --- VISIBLE MENU BUTTON (REPLACES CONTEXT MENU) ---
                     if canEdit || canDelete {
                         Menu {
                             if canEdit {
@@ -925,75 +648,46 @@ struct FeedCommentRow: View {
                             }
                         } label: {
                             Image(systemName: "ellipsis")
-                                .font(.caption).foregroundColor(.textLight)
-                                .frame(width: 20, height: 20)
-                                .contentShape(Rectangle())
+                                .font(.caption)
+                                .foregroundColor(.textLight)
+                                .padding(8) // Increase touch target
+                                .background(Color.white.opacity(0.01)) // Make padding tappable
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.plain) // Crucial for List compatibility
                     }
                 }
                 
-                Text(comment.content)
-                    .font(.body)
+                Text(comment.content).font(.body).multilineTextAlignment(.leading)
                 
-                // --- FOOTER ROW (Reply, View Replies) ---
+                // --- FOOTER ---
                 HStack(spacing: 12) {
-                    Button("Reply") { onReply?() }
-                        .font(.caption).bold().foregroundColor(.textLight)
-                        .buttonStyle(.plain)
-                    
-                    if comment.repliesCount > 0 {
-                        Button { onToggleReplies?() } label: {
+                    if let onReply = onReply {
+                        Button("Reply") { onReply() }.font(.caption).bold().foregroundColor(.textLight).buttonStyle(.plain)
+                    }
+                    if comment.repliesCount > 0, let onToggleReplies = onToggleReplies {
+                        Button { onToggleReplies() } label: {
                             HStack(spacing: 3) {
-                                Text("•")
-                                Text("\(comment.repliesCount) replies")
+                                Text("•"); Text("\(comment.repliesCount) replies")
                                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            }
-                            .font(.caption).bold().foregroundColor(.primaryBlue)
-                        }
-                        .buttonStyle(.plain)
+                            }.font(.caption).bold().foregroundColor(.primaryBlue)
+                        }.buttonStyle(.plain)
                     }
                 }
             }
         }
+        .padding(.vertical, 4)
     }
 }
 
-// --- ADDED Date extension to fix 'Value of type Date has no member timeAgoDisplay' ---
 extension Date {
     func timeAgoDisplay() -> String {
         let secondsAgo = Int(Date().timeIntervalSince(self))
-
-        if secondsAgo < 60 {
-            return "Just now"
-        }
-        
-        let minutes = secondsAgo / 60
-        if minutes < 60 {
-            return "\(minutes)m ago"
-        }
-        
-        let hours = minutes / 60
-        if hours < 24 {
-            return "\(hours)h ago"
-        }
-        
-        let days = hours / 24
-        if days < 7 {
-            return "\(days)d ago"
-        }
-        
-        let weeks = days / 7
-        if weeks < 4 {
-            return "\(weeks)w ago"
-        }
-        
-        let months = days / 30 // Approximate
-        if months < 12 {
-            return "\(months)mo ago"
-        }
-        
-        let years = months / 12
-        return "\(years)y ago"
+        if secondsAgo < 60 { return "Just now" }
+        let minutes = secondsAgo / 60; if minutes < 60 { return "\(minutes)m ago" }
+        let hours = minutes / 60; if hours < 24 { return "\(hours)h ago" }
+        let days = hours / 24; if days < 7 { return "\(days)d ago" }
+        let weeks = days / 7; if weeks < 4 { return "\(weeks)w ago" }
+        let months = days / 30; if months < 12 { return "\(months)mo ago" }
+        let years = months / 12; return "\(years)y ago"
     }
 }

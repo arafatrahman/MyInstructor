@@ -1,5 +1,5 @@
-// File: Features/UserManagement/OfflineStudentFormView.swift (Updated)
-// --- UPDATED: Changed TextFields to use persistent labels with icons ---
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/OfflineStudentFormView.swift
+// --- UPDATED: Wrapped in NavigationView to show Toolbar/Save button. Added Address Search. ---
 
 import SwiftUI
 
@@ -21,102 +21,128 @@ struct OfflineStudentFormView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     
+    // --- *** ADDED: State for Address Search *** ---
+    @State private var isShowingAddressSearch = false
+    
     private var isFormValid: Bool {
         !name.isEmpty
     }
 
     var body: some View {
-        Form {
-            // --- *** THIS SECTION IS UPDATED *** ---
-            Section("Student Details") {
-                
-                HStack(spacing: 15) {
-                    Image(systemName: "person.fill")
-                        .foregroundColor(.primaryBlue)
-                        .frame(width: 20, alignment: .center)
-                    Text("Name")
-                    Spacer()
-                    TextField("Student's Full Name", text: $name)
-                        .multilineTextAlignment(.trailing)
+        // --- *** ADDED: NavigationView wrapper is essential for Toolbar/Title to show in a Sheet *** ---
+        NavigationView {
+            Form {
+                Section("Student Details") {
+                    
+                    // Name Input
+                    HStack(spacing: 15) {
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.primaryBlue)
+                            .frame(width: 20)
+                        Text("Name")
+                        Spacer()
+                        TextField("Full Name", text: $name)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    
+                    // Phone Input
+                    HStack(spacing: 15) {
+                        Image(systemName: "phone.fill")
+                            .foregroundColor(.primaryBlue)
+                            .frame(width: 20)
+                        Text("Phone")
+                        Spacer()
+                        TextField("Optional", text: $phone)
+                            .keyboardType(.phonePad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    
+                    // Email Input
+                    HStack(spacing: 15) {
+                        Image(systemName: "envelope.fill")
+                            .foregroundColor(.primaryBlue)
+                            .frame(width: 20)
+                        Text("Email")
+                            .layoutPriority(1)
+                        Spacer()
+                        TextField("Optional", text: $email)
+                            .keyboardType(.emailAddress)
+                            .autocapitalization(.none)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    
+                    // --- *** UPDATED: Address Field with Search *** ---
+                    HStack(spacing: 15) {
+                        Image(systemName: "mappin.and.ellipse")
+                            .foregroundColor(.primaryBlue)
+                            .frame(width: 20)
+                        Text("Address")
+                        Spacer()
+                        
+                        Button {
+                            isShowingAddressSearch = true
+                        } label: {
+                            if address.isEmpty {
+                                Text("Tap to search")
+                                    .foregroundColor(Color(.placeholderText))
+                            } else {
+                                Text(address)
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .buttonStyle(.plain) // Removes default button highlighting
+                    }
                 }
                 
-                HStack(spacing: 15) {
-                    Image(systemName: "phone.fill")
-                        .foregroundColor(.primaryBlue)
-                        .frame(width: 20, alignment: .center)
-                    Text("Phone")
-                    Spacer()
-                    TextField("Optional", text: $phone)
-                        .keyboardType(.phonePad)
-                        .multilineTextAlignment(.trailing)
-                }
-                
-                HStack(spacing: 15) {
-                    Image(systemName: "envelope.fill")
-                        .foregroundColor(.primaryBlue)
-                        .frame(width: 20, alignment: .center)
-                    Text("Email")
-                    Spacer()
-                    TextField("Optional", text: $email)
-                        .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                        .multilineTextAlignment(.trailing)
-                }
-                
-                HStack(spacing: 15) {
-                    Image(systemName: "mappin.and.ellipse")
-                        .foregroundColor(.primaryBlue)
-                        .frame(width: 20, alignment: .center)
-                    Text("Address")
-                    Spacer()
-                    TextField("Optional", text: $address)
-                        .multilineTextAlignment(.trailing)
-                }
-            }
-            // --- *** END OF UPDATE *** ---
-            
-            Section {
+                // Error Message Section
                 if let error = errorMessage {
-                    Text(error)
-                        .foregroundColor(.warningRed)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                    Section {
+                        Text(error)
+                            .foregroundColor(.warningRed)
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .listRowBackground(Color.clear)
                 }
             }
-            .listRowBackground(Color.clear) // Hide the cell background
-        }
-        .navigationTitle(isEditing ? "Edit Student" : "Add Offline Student")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            
-            // Only show "Cancel" when *adding* a new student
-            if !isEditing {
+            .navigationTitle(isEditing ? "Edit Student" : "Add Offline Student")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // Cancel Button (Leading)
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
-            }
-            
-            // Save/Add Button
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    saveStudent()
-                } label: {
-                    if isLoading {
-                        ProgressView()
-                    } else {
-                        Text(isEditing ? "Save" : "Add")
+                
+                // Save Button (Trailing)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        saveStudent()
+                    } label: {
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            Text(isEditing ? "Save" : "Add")
+                                .bold()
+                        }
                     }
+                    .disabled(!isFormValid || isLoading)
                 }
-                .disabled(!isFormValid || isLoading)
             }
-        }
-        .onAppear {
-            // If we are editing, populate the fields
-            if let student = studentToEdit {
-                isEditing = true
-                name = student.name
-                phone = student.phone ?? ""
-                email = student.email ?? ""
-                address = student.address ?? ""
+            .onAppear {
+                if let student = studentToEdit {
+                    isEditing = true
+                    name = student.name
+                    phone = student.phone ?? ""
+                    email = student.email ?? ""
+                    address = student.address ?? ""
+                }
+            }
+            // --- *** ADDED: Address Search Sheet *** ---
+            .sheet(isPresented: $isShowingAddressSearch) {
+                AddressSearchView { selectedAddress in
+                    self.address = selectedAddress
+                }
             }
         }
     }
@@ -132,33 +158,37 @@ struct OfflineStudentFormView: View {
         
         Task {
             do {
+                let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+                let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+                let trimmedAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
+                
                 if isEditing, let studentID = studentToEdit?.id {
-                    // This is an UPDATE
+                    // UPDATE
                     var updatedStudent = studentToEdit!
-                    updatedStudent.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    updatedStudent.phone = phone.isEmpty ? nil : phone.trimmingCharacters(in: .whitespacesAndNewlines)
-                    updatedStudent.email = email.isEmpty ? nil : email.trimmingCharacters(in: .whitespacesAndNewlines)
-                    updatedStudent.address = address.isEmpty ? nil : address.trimmingCharacters(in: .whitespacesAndNewlines)
+                    updatedStudent.name = trimmedName
+                    updatedStudent.phone = trimmedPhone.isEmpty ? nil : trimmedPhone
+                    updatedStudent.email = trimmedEmail.isEmpty ? nil : trimmedEmail
+                    updatedStudent.address = trimmedAddress.isEmpty ? nil : trimmedAddress
                     
                     try await communityManager.updateOfflineStudent(updatedStudent)
                     
                 } else {
-                    // This is a CREATE
+                    // CREATE
                     try await communityManager.addOfflineStudent(
                         instructorID: instructorID,
-                        name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                        phone: phone.isEmpty ? nil : phone.trimmingCharacters(in: .whitespacesAndNewlines),
-                        email: email.isEmpty ? nil : email.trimmingCharacters(in: .whitespacesAndNewlines),
-                        address: address.isEmpty ? nil : address.trimmingCharacters(in: .whitespacesAndNewlines)
+                        name: trimmedName,
+                        phone: trimmedPhone.isEmpty ? nil : trimmedPhone,
+                        email: trimmedEmail.isEmpty ? nil : trimmedEmail,
+                        address: trimmedAddress.isEmpty ? nil : trimmedAddress
                     )
                 }
                 
-                // Success!
-                onStudentAdded() // Call the refresh handler
-                dismiss() // Close the sheet
+                onStudentAdded()
+                dismiss()
                 
             } catch {
-                errorMessage = "Failed to save student: \(error.localizedDescription)"
+                errorMessage = "Failed to save: \(error.localizedDescription)"
                 isLoading = false
             }
         }

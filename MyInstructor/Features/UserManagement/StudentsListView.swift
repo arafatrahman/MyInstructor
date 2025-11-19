@@ -1,7 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
-// --- UPDATED: Default filter is now "All Categories", showing all sections ---
-// --- UPDATED: Now includes Offline Student functionality (Edit & Delete) ---
-// --- UPDATED: Moved Toolbar '+' button into a custom header to be inline with the title ---
+// --- UPDATED: Offline Student rows now hide the navigation arrow using the .background() technique ---
 
 import SwiftUI
 
@@ -27,7 +25,6 @@ struct StudentsListView: View {
     
     @State private var isAddingOfflineStudent = false // To show the "Add" sheet
     
-    // --- *** ADD THIS NEW STATE FOR DELETE ALERT *** ---
     @State private var studentToDelete: OfflineStudent? = nil
     @State private var isShowingDeleteAlert = false
     @State private var deleteErrorMessage: String? = nil
@@ -72,10 +69,30 @@ struct StudentsListView: View {
         }
         return offlineStudents.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
+    
+    // --- Helper to convert OfflineStudent to Student for display ---
+    func convertToStudent(_ offline: OfflineStudent) -> Student {
+        return Student(
+            id: offline.id,
+            userID: offline.id ?? UUID().uuidString,
+            name: offline.name,
+            photoURL: nil,
+            email: offline.email ?? "",
+            drivingSchool: nil,
+            phone: offline.phone,
+            address: offline.address,
+            distance: nil,
+            coordinate: nil,
+            isOffline: true,
+            averageProgress: 0.0,
+            nextLessonTime: nil,
+            nextLessonTopic: nil
+        )
+    }
 
     var body: some View {
         NavigationView {
-            VStack { // <-- Main VStack
+            VStack {
                 if let conversation = conversationToPush {
                     NavigationLink(
                         destination: ChatView(conversation: conversation),
@@ -84,7 +101,7 @@ struct StudentsListView: View {
                     )
                 }
                 
-                // --- *** THIS IS THE NEW CUSTOM HEADER *** ---
+                // Custom Header
                 HStack {
                     Text("Your Students")
                         .font(.largeTitle)
@@ -96,13 +113,12 @@ struct StudentsListView: View {
                         isAddingOfflineStudent = true
                     } label: {
                         Image(systemName: "plus.circle.fill")
-                            .font(.title) // Make icon larger
+                            .font(.title)
                             .foregroundColor(.primaryBlue)
                     }
                 }
                 .padding(.horizontal)
-                .padding(.top, 10) // Padding to replace nav bar
-                // --- *** END OF NEW HEADER *** ---
+                .padding(.top, 10)
                 
                 HStack {
                     SearchBar(text: $searchText, placeholder: "Search students by name")
@@ -133,9 +149,7 @@ struct StudentsListView: View {
                 } else {
                     List {
                         
-                        // --- (Online Student Sections: Pending, Active, Completed, Denied, Blocked) ---
-                        // --- (These sections remain unchanged) ---
-                        
+                        // Pending
                         if filterMode == .allCategories || filterMode == .pending {
                             Section(header: Text("Pending Requests (\(filteredPendingRequests.count))").font(.headline).foregroundColor(.accentGreen)) {
                                 if filteredPendingRequests.isEmpty { Text("No pending requests found.").foregroundColor(.textLight) }
@@ -151,6 +165,7 @@ struct StudentsListView: View {
                             .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                         }
 
+                        // Active
                         if filterMode == .allCategories || filterMode == .active {
                             Section(header: Text("Active Students (\(activeStudents.count))").font(.headline)) {
                                 if activeStudents.isEmpty { Text("No active students found.").foregroundColor(.textLight) }
@@ -170,6 +185,7 @@ struct StudentsListView: View {
                             }
                         }
                         
+                        // Completed
                         if filterMode == .allCategories || filterMode == .completed {
                             Section(header: Text("Completed Students (\(completedStudents.count))").font(.headline).foregroundColor(.textLight)) {
                                 if completedStudents.isEmpty { Text("No completed students found.").foregroundColor(.textLight) }
@@ -189,6 +205,7 @@ struct StudentsListView: View {
                             }
                         }
 
+                        // Denied
                         if filterMode == .allCategories || filterMode == .denied {
                             Section(header: Text("Denied Requests (\(filteredDeniedRequests.count))").font(.headline).foregroundColor(.warningRed)) {
                                 if filteredDeniedRequests.isEmpty { Text("No denied requests found.").foregroundColor(.textLight) }
@@ -202,6 +219,7 @@ struct StudentsListView: View {
                             .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                         }
                             
+                        // Blocked
                         if filterMode == .allCategories || filterMode == .blocked {
                             Section(header: Text("Blocked Students (\(filteredBlockedRequests.count))").font(.headline).foregroundColor(Color.black)) {
                                 if filteredBlockedRequests.isEmpty { Text("No blocked students found.").foregroundColor(.textLight) }
@@ -215,73 +233,62 @@ struct StudentsListView: View {
                             .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                         }
                         
-                        // --- *** THIS SECTION IS UPDATED *** ---
+                        // Offline
                         if filterMode == .allCategories || filterMode == .offline {
                             Section(header: Text("Offline Students (\(filteredOfflineStudents.count))").font(.headline).foregroundColor(.gray)) {
                                 if filteredOfflineStudents.isEmpty {
                                     Text("No offline students found.").foregroundColor(.textLight)
                                 }
-                                ForEach(filteredOfflineStudents) { student in
-                                    // Wrap row in NavigationLink to the form for editing
-                                    NavigationLink(destination: OfflineStudentFormView(studentToEdit: student, onStudentAdded: {
-                                        Task { await fetchData() } // Refresh list on save
-                                    })) {
-                                        OfflineStudentRow(student: student)
-                                    }
-                                    .swipeActions(edge: .trailing) {
-                                        Button(role: .destructive) {
-                                            // Set student to delete and show confirmation
-                                            self.studentToDelete = student
-                                            self.isShowingDeleteAlert = true
-                                        } label: {
-                                            Label("Delete", systemImage: "trash.fill")
+                                ForEach(filteredOfflineStudents) { offlineStudent in
+                                    let convertedStudent = convertToStudent(offlineStudent)
+                                    
+                                    // --- *** UPDATED: Using .background(NavigationLink) to hide arrow *** ---
+                                    StudentListCard(student: convertedStudent)
+                                        .swipeActions(edge: .trailing) {
+                                            Button(role: .destructive) {
+                                                self.studentToDelete = offlineStudent
+                                                self.isShowingDeleteAlert = true
+                                            } label: {
+                                                Label("Delete", systemImage: "trash.fill")
+                                            }
                                         }
-                                    }
+                                        .listRowSeparator(.hidden)
+                                        .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                                        .background(
+                                            NavigationLink(destination: StudentProfileView(student: convertedStudent)) {
+                                                EmptyView()
+                                            }
+                                            .opacity(0)
+                                        )
+                                    // --- *** END OF UPDATE *** ---
                                 }
                             }
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                         }
-                        // --- *** END OF UPDATED SECTION *** ---
                         
                     }
                     .listStyle(.insetGrouped)
                     .animation(.default, value: filterMode)
                 }
             }
-            // .navigationTitle("Your Students") // <-- REMOVED
-            .navigationBarHidden(true) // <-- ADDED
+            .navigationBarHidden(true)
             .task {
                 await fetchData()
             }
             .refreshable {
                 await fetchData()
             }
-            // --- *** TOOLBAR REMOVED *** ---
-            // .toolbar {
-            //     ToolbarItem(placement: .navigationBarTrailing) {
-            //         Button {
-            //             isAddingOfflineStudent = true
-            //         } label: {
-            //             Image(systemName: "plus")
-            //         }
-            //     }
-            // }
             .sheet(isPresented: $isAddingOfflineStudent) {
-                // Pass nil to indicate we are ADDING a new student
                 OfflineStudentFormView(studentToEdit: nil, onStudentAdded: {
                     Task {
                         await fetchData()
                     }
                 })
             }
-            // Alert for chat errors (like being blocked)
             .alert("Cannot Start Chat", isPresented: $chatErrorAlert.isPresented, actions: {
                 Button("OK") { }
             }, message: {
                 Text(chatErrorAlert.message)
             })
-            // --- *** ADD THIS NEW ALERT FOR DELETING *** ---
             .alert("Delete Student?", isPresented: $isShowingDeleteAlert, presenting: studentToDelete) { student in
                 Button("Cancel", role: .cancel) {
                     studentToDelete = nil
@@ -297,15 +304,13 @@ struct StudentsListView: View {
             } message: { student in
                 Text("Are you sure you want to delete \(student.name)? This action cannot be undone.")
             }
-            // --- *** ---
         }
     }
     
-    // --- *** THIS FUNCTION IS UPDATED *** ---
     func fetchData() async {
         guard let instructorID = authManager.user?.id else { return }
         isLoading = true
-        deleteErrorMessage = nil // Clear any old errors
+        deleteErrorMessage = nil
         
         async let studentsTask = dataService.fetchStudents(for: instructorID)
         async let requestsTask = communityManager.fetchRequests(for: instructorID)
@@ -322,25 +327,19 @@ struct StudentsListView: View {
             
         } catch {
             print("Failed to fetch data: \(error)")
-            // You could show a persistent error banner here
         }
         isLoading = false
     }
     
-    // --- *** ADD THIS NEW HELPER FUNCTION *** ---
     func performDelete(studentID: String) async {
         do {
             try await communityManager.deleteOfflineStudent(studentID: studentID)
-            // Remove locally to make UI update instantly
             offlineStudents.removeAll(where: { $0.id == studentID })
         } catch {
             print("Failed to delete offline student: \(error)")
             self.deleteErrorMessage = error.localizedDescription
-            // Consider showing an alert for the delete error
         }
     }
-    
-    // --- (Other helper functions: handleRequest, removeStudent, unblockStudent, startChat are unchanged) ---
     
     func handleRequest(_ request: StudentRequest, approve: Bool) async {
         do {
@@ -370,7 +369,7 @@ struct StudentsListView: View {
         guard let instructorID = authManager.user?.id else { return }
         do {
             try await communityManager.unblockStudent(studentID: request.studentID, instructorID: instructorID)
-            await fetchData() // Refresh all lists
+            await fetchData()
         } catch {
             print("Failed to unblock student: \(error)")
         }
@@ -399,7 +398,8 @@ struct StudentsListView: View {
     }
 }
 
-// --- UPDATED ENUM ---
+// --- Helper Enum & Views ---
+
 enum StudentFilter: String {
     case allCategories = "All"
     case pending = "Pending"
@@ -410,7 +410,6 @@ enum StudentFilter: String {
     case offline = "Offline"
 }
 
-// --- (CompactRequestRow and StudentListCard structs are unchanged) ---
 struct CompactRequestRow: View {
     let request: StudentRequest
     let filterMode: StudentFilter
@@ -494,7 +493,6 @@ struct CompactRequestRow: View {
     }
 }
 
-
 struct StudentListCard: View {
     let student: Student
     
@@ -555,72 +553,6 @@ struct StudentListCard: View {
                     .font(.caption)
                     .foregroundColor(.textLight)
             }
-        }
-        .padding(10)
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.textDark.opacity(0.05), radius: 5, x: 0, y: 2)
-    }
-}
-
-// --- (OfflineStudentRow is unchanged) ---
-struct OfflineStudentRow: View {
-    let student: OfflineStudent
-    
-    var body: some View {
-        HStack {
-            Image(systemName: "person.circle.fill")
-                .font(.largeTitle)
-                .foregroundColor(.gray)
-                .frame(width: 50, height: 50)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(student.name)
-                    .font(.headline)
-                
-                if let phone = student.phone, !phone.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "phone.fill")
-                            .font(.caption2)
-                        Text(phone)
-                    }
-                    .font(.caption)
-                    .foregroundColor(.textLight)
-                }
-                
-                if let email = student.email, !email.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "envelope.fill")
-                            .font(.caption2)
-                        Text(email)
-                    }
-                    .font(.caption)
-                    .foregroundColor(.textLight)
-                }
-                
-                if let address = student.address, !address.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "location.fill")
-                            .font(.caption2)
-                        Text(address)
-                    }
-                    .font(.caption)
-                    .foregroundColor(.textLight)
-                    .lineLimit(1)
-                }
-            }
-            .padding(.leading, 5)
-            
-            Spacer()
-            
-            // "Offline" Tag
-            Text("Offline")
-                .font(.caption).bold()
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.gray.opacity(0.15))
-                .foregroundColor(.gray)
-                .cornerRadius(8)
         }
         .padding(10)
         .background(Color(.systemBackground))

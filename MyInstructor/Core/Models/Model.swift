@@ -1,23 +1,18 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/Model.swift
-// --- UPDATED: Added 'isOffline' property to Student struct ---
+// --- UPDATED: Ensuring StudentNote and StudentRecord are available ---
 
 import Foundation
 import FirebaseFirestore
 import CoreLocation
 
 // MARK: - Core User Models
-
 enum UserRole: String, Codable, Hashable {
-    case instructor = "instructor"
-    case student = "student"
-    case unselected = "unselected"
+    case instructor = "instructor", student = "student", unselected = "unselected"
 }
 
 struct EducationEntry: Identifiable, Codable, Hashable {
     var id = UUID()
-    var title: String
-    var subtitle: String
-    var years: String
+    var title: String, subtitle: String, years: String
 }
 
 struct AppUser: Identifiable, Codable {
@@ -27,23 +22,17 @@ struct AppUser: Identifiable, Codable {
     var role: UserRole
     var phone: String?
     var drivingSchool: String?
-    
     var photoURL: String?
     var address: String?
     var hourlyRate: Double?
-    
     var aboutMe: String?
     var education: [EducationEntry]?
     var expertise: [String]?
-    
     var studentIDs: [String]?
     var instructorIDs: [String]?
 
     init(id: String, email: String, name: String? = nil, role: UserRole = .unselected) {
-        self.id = id
-        self.email = email
-        self.name = name
-        self.role = role
+        self.id = id; self.email = email; self.name = name; self.role = role
     }
 }
 
@@ -55,34 +44,33 @@ struct Student: Identifiable, Codable, Hashable {
     var photoURL: String?
     var email: String
     var drivingSchool: String?
-    
     var phone: String?
     var address: String?
     var distance: Double?
-    
     var coordinate: CLLocationCoordinate2D?
-    
-    // --- *** ADDED: Flag to distinguish offline students *** ---
     var isOffline: Bool = false
-    // --- *** ---
-    
     var averageProgress: Double = 0.0
     var nextLessonTime: Date?
     var nextLessonTopic: String?
     
     enum CodingKeys: String, CodingKey {
-        case id, userID, name, photoURL, email, drivingSchool, phone, address
-        case averageProgress, nextLessonTime, nextLessonTopic
-        case isOffline // Added to coding keys
+        case id, userID, name, photoURL, email, drivingSchool, phone, address, averageProgress, nextLessonTime, nextLessonTopic, isOffline
     }
-    
-    static func == (lhs: Student, rhs: Student) -> Bool {
-        lhs.id == rhs.id
-    }
-    
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
+    static func == (lhs: Student, rhs: Student) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+// MARK: - Note Models
+struct StudentNote: Identifiable, Codable, Hashable {
+    var id = UUID()
+    let content: String
+    let timestamp: Date
+}
+
+struct StudentRecord: Identifiable, Codable {
+    @DocumentID var id: String?
+    var progress: Double?
+    var notes: [StudentNote]?
 }
 
 // MARK: - Lesson Models
@@ -100,9 +88,7 @@ struct Lesson: Identifiable, Codable {
 }
 
 enum LessonStatus: String, Codable {
-    case scheduled
-    case completed
-    case cancelled
+    case scheduled, completed, cancelled
 }
 
 extension TimeInterval {
@@ -123,4 +109,6 @@ struct OfflineStudent: Identifiable, Codable, Hashable {
     var email: String?
     var address: String?
     @ServerTimestamp var timestamp: Date? = Date()
+    var progress: Double? = 0.0
+    var notes: [StudentNote]? = []
 }

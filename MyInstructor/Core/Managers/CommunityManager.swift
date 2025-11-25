@@ -1,4 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
+// --- UPDATED: Complete file with all functions restored + Notes/Progress logic ---
 
 import Combine
 import Foundation
@@ -7,6 +8,8 @@ import FirebaseStorage
 
 class CommunityManager: ObservableObject {
     private let db = Firestore.firestore()
+    
+    // Collection References
     private var postsCollection: CollectionReference {
         db.collection("community_posts")
     }
@@ -19,7 +22,6 @@ class CommunityManager: ObservableObject {
     private var conversationsCollection: CollectionReference {
         db.collection("conversations")
     }
-    
     private var offlineStudentsCollection: CollectionReference {
         db.collection("offline_students")
     }
@@ -41,7 +43,8 @@ class CommunityManager: ObservableObject {
         }
     }
 
-    // Fetches recent community posts
+    // MARK: - Community Posts
+    
     func fetchPosts(filter: String) async throws -> [Post] {
         let snapshot = try await postsCollection
             .order(by: "timestamp", descending: true)
@@ -160,43 +163,6 @@ class CommunityManager: ObservableObject {
         return instructors
     }
     
-    // MARK: - --- OFFLINE STUDENT FUNCTIONS ---
-    
-    /// Creates a new "offline" student record, owned by the instructor.
-    func addOfflineStudent(instructorID: String, name: String, phone: String?, email: String?, address: String?) async throws {
-        let newOfflineStudent = OfflineStudent(
-            instructorID: instructorID,
-            name: name,
-            phone: phone,
-            email: email,
-            address: address
-        )
-        
-        try offlineStudentsCollection.addDocument(from: newOfflineStudent)
-        print("Offline student '\(name)' added successfully.")
-    }
-    
-    /// Updates an existing offline student document.
-    func updateOfflineStudent(_ student: OfflineStudent) async throws {
-        guard let studentID = student.id else {
-            throw NSError(domain: "CommunityManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Missing student ID for update."])
-        }
-        
-        try await offlineStudentsCollection.document(studentID).updateData([
-            "name": student.name,
-            "phone": student.phone ?? FieldValue.delete(),
-            "email": student.email ?? FieldValue.delete(),
-            "address": student.address ?? FieldValue.delete()
-        ])
-        print("Offline student '\(student.name)' updated successfully.")
-    }
-
-    /// Deletes an offline student document by their ID.
-    func deleteOfflineStudent(studentID: String) async throws {
-        try await offlineStudentsCollection.document(studentID).delete()
-        print("Offline student deleted successfully.")
-    }
-    
     // MARK: - --- POST INTERACTIONS ---
     
     /// Adds a reaction to a post.
@@ -271,8 +237,6 @@ class CommunityManager: ObservableObject {
         try await batch.commit()
         print("Comment added successfully to post \(postID)")
     }
-    
-    // --- *** NEW FUNCTIONS FOR COMMENT EDIT/DELETE *** ---
     
     func deleteComment(postID: String, commentID: String, parentCommentID: String?) async throws {
         let postRef = postsCollection.document(postID)
@@ -623,5 +587,90 @@ class CommunityManager: ObservableObject {
     
     func cancelRequest(requestID: String) async throws {
         try await requestsCollection.document(requestID).delete()
+    }
+    
+    // MARK: - --- OFFLINE STUDENT MANAGEMENT ---
+    
+    func addOfflineStudent(instructorID: String, name: String, phone: String?, email: String?, address: String?) async throws {
+        let newOfflineStudent = OfflineStudent(
+            instructorID: instructorID,
+            name: name,
+            phone: phone,
+            email: email,
+            address: address
+        )
+        try offlineStudentsCollection.addDocument(from: newOfflineStudent)
+        print("Offline student '\(name)' added successfully.")
+    }
+    
+    func updateOfflineStudent(_ student: OfflineStudent) async throws {
+        guard let studentID = student.id else {
+            throw NSError(domain: "CommunityManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Missing student ID for update."])
+        }
+        try await offlineStudentsCollection.document(studentID).updateData([
+            "name": student.name,
+            "phone": student.phone ?? FieldValue.delete(),
+            "email": student.email ?? FieldValue.delete(),
+            "address": student.address ?? FieldValue.delete()
+        ])
+        print("Offline student '\(student.name)' updated successfully.")
+    }
+
+    func deleteOfflineStudent(studentID: String) async throws {
+        try await offlineStudentsCollection.document(studentID).delete()
+        print("Offline student deleted successfully.")
+    }
+
+    // MARK: - --- PROGRESS & NOTES MANAGEMENT (NEW) ---
+
+    /// Updates the progress for a student. Handles both Online and Offline types.
+    func updateStudentProgress(instructorID: String, studentID: String, newProgress: Double, isOffline: Bool) async throws {
+        if isOffline {
+            // Update the OfflineStudent document directly
+            try await offlineStudentsCollection.document(studentID).updateData([
+                "progress": newProgress
+            ])
+        } else {
+            // Update the Instructor's private record for this Online Student
+            // NOTE: Requires updated Firestore Security Rules
+            let recordRef = usersCollection.document(instructorID).collection("student_records").document(studentID)
+            try await recordRef.setData(["progress": newProgress], merge: true)
+        }
+        print("Progress updated for student \(studentID)")
+    }
+
+    /// Adds a note for a student. Handles both Online and Offline types.
+    func addStudentNote(instructorID: String, studentID: String, noteContent: String, isOffline: Bool) async throws {
+        let newNote = StudentNote(content: noteContent, timestamp: Date())
+        
+        // Convert note to dictionary for Firestore array
+        guard let noteData = try? Firestore.Encoder().encode(newNote) else { return }
+
+        if isOffline {
+            try await offlineStudentsCollection.document(studentID).updateData([
+                "notes": FieldValue.arrayUnion([noteData])
+            ])
+        } else {
+            // NOTE: Requires updated Firestore Security Rules
+            let recordRef = usersCollection.document(instructorID).collection("student_records").document(studentID)
+            try await recordRef.setData(["notes": FieldValue.arrayUnion([noteData])], merge: true)
+        }
+        print("Note added for student \(studentID)")
+    }
+    
+    /// Fetches the instructor-specific data (Progress & Notes) for a student
+    func fetchInstructorStudentData(instructorID: String, studentID: String, isOffline: Bool) async throws -> StudentRecord? {
+        if isOffline {
+            let doc = try await offlineStudentsCollection.document(studentID).getDocument()
+            guard let offlineStudent = try? doc.data(as: OfflineStudent.self) else { return nil }
+            return StudentRecord(id: studentID, progress: offlineStudent.progress, notes: offlineStudent.notes)
+        } else {
+            let doc = try await usersCollection.document(instructorID).collection("student_records").document(studentID).getDocument()
+            if doc.exists {
+                return try? doc.data(as: StudentRecord.self)
+            } else {
+                return nil
+            }
+        }
     }
 }

@@ -1,6 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: The "Next Lesson" card is now a NavigationLink ---
-// --- UPDATED: Fixed closure argument error for AddLessonFormView ---
+// --- UPDATED: Made "Students Overview" card clickable to view full Student List ---
 
 import SwiftUI
 
@@ -57,10 +56,13 @@ struct InstructorDashboardView: View {
                         }
                         .padding(.horizontal)
 
-                        // 3. Students Overview Card (Full Width)
-                        DashboardCard(title: "Students Overview", systemIcon: "person.3.fill", accentColor: .orange, content: {
-                            StudentsOverviewContent(progress: avgStudentProgress)
-                        })
+                        // 3. Students Overview Card (Full Width) - NOW CLICKABLE
+                        NavigationLink(destination: StudentsListView()) {
+                            DashboardCard(title: "Students Overview", systemIcon: "person.3.fill", accentColor: .orange, content: {
+                                StudentsOverviewContent(progress: avgStudentProgress)
+                            })
+                        }
+                        .buttonStyle(.plain) // Removes default button blue color styling
                         .padding(.horizontal)
                         
                         // MARK: - Quick Actions
@@ -104,12 +106,9 @@ struct InstructorDashboardView: View {
                 await fetchData()
             }
             .sheet(isPresented: $isAddingLesson) {
-                // --- *** THIS IS THE FIX *** ---
-                // We must accept the lesson argument (with `_ in`)
                 AddLessonFormView(onLessonAdded: { _ in
                     Task { await fetchData() } // Refresh dashboard
                 })
-                // --- *** END OF FIX *** ---
             }
             .sheet(isPresented: $isAddingOfflineStudent) {
                 OfflineStudentFormView(studentToEdit: nil, onStudentAdded: {

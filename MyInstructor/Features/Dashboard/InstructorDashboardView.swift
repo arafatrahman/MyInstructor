@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: Made "Students Overview" card clickable to view full Student List ---
+// --- UPDATED: Redesigned "Quick Overview" with professional cards and search ---
 
 import SwiftUI
 
@@ -20,6 +20,9 @@ struct InstructorDashboardView: View {
     @State private var isAddingLesson = false
     @State private var isAddingOfflineStudent = false
     @State private var isRecordingPayment = false
+    
+    // --- NEW STATE for Quick View Popup ---
+    @State private var isShowingQuickView = false
 
     var body: some View {
         NavigationView {
@@ -56,8 +59,11 @@ struct InstructorDashboardView: View {
                         }
                         .padding(.horizontal)
 
-                        // 3. Students Overview Card (Full Width) - NOW CLICKABLE
-                        NavigationLink(destination: StudentsListView()) {
+                        // 3. Students Overview Card (Full Width) - UPDATED INTERACTION
+                        // Now a button that opens a sheet instead of navigating to the full list view
+                        Button {
+                            isShowingQuickView = true
+                        } label: {
                             DashboardCard(title: "Students Overview", systemIcon: "person.3.fill", accentColor: .orange, content: {
                                 StudentsOverviewContent(progress: avgStudentProgress)
                             })
@@ -120,6 +126,10 @@ struct InstructorDashboardView: View {
                     Task { await fetchData() } // Refresh dashboard
                 })
             }
+            // --- NEW POPUP SHEET ---
+            .sheet(isPresented: $isShowingQuickView) {
+                StudentQuickOverviewSheet()
+            }
         }
     }
     
@@ -148,7 +158,223 @@ struct InstructorDashboardView: View {
     }
 }
 
-// MARK: - Sub-Views for Instructor Dashboard
+// MARK: - Redesigned Quick View Sheet
+
+struct StudentQuickOverviewSheet: View {
+    @EnvironmentObject var dataService: DataService
+    @EnvironmentObject var authManager: AuthManager
+    @Environment(\.dismiss) var dismiss
+    
+    @State private var onlineStudents: [Student] = []
+    @State private var offlineStudents: [OfflineStudent] = []
+    @State private var isLoading = true
+    @State private var searchText = "" // Added Search State
+    
+    // Computed properties for filtering
+    var filteredOnline: [Student] {
+        if searchText.isEmpty { return onlineStudents }
+        return onlineStudents.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+    
+    var filteredOffline: [OfflineStudent] {
+        if searchText.isEmpty { return offlineStudents }
+        return offlineStudents.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color(.systemGroupedBackground).ignoresSafeArea() // Light gray background
+                
+                VStack(spacing: 0) {
+                    
+                    // --- Search Bar ---
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.secondary)
+                        TextField("Search students...", text: $searchText)
+                        if !searchText.isEmpty {
+                            Button(action: { searchText = "" }) {
+                                Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .padding(10)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+                    .padding(.bottom, 10)
+                    
+                    if isLoading {
+                        Spacer()
+                        ProgressView("Loading Students...")
+                        Spacer()
+                    } else if filteredOnline.isEmpty && filteredOffline.isEmpty {
+                        Spacer()
+                        VStack(spacing: 10) {
+                            Image(systemName: "person.slash")
+                                .font(.largeTitle)
+                                .foregroundColor(.secondary)
+                            Text("No students found.")
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 16) {
+                                
+                                // Online Section
+                                if !filteredOnline.isEmpty {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("ONLINE STUDENTS")
+                                            .font(.caption).bold()
+                                            .foregroundColor(.secondary)
+                                            .padding(.leading, 4)
+                                        
+                                        ForEach(filteredOnline) { student in
+                                            NavigationLink(destination: StudentProfileView(student: student)) {
+                                                StudentCardRow(student: student, isOffline: false)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                    .padding(.horizontal)
+                                }
+                                
+                                // Offline Section
+                                if !filteredOffline.isEmpty {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("OFFLINE STUDENTS")
+                                            .font(.caption).bold()
+                                            .foregroundColor(.secondary)
+                                            .padding(.leading, 4)
+                                        
+                                        ForEach(filteredOffline) { offline in
+                                            let student = convertToStudent(offline)
+                                            NavigationLink(destination: StudentProfileView(student: student)) {
+                                                StudentCardRow(student: student, isOffline: true)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                    .padding(.horizontal)
+                                }
+                            }
+                            .padding(.top, 5)
+                            .padding(.bottom, 20)
+                        }
+                    }
+                }
+                .padding(.top, 10)
+            }
+            .navigationTitle("Your Students")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .bold()
+                }
+            }
+            .task {
+                await loadStudents()
+            }
+        }
+    }
+    
+    private func loadStudents() async {
+        guard let id = authManager.user?.id else { return }
+        isLoading = true
+        do {
+            async let online = dataService.fetchStudents(for: id)
+            async let offline = dataService.fetchOfflineStudents(for: id)
+            
+            self.onlineStudents = try await online
+            self.offlineStudents = try await offline
+        } catch {
+            print("Error loading students: \(error)")
+        }
+        isLoading = false
+    }
+    
+    private func convertToStudent(_ offline: OfflineStudent) -> Student {
+        return Student(
+            id: offline.id,
+            userID: offline.id ?? UUID().uuidString,
+            name: offline.name,
+            photoURL: nil,
+            email: offline.email ?? "",
+            drivingSchool: nil,
+            phone: offline.phone,
+            address: offline.address,
+            distance: nil,
+            coordinate: nil,
+            isOffline: true,
+            averageProgress: offline.progress ?? 0.0,
+            nextLessonTime: nil,
+            nextLessonTopic: nil
+        )
+    }
+}
+
+// MARK: - Professional Card Row
+
+struct StudentCardRow: View {
+    let student: Student
+    let isOffline: Bool
+    
+    var body: some View {
+        HStack(spacing: 15) {
+            // Avatar
+            AsyncImage(url: URL(string: student.photoURL ?? "")) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .foregroundColor(isOffline ? .gray : .primaryBlue)
+                }
+            }
+            .frame(width: 50, height: 50)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.secondary.opacity(0.1), lineWidth: 1))
+            
+            // Text Info
+            VStack(alignment: .leading, spacing: 4) {
+                Text(student.name)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(isOffline ? Color.gray : Color.accentGreen)
+                        .frame(width: 8, height: 8)
+                    
+                    Text(isOffline ? "Offline Student" : "Active Student")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            // Progress Ring
+            HStack(spacing: 12) {
+                CircularProgressView(progress: student.averageProgress, color: isOffline ? .gray : .primaryBlue, lineWidth: 4, size: 40)
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary.opacity(0.5))
+            }
+        }
+        .padding(16)
+        .background(Color(.secondarySystemGroupedBackground)) // White in light mode, dark gray in dark mode
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.03), radius: 5, x: 0, y: 2) // Subtle professional shadow
+    }
+}
+
+
+// MARK: - Sub-Views for Instructor Dashboard (Unchanged)
 
 struct NextLessonContent: View {
     let lesson: Lesson?
@@ -223,7 +449,7 @@ struct StudentsOverviewContent: View {
     }
 }
 
-// MARK: - Generic Card & Button Structures (Moved from previous steps into DashboardView)
+// MARK: - Generic Card & Button Structures
 
 struct DashboardCard<Content: View>: View {
     let title: String

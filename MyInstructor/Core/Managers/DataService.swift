@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/DataService.swift
-// --- UPDATED: Fixed 'AppAppUser' typo and added 'fetchInstructors' function ---
+// --- UPDATED: Properly fetches progress for Student List and Dashboard averages ---
 
 import Foundation
 import Combine
@@ -14,19 +14,16 @@ class DataService: ObservableObject {
     private var lessonsCollection: CollectionReference {
         db.collection("lessons")
     }
-    
-    // --- *** ADD THIS NEW COLLECTION REFERENCE *** ---
     private var offlineStudentsCollection: CollectionReference {
         db.collection("offline_students")
     }
     
-    init() {
-        // Initialization is now empty
-    }
+    init() {}
     
     // MARK: - Dashboard Data Fetching
     
     func fetchInstructorDashboardData(for instructorID: String) async throws -> (nextLesson: Lesson?, earnings: Double, avgProgress: Double) {
+        // 1. Fetch Next Lesson
         let lessonSnapshot = try await lessonsCollection
             .whereField("instructorID", isEqualTo: instructorID)
             .whereField("status", isEqualTo: LessonStatus.scheduled.rawValue)
@@ -37,8 +34,38 @@ class DataService: ObservableObject {
             
         let nextLesson = try? lessonSnapshot.documents.first?.data(as: Lesson.self)
         
-        // Placeholder return values
-        return (nextLesson, 0.0, 0.0)
+        // 2. Calculate Average Progress (Online + Offline)
+        var allProgressValues: [Double] = []
+        
+        // A. Online Students (from subcollection)
+        // Note: Requires the Firestore rule for 'student_records' to be set
+        let onlineRecordsSnapshot = try await usersCollection
+            .document(instructorID)
+            .collection("student_records")
+            .getDocuments()
+        
+        let onlineProgress = onlineRecordsSnapshot.documents.compactMap { doc -> Double? in
+            return try? doc.data(as: StudentRecord.self).progress
+        }
+        allProgressValues.append(contentsOf: onlineProgress)
+        
+        // B. Offline Students
+        let offlineStudentsSnapshot = try await offlineStudentsCollection
+            .whereField("instructorID", isEqualTo: instructorID)
+            .getDocuments()
+            
+        let offlineProgress = offlineStudentsSnapshot.documents.compactMap { doc -> Double? in
+            return try? doc.data(as: OfflineStudent.self).progress
+        }
+        allProgressValues.append(contentsOf: offlineProgress)
+        
+        // Calculate Average
+        let avgProgress = allProgressValues.isEmpty ? 0.0 : allProgressValues.reduce(0, +) / Double(allProgressValues.count)
+        
+        // 3. Earnings (Placeholder for now)
+        // In a real app, you'd fetch payments here
+        
+        return (nextLesson, 0.0, avgProgress)
     }
 
     func fetchStudentDashboardData(for studentID: String) async throws -> (upcomingLesson: Lesson?, progress: Double, latestFeedback: String, paymentDue: Bool) {
@@ -52,51 +79,67 @@ class DataService: ObservableObject {
             
         let upcomingLesson = try? lessonSnapshot.documents.first?.data(as: Lesson.self)
         
-        // Placeholder return values
+        // Note: Student dashboard progress usually comes from the instructor's record.
+        // Ideally, we need to know *which* instructor's progress to show if they have multiple.
+        // For simplicity, this returns 0.0 unless we pass an instructor ID or query differently.
+        
         return (upcomingLesson, 0.0, "", false)
     }
     
     // MARK: - User Management Fetching
     
     func fetchStudents(for instructorID: String) async throws -> [Student] {
+        // 1. Get Instructor Document to find linked Student IDs
         let instructorDoc = try await usersCollection.document(instructorID).getDocument()
-        guard let instructor = try? instructorDoc.data(as: AppUser.self) else {
-            print("Could not find instructor AppUser.")
-            return []
-        }
+        guard let instructor = try? instructorDoc.data(as: AppUser.self) else { return [] }
         
-        guard let studentIDs = instructor.studentIDs, !studentIDs.isEmpty else {
-            print("Instructor has no approved students.")
-            return []
-        }
+        guard let studentIDs = instructor.studentIDs, !studentIDs.isEmpty else { return [] }
         
+        // 2. Fetch User Profiles
         let studentQuery = try await usersCollection
             .whereField(FieldPath.documentID(), in: studentIDs)
             .getDocuments()
+        
+        // 3. Fetch Progress Records (to map mastery %)
+        // We fetch the entire subcollection once to avoid N+1 queries
+        let recordsQuery = try await usersCollection
+            .document(instructorID)
+            .collection("student_records")
+            .getDocuments()
             
+        // Create a dictionary [StudentID: Progress]
+        var progressMap: [String: Double] = [:]
+        for doc in recordsQuery.documents {
+            if let record = try? doc.data(as: StudentRecord.self), let id = record.id {
+                progressMap[id] = record.progress ?? 0.0
+            }
+        }
+            
+        // 4. Merge Data
         let students = studentQuery.documents.compactMap { document -> Student? in
             guard let appUser = try? document.data(as: AppUser.self) else { return nil }
+            let uid = appUser.id ?? ""
             
             return Student(
-                id: appUser.id,
-                userID: appUser.id ?? "unknown_user_id",
+                id: uid,
+                userID: uid,
                 name: appUser.name ?? "Student",
                 photoURL: appUser.photoURL,
                 email: appUser.email,
-                drivingSchool: appUser.drivingSchool
+                drivingSchool: appUser.drivingSchool,
+                phone: appUser.phone,
+                address: appUser.address,
+                averageProgress: progressMap[uid] ?? 0.0 // Inject progress from map
             )
         }
         
         return students
     }
     
-    // --- *** ADD THIS NEW FUNCTION *** ---
-    
-    /// Fetches all offline student records created by a specific instructor.
     func fetchOfflineStudents(for instructorID: String) async throws -> [OfflineStudent] {
         let snapshot = try await offlineStudentsCollection
             .whereField("instructorID", isEqualTo: instructorID)
-            .order(by: "name") // Sort them alphabetically
+            .order(by: "name")
             .getDocuments()
             
         let students = snapshot.documents.compactMap { document -> OfflineStudent? in
@@ -104,43 +147,25 @@ class DataService: ObservableObject {
         }
         return students
     }
-    // --- *** END OF NEW FUNCTION *** ---
     
     func fetchUser(withId userID: String) async throws -> AppUser? {
         let doc = try await usersCollection.document(userID).getDocument()
         return try doc.data(as: AppUser.self)
     }
     
-    // --- *** THIS IS THE NEW FUNCTION *** ---
-    // Fetches all the instructors a student is approved by
     func fetchInstructors(for studentID: String) async throws -> [AppUser] {
-        // 1. Fetch the student's AppUser document
         let studentDoc = try await usersCollection.document(studentID).getDocument()
-        guard let student = try? studentDoc.data(as: AppUser.self) else {
-            print("Could not find student AppUser.")
-            return []
-        }
+        guard let student = try? studentDoc.data(as: AppUser.self) else { return [] }
+        guard let instructorIDs = student.instructorIDs, !instructorIDs.isEmpty else { return [] }
         
-        // 2. Get the array of approved instructor IDs
-        // We look for 'instructorIDs' which is on the AppUser model
-        guard let instructorIDs = student.instructorIDs, !instructorIDs.isEmpty else {
-            print("Student has no approved instructors.")
-            return []
-        }
-        
-        // 3. Fetch all user documents where the ID is in our instructorIDs array
         let instructorQuery = try await usersCollection
             .whereField(FieldPath.documentID(), in: instructorIDs)
             .getDocuments()
             
-        // 4. Map the documents to AppUser objects
-        // --- *** THIS IS THE TYPO FIX *** ---
         return instructorQuery.documents.compactMap { doc in
-            try? doc.data(as: AppUser.self) // Was AppAppUser
+            try? doc.data(as: AppUser.self)
         }
-        // --- *** END OF FIX *** ---
     }
-    // --- *** END OF NEW FUNCTION *** ---
     
     func getStudentName(for studentID: String) -> String {
         return "Unknown Student"

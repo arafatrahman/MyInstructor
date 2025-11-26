@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/InstructorCalendarView.swift
-// --- UPDATED: Modern "Timeline" design grouped by day with enhanced visual cards ---
+// --- UPDATED: Added Status Badge (Finish, Pending, Up Next) below duration ---
 
 import SwiftUI
 
@@ -111,8 +111,8 @@ struct InstructorCalendarView: View {
         
         do {
             let fetchedLessons = try await lessonManager.fetchLessons(for: instructorID, start: start, end: end)
-            // Filter out cancelled lessons if you only want to see active ones
-            self.lessons = fetchedLessons.filter { $0.status != .cancelled }
+            // We show all lessons (including completed/cancelled) so history is visible
+            self.lessons = fetchedLessons
         } catch {
             print("Error fetching lessons: \(error)")
         }
@@ -225,17 +225,46 @@ struct ModernLessonCard: View {
     @EnvironmentObject var dataService: DataService
     let lesson: Lesson
     
-    // Helper to get student name from ID (Assuming DataService handles this caching or simple lookup)
+    // Helper to get student name
     @State private var studentName: String = "Loading..."
+    
+    // --- Logic for Status Display ---
+    private var statusConfig: (text: String, color: Color) {
+        switch lesson.status {
+        case .completed:
+            return ("Finished", .accentGreen)
+        case .cancelled:
+            return ("Cancelled", .warningRed)
+        case .scheduled:
+            let now = Date()
+            // End time = Start + Duration (default 1h if nil)
+            let endTime = lesson.startTime.addingTimeInterval(lesson.duration ?? 3600)
+            
+            if endTime < now {
+                // Scheduled time has passed but not marked completed
+                return ("Pending", .orange)
+            } else if lesson.startTime <= now && endTime >= now {
+                // Currently within the lesson time
+                return ("Active", .primaryBlue)
+            } else if lesson.startTime > now && lesson.startTime.timeIntervalSince(now) < 3600 {
+                // Starts within the next hour
+                return ("Up Next", .primaryBlue)
+            } else {
+                // Future
+                return ("Booked", .secondary)
+            }
+        }
+    }
     
     var body: some View {
         NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
             HStack(alignment: .top, spacing: 0) {
                 // Left: Time Strip
-                VStack(alignment: .center, spacing: 4) {
+                VStack(alignment: .center, spacing: 6) {
                     Text(lesson.startTime, style: .time)
                         .font(.subheadline).bold()
                         .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
                     
                     // Duration pill
                     Text(lesson.duration?.formattedDuration() ?? "1h")
@@ -245,8 +274,19 @@ struct ModernLessonCard: View {
                         .background(Color.secondaryGray)
                         .foregroundColor(.secondary)
                         .cornerRadius(4)
+                    
+                    // --- STATUS BADGE ---
+                    Text(statusConfig.text)
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(statusConfig.color.opacity(0.15))
+                        .foregroundColor(statusConfig.color)
+                        .cornerRadius(4)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false) // Prevent truncation if possible
                 }
-                .frame(width: 70)
+                .frame(width: 75) // Slightly wider to fit status
                 .padding(.vertical, 16)
                 
                 // Vertical Divider
@@ -293,20 +333,17 @@ struct ModernLessonCard: View {
                 Image(systemName: "chevron.right")
                     .foregroundColor(.secondary.opacity(0.3))
                     .padding(.trailing, 16)
-                    .padding(.top, 35) // Vertically center roughly
+                    .padding(.top, 40)
             }
             .background(Color(.secondarySystemGroupedBackground)) // Card background
             .cornerRadius(12)
             .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
         }
-        .buttonStyle(.plain) // Removes default button blue styling
+        .buttonStyle(.plain)
         .task {
-            // Fetch student name
             if let user = try? await dataService.fetchUser(withId: lesson.studentID) {
                 self.studentName = user.name ?? "Unknown Student"
             } else {
-                // If it's an offline student, we might need a different fetch or logic
-                // For now, fallback to the ID or a placeholder
                 self.studentName = "Student"
             }
         }

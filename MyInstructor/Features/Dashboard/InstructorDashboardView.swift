@@ -1,5 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
 // --- UPDATED: Includes Service Book and My Vehicles features ---
+// --- UPDATED: Next Lesson and Weekly Earnings cards have equal height ---
 
 import SwiftUI
 
@@ -45,27 +46,30 @@ struct InstructorDashboardView: View {
                             .padding(.top, 50)
                             .frame(maxWidth: .infinity)
                     } else {
-                        // MARK: - Main Cards
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
+                        // MARK: - Main Cards (Equal Height)
+                        HStack(spacing: 15) {
                             
                             // 1. Next Lesson
                             if let lesson = nextLesson {
                                 NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
-                                    DashboardCard(title: "Next Lesson", systemIcon: "calendar.badge.clock", accentColor: .primaryBlue, content: {
+                                    DashboardCard(title: "Next Lesson", systemIcon: "calendar.badge.clock", accentColor: .primaryBlue, fixedHeight: 150, content: {
                                         NextLessonContent(lesson: lesson)
                                     })
                                 }
                                 .buttonStyle(.plain)
+                                .frame(maxWidth: .infinity) // Ensure Link fills space
                             } else {
-                                DashboardCard(title: "Next Lesson", systemIcon: "calendar.badge.clock", accentColor: .primaryBlue, content: {
+                                DashboardCard(title: "Next Lesson", systemIcon: "calendar.badge.clock", accentColor: .primaryBlue, fixedHeight: 150, content: {
                                     NextLessonContent(lesson: nextLesson)
                                 })
+                                .frame(maxWidth: .infinity)
                             }
                             
                             // 2. Earnings
-                            DashboardCard(title: "Weekly Earnings", systemIcon: "dollarsign.circle.fill", accentColor: .accentGreen, content: {
+                            DashboardCard(title: "Weekly Earnings", systemIcon: "dollarsign.circle.fill", accentColor: .accentGreen, fixedHeight: 150, content: {
                                 EarningsSummaryContent(earnings: weeklyEarnings)
                             })
+                            .frame(maxWidth: .infinity)
                         }
                         .padding(.horizontal)
 
@@ -275,5 +279,31 @@ struct StudentCardRow: View {
 struct NextLessonContent: View { let lesson: Lesson?; var body: some View { VStack(alignment: .leading, spacing: 8) { if let l = lesson { Text(l.topic).font(.subheadline).bold().lineLimit(1); HStack { Image(systemName: "clock"); Text("\(l.startTime, style: .time)") }.font(.callout).foregroundColor(.textLight); HStack { Image(systemName: "map.pin.circle.fill"); Text("Pickup: \(l.pickupLocation)").lineLimit(1) }.font(.callout).foregroundColor(.textLight) } else { Text("No Upcoming Lessons").font(.subheadline).bold().foregroundColor(.textLight) } } } }
 struct EarningsSummaryContent: View { let earnings: Double; var body: some View { VStack(alignment: .leading, spacing: 4) { Text("£\(earnings, specifier: "%.2f")").font(.title2).bold().foregroundColor(.accentGreen); Text("This Week").font(.subheadline).foregroundColor(.textLight); Rectangle().fill(Color.accentGreen.opacity(0.3)).frame(height: 10).cornerRadius(5) } } }
 struct StudentsOverviewContent: View { let progress: Double; var body: some View { HStack { CircularProgressView(progress: progress, color: .orange, size: 60).padding(.trailing, 10); VStack(alignment: .leading) { Text("Average Student Progress").font(.subheadline).foregroundColor(.textLight); Text("\(Int(progress * 100))% Mastery").font(.headline) }; Spacer(); Image(systemName: "chevron.right").foregroundColor(.textLight) } } }
-struct DashboardCard<Content: View>: View { let title: String; let systemIcon: String; var accentColor: Color = .primaryBlue; @ViewBuilder let content: Content; var body: some View { VStack(alignment: .leading, spacing: 10) { HStack { Label(title, systemImage: systemIcon).font(.subheadline).bold().foregroundColor(accentColor); Spacer() }; Divider().opacity(0.5); content.frame(maxWidth: .infinity, alignment: .leading) }.padding(15).background(Color(.systemBackground)).cornerRadius(15).shadow(color: Color.textDark.opacity(0.05), radius: 8, x: 0, y: 4) } }
+
+// --- UPDATED DashboardCard with fixedHeight support ---
+struct DashboardCard<Content: View>: View {
+    let title: String
+    let systemIcon: String
+    var accentColor: Color = .primaryBlue
+    var fixedHeight: CGFloat? = nil // Optional fixed height
+    @ViewBuilder let content: Content
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(title, systemImage: systemIcon).font(.subheadline).bold().foregroundColor(accentColor);
+                Spacer()
+            };
+            Divider().opacity(0.5);
+            content.frame(maxWidth: .infinity, alignment: .leading)
+            if fixedHeight != nil { Spacer(minLength: 0) } // Push content up if height is fixed
+        }
+        .padding(15)
+        .frame(height: fixedHeight) // Apply fixed height if set
+        .background(Color(.systemBackground))
+        .cornerRadius(15)
+        .shadow(color: Color.textDark.opacity(0.05), radius: 8, x: 0, y: 4)
+    }
+}
+
 struct QuickActionButton: View { let title: String; let icon: String; let color: Color; let action: () -> Void; var body: some View { Button(action: action) { VStack(spacing: 5) { Image(systemName: icon).font(.title2); Text(title).font(.caption).bold().lineLimit(1) }.frame(maxWidth: .infinity).padding(.vertical, 15).background(color.opacity(0.15)).foregroundColor(color).cornerRadius(12) } } }

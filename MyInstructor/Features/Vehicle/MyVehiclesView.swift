@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Vehicle/MyVehiclesView.swift
-// --- UPDATED: Added "Upcoming MOT & Insurance" cards to the top ---
+// --- UPDATED: Redesigned MOT & Insurance Cards for a professional look ---
 
 import SwiftUI
 import PhotosUI
@@ -189,7 +189,7 @@ struct MyVehiclesView: View {
     }
 }
 
-// MARK: - New Card Components
+// MARK: - Redesigned Professional Cards
 
 struct ExpiryCard: View {
     let type: String
@@ -197,56 +197,103 @@ struct ExpiryCard: View {
     let date: Date
     let icon: String
     
+    // Calculate days left
     var daysRemaining: Int {
         Calendar.current.dateComponents([.day], from: Date(), to: date).day ?? 0
     }
     
-    var urgencyColor: Color {
-        if daysRemaining < 0 { return .warningRed } // Expired
-        if daysRemaining < 30 { return .orange }    // Due soon
-        return .accentGreen                         // Safe
+    // Dynamic Professional Gradients
+    var backgroundStyle: LinearGradient {
+        if daysRemaining < 0 {
+            // Expired: Professional Deep Red
+            return LinearGradient(
+                colors: [Color(red: 0.85, green: 0.25, blue: 0.25), Color(red: 0.6, green: 0.1, blue: 0.1)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        } else if daysRemaining < 30 {
+            // Due Soon: Vibrant Warning Orange
+            return LinearGradient(
+                colors: [Color(red: 1.0, green: 0.6, blue: 0.2), Color(red: 0.8, green: 0.35, blue: 0.05)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        } else {
+            // Safe: Calming Teal/Green
+            return LinearGradient(
+                colors: [Color(red: 0.2, green: 0.75, blue: 0.55), Color(red: 0.1, green: 0.55, blue: 0.4)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
     }
     
     var statusText: String {
-        if daysRemaining < 0 { return "Expired" }
-        if daysRemaining == 0 { return "Due Today" }
-        return "In \(daysRemaining) days"
+        if daysRemaining < 0 { return "EXPIRED" }
+        if daysRemaining == 0 { return "DUE TODAY" }
+        return "\(daysRemaining) DAYS LEFT"
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundColor(urgencyColor)
-                Text(type)
-                    .font(.caption).bold()
-                    .foregroundColor(.secondary)
+        ZStack(alignment: .bottomLeading) {
+            // 1. Dynamic Background
+            backgroundStyle
+            
+            // 2. Decorative Watermark Icon (Large & Faded)
+            VStack {
+                HStack {
+                    Spacer()
+                    Image(systemName: icon)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 80, height: 80)
+                        .foregroundColor(.white.opacity(0.15)) // Subtle watermark effect
+                        .offset(x: 20, y: -10) // Clip it slightly off-screen
+                        .clipped()
+                }
                 Spacer()
             }
             
-            Text(date.formatted(date: .abbreviated, time: .omitted))
-                .font(.headline)
-            
-            Text(vehicleName)
-                .font(.caption)
-                .lineLimit(1)
-                .foregroundColor(.secondary)
-            
-            Spacer()
-            
-            Text(statusText)
-                .font(.caption).bold()
+            // 3. Information Content
+            VStack(alignment: .leading, spacing: 6) {
+                // Header: Icon + Type (e.g. "MOT")
+                HStack(spacing: 6) {
+                    Image(systemName: icon)
+                        .font(.caption.bold())
+                    Text(type.uppercased())
+                        .font(.caption.bold())
+                }
+                .foregroundColor(.white.opacity(0.95))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(urgencyColor.opacity(0.15))
-                .foregroundColor(urgencyColor)
-                .cornerRadius(4)
+                .background(.ultraThinMaterial.opacity(0.3)) // Frosted glass pill
+                .cornerRadius(8)
+                
+                Spacer()
+                
+                // Status (Big Impact Text)
+                Text(statusText)
+                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
+                
+                // Date
+                Text(date.formatted(date: .long, time: .omitted))
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white.opacity(0.9))
+                
+                // Vehicle Name (Context)
+                Text(vehicleName)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.8))
+                    .lineLimit(1)
+            }
+            .padding(16)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: 120) // Fixed height for uniformity
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+        .frame(maxWidth: .infinity, maxHeight: 140) // Increased height for better presence
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
     }
 }
 
@@ -255,26 +302,37 @@ struct ExpiryCardPlaceholder: View {
     let icon: String
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundColor(.secondary)
-                Text(type)
-                    .font(.caption).bold()
-                    .foregroundColor(.secondary)
-                Spacer()
+        ZStack {
+            // Neutral Background
+            Color(.secondarySystemGroupedBackground)
+            
+            VStack(spacing: 12) {
+                // Centered Icon Circle
+                Circle()
+                    .fill(Color.secondary.opacity(0.1))
+                    .frame(width: 50, height: 50)
+                    .overlay(
+                        Image(systemName: icon)
+                            .font(.title2)
+                            .foregroundColor(.secondary)
+                    )
+                
+                VStack(spacing: 4) {
+                    Text(type)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Text("No Data")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
-            Spacer()
-            Text("No Data")
-                .font(.subheadline)
-                .foregroundColor(.textLight)
-            Spacer()
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: 120)
-        .background(Color(.systemBackground).opacity(0.5))
-        .cornerRadius(12)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.1), style: StrokeStyle(lineWidth: 1, dash: [5])))
+        .frame(maxWidth: .infinity, maxHeight: 140)
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.secondary.opacity(0.1), style: StrokeStyle(lineWidth: 1, dash: [5]))
+        )
     }
 }
 
@@ -303,7 +361,7 @@ struct ExpiryBadge: View {
     }
 }
 
-// MARK: - Add/Edit Form with Photos (UNCHANGED from previous, but included for completeness)
+// MARK: - Add/Edit Form with Photos
 struct AddVehicleFormView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var vehicleManager: VehicleManager

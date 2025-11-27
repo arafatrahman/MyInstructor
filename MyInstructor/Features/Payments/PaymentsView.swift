@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Payments/PaymentsView.swift
-// --- UPDATED: Pending items are clickable (View Only) ---
+// --- UPDATED: Added Back button to upper left corner ---
 
 import SwiftUI
 
@@ -39,6 +39,9 @@ struct PaymentsView: View {
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var dataService: DataService
     @EnvironmentObject var authManager: AuthManager
+    
+    // --- NEW: Dismiss environment for Back button ---
+    @Environment(\.dismiss) var dismiss
     
     @State private var payments: [Payment] = []
     @State private var upcomingLessons: [Lesson] = []
@@ -273,6 +276,16 @@ struct PaymentsView: View {
             .navigationTitle("Track Income")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // --- NEW: Back Button ---
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                    }
+                }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         isAddPaymentModalPresented = true

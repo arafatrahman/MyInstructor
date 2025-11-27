@@ -1,9 +1,14 @@
 // File: MyInstructor/Features/Expenses/ExpensesView.swift
+// --- UPDATED: Added Back button to upper left corner ---
+
 import SwiftUI
 
 struct ExpensesView: View {
     @EnvironmentObject var expenseManager: ExpenseManager
     @EnvironmentObject var authManager: AuthManager
+    
+    // --- NEW: Dismiss environment for Back button ---
+    @Environment(\.dismiss) var dismiss
     
     @State private var expenses: [Expense] = []
     @State private var timeFilter: TimeFilter = .monthly // Reusing TimeFilter from PaymentsView
@@ -121,6 +126,16 @@ struct ExpensesView: View {
             .navigationTitle("Track Expenses")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // --- NEW: Back Button ---
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                    }
+                }
+                
                 ToolbarItem(placement: .primaryAction) {
                     Button { isAddSheetPresented = true } label: {
                         Image(systemName: "plus").font(.headline.bold())

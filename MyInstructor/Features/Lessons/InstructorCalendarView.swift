@@ -1,23 +1,40 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/InstructorCalendarView.swift
-// --- UPDATED: Added Status Badge (Finish, Pending, Up Next) below duration ---
+// --- UPDATED: Service cards are now tappable and editable ---
 
 import SwiftUI
+
+// Wrapper to handle different event types in the same list
+enum CalendarItemType {
+    case lesson(Lesson)
+    case service(ServiceRecord)
+}
+
+struct CalendarItem: Identifiable {
+    let id: String
+    let date: Date
+    let type: CalendarItemType
+}
 
 // Flow Item 7: Instructor Calendar View
 struct InstructorCalendarView: View {
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var dataService: DataService
     @EnvironmentObject var authManager: AuthManager
+    @EnvironmentObject var vehicleManager: VehicleManager
     
     @State private var selectedDate: Date = Date()
-    @State private var lessons: [Lesson] = []
+    @State private var calendarItems: [CalendarItem] = []
+    
     @State private var isAddLessonSheetPresented = false
+    // --- NEW: State for editing service record ---
+    @State private var serviceToEdit: ServiceRecord? = nil
+    
     @State private var isLoading = false
     
-    // Computed property: Group lessons by the start of the day
-    private var lessonsByDay: [(Date, [Lesson])] {
-        let grouped = Dictionary(grouping: lessons) { lesson in
-            Calendar.current.startOfDay(for: lesson.startTime)
+    // Computed property: Group items by the start of the day
+    private var itemsByDay: [(Date, [CalendarItem])] {
+        let grouped = Dictionary(grouping: calendarItems) { item in
+            Calendar.current.startOfDay(for: item.date)
         }
         return grouped.sorted { $0.key < $1.key }
     }
@@ -30,7 +47,7 @@ struct InstructorCalendarView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                Color(.systemGroupedBackground) // Modern background color
+                Color(.systemGroupedBackground)
                     .ignoresSafeArea()
                 
                 VStack(spacing: 0) {
@@ -38,16 +55,16 @@ struct InstructorCalendarView: View {
                     ModernWeekHeader(selectedDate: $selectedDate)
                         .background(Color(.systemBackground))
                         .shadow(color: Color.black.opacity(0.05), radius: 5, y: 5)
-                        .zIndex(1) // Keep header on top
+                        .zIndex(1)
                     
                     if isLoading {
                         Spacer()
                         ProgressView("Loading Schedule...")
                         Spacer()
-                    } else if lessons.isEmpty {
+                    } else if calendarItems.isEmpty {
                         EmptyStateView(
                             icon: "calendar.badge.plus",
-                            message: "No lessons scheduled for this week.",
+                            message: "No lessons or services scheduled for this week.",
                             actionTitle: "Add Lesson",
                             action: { isAddLessonSheetPresented = true }
                         )
@@ -55,8 +72,15 @@ struct InstructorCalendarView: View {
                         // MARK: - Timeline Scroll View
                         ScrollView {
                             LazyVStack(spacing: 20) {
-                                ForEach(lessonsByDay, id: \.0) { (date, dailyLessons) in
-                                    DaySectionView(date: date, lessons: dailyLessons)
+                                ForEach(itemsByDay, id: \.0) { (date, dailyItems) in
+                                    DaySectionView(
+                                        date: date,
+                                        items: dailyItems,
+                                        onSelectService: { service in
+                                            // Trigger edit sheet
+                                            self.serviceToEdit = service
+                                        }
+                                    )
                                 }
                             }
                             .padding(.vertical, 20)
@@ -68,7 +92,6 @@ struct InstructorCalendarView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    // "Today" Button to jump back
                     Button("Today") {
                         withAnimation {
                             selectedDate = Date()
@@ -89,20 +112,28 @@ struct InstructorCalendarView: View {
                 }
             }
             .onAppear {
-                Task { await fetchLessons() }
+                Task { await fetchCalendarData() }
             }
             .onChange(of: selectedDate) { _, _ in
-                Task { await fetchLessons() }
+                Task { await fetchCalendarData() }
             }
+            // Sheet for Adding Lessons
             .sheet(isPresented: $isAddLessonSheetPresented) {
                 AddLessonFormView(onLessonAdded: { _ in
-                    Task { await fetchLessons() }
+                    Task { await fetchCalendarData() }
+                })
+            }
+            // --- NEW: Sheet for Editing Service ---
+            .sheet(item: $serviceToEdit) { service in
+                AddServiceRecordView(recordToEdit: service, onSave: {
+                    serviceToEdit = nil
+                    Task { await fetchCalendarData() }
                 })
             }
         }
     }
     
-    private func fetchLessons() async {
+    private func fetchCalendarData() async {
         guard let instructorID = authManager.user?.id else { return }
         
         isLoading = true
@@ -110,11 +141,22 @@ struct InstructorCalendarView: View {
         let end = Calendar.current.date(byAdding: .day, value: 7, to: start) ?? Date()
         
         do {
+            // 1. Fetch Lessons
             let fetchedLessons = try await lessonManager.fetchLessons(for: instructorID, start: start, end: end)
-            // We show all lessons (including completed/cancelled) so history is visible
-            self.lessons = fetchedLessons
+            let lessonItems = fetchedLessons.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.startTime, type: .lesson($0)) }
+            
+            // 2. Fetch Service Records
+            let allServices = try await vehicleManager.fetchServiceRecords(for: instructorID)
+            let filteredServices = allServices.filter { record in
+                return record.date >= start && record.date < end
+            }
+            let serviceItems = filteredServices.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.date, type: .service($0)) }
+            
+            // 3. Merge and Sort
+            self.calendarItems = (lessonItems + serviceItems).sorted(by: { $0.date < $1.date })
+            
         } catch {
-            print("Error fetching lessons: \(error)")
+            print("Error fetching calendar data: \(error)")
         }
         isLoading = false
     }
@@ -122,7 +164,6 @@ struct InstructorCalendarView: View {
 
 // MARK: - Subviews
 
-// 1. Header Component
 struct ModernWeekHeader: View {
     @Binding var selectedDate: Date
     private let calendar = Calendar.current
@@ -176,10 +217,10 @@ struct ModernWeekHeader: View {
     }
 }
 
-// 2. Day Section (Groups lessons by date)
 struct DaySectionView: View {
     let date: Date
-    let lessons: [Lesson]
+    let items: [CalendarItem]
+    let onSelectService: (ServiceRecord) -> Void // Callback for service selection
     
     var isToday: Bool {
         Calendar.current.isDateInToday(date)
@@ -211,133 +252,133 @@ struct DaySectionView: View {
             }
             .padding(.horizontal)
             
-            // Lessons
-            ForEach(lessons.sorted(by: { $0.startTime < $1.startTime })) { lesson in
-                ModernLessonCard(lesson: lesson)
+            // Items List
+            ForEach(items) { item in
+                switch item.type {
+                case .lesson(let lesson):
+                    ModernLessonCard(lesson: lesson)
+                        .padding(.horizontal)
+                case .service(let service):
+                    // Wrap Service Card in Button
+                    Button {
+                        onSelectService(service)
+                    } label: {
+                        ServiceEventCard(service: service)
+                    }
+                    .buttonStyle(.plain)
                     .padding(.horizontal)
+                }
             }
         }
     }
 }
 
-// 3. The Modern Card
+struct ServiceEventCard: View {
+    let service: ServiceRecord
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            // Left: Icon Strip
+            VStack(alignment: .center, spacing: 6) {
+                Image(systemName: "wrench.and.screwdriver.fill")
+                    .font(.title2)
+                    .foregroundColor(.gray)
+                
+                Text("Service")
+                    .font(.system(size: 10, weight: .bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.gray.opacity(0.15))
+                    .foregroundColor(.gray)
+                    .cornerRadius(4)
+            }
+            .frame(width: 75)
+            .padding(.vertical, 16)
+            
+            // Vertical Divider
+            Rectangle()
+                .fill(Color.secondaryGray)
+                .frame(width: 1)
+                .padding(.vertical, 10)
+            
+            // Right: Content
+            VStack(alignment: .leading, spacing: 6) {
+                Text(service.serviceType)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Text(service.garageName)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                if let nextDate = service.nextServiceDate {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar.badge.clock")
+                        Text("Next due: \(nextDate.formatted(date: .abbreviated, time: .omitted))")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                }
+            }
+            .padding(16)
+            
+            Spacer()
+            
+            // Chevron to indicate tap-ability
+            Image(systemName: "chevron.right")
+                .foregroundColor(.secondary.opacity(0.3))
+                .padding(.trailing, 16)
+                .padding(.top, 40)
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+    }
+}
+
 struct ModernLessonCard: View {
     @EnvironmentObject var dataService: DataService
     let lesson: Lesson
     
-    // Helper to get student name
     @State private var studentName: String = "Loading..."
     
-    // --- Logic for Status Display ---
     private var statusConfig: (text: String, color: Color) {
         switch lesson.status {
-        case .completed:
-            return ("Finished", .accentGreen)
-        case .cancelled:
-            return ("Cancelled", .warningRed)
+        case .completed: return ("Finished", .accentGreen)
+        case .cancelled: return ("Cancelled", .warningRed)
         case .scheduled:
             let now = Date()
-            // End time = Start + Duration (default 1h if nil)
             let endTime = lesson.startTime.addingTimeInterval(lesson.duration ?? 3600)
-            
-            if endTime < now {
-                // Scheduled time has passed but not marked completed
-                return ("Pending", .orange)
-            } else if lesson.startTime <= now && endTime >= now {
-                // Currently within the lesson time
-                return ("Active", .primaryBlue)
-            } else if lesson.startTime > now && lesson.startTime.timeIntervalSince(now) < 3600 {
-                // Starts within the next hour
-                return ("Up Next", .primaryBlue)
-            } else {
-                // Future
-                return ("Booked", .secondary)
-            }
+            if endTime < now { return ("Pending", .orange) }
+            else if lesson.startTime <= now && endTime >= now { return ("Active", .primaryBlue) }
+            else if lesson.startTime > now && lesson.startTime.timeIntervalSince(now) < 3600 { return ("Up Next", .primaryBlue) }
+            else { return ("Booked", .secondary) }
         }
     }
     
     var body: some View {
         NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
             HStack(alignment: .top, spacing: 0) {
-                // Left: Time Strip
                 VStack(alignment: .center, spacing: 6) {
-                    Text(lesson.startTime, style: .time)
-                        .font(.subheadline).bold()
-                        .foregroundColor(.primary)
-                        .multilineTextAlignment(.center)
-                    
-                    // Duration pill
-                    Text(lesson.duration?.formattedDuration() ?? "1h")
-                        .font(.caption2).bold()
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondaryGray)
-                        .foregroundColor(.secondary)
-                        .cornerRadius(4)
-                    
-                    // --- STATUS BADGE ---
-                    Text(statusConfig.text)
-                        .font(.system(size: 9, weight: .bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(statusConfig.color.opacity(0.15))
-                        .foregroundColor(statusConfig.color)
-                        .cornerRadius(4)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false) // Prevent truncation if possible
+                    Text(lesson.startTime, style: .time).font(.subheadline).bold().foregroundColor(.primary).multilineTextAlignment(.center)
+                    Text(lesson.duration?.formattedDuration() ?? "1h").font(.caption2).bold().padding(.horizontal, 6).padding(.vertical, 2).background(Color.secondaryGray).foregroundColor(.secondary).cornerRadius(4)
+                    Text(statusConfig.text).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 3).background(statusConfig.color.opacity(0.15)).foregroundColor(statusConfig.color).cornerRadius(4).lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 }
-                .frame(width: 75) // Slightly wider to fit status
-                .padding(.vertical, 16)
+                .frame(width: 75).padding(.vertical, 16)
                 
-                // Vertical Divider
-                Rectangle()
-                    .fill(Color.secondaryGray)
-                    .frame(width: 1)
-                    .padding(.vertical, 10)
+                Rectangle().fill(Color.secondaryGray).frame(width: 1).padding(.vertical, 10)
                 
-                // Right: Content
                 VStack(alignment: .leading, spacing: 6) {
-                    // Topic
-                    Text(lesson.topic)
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    
-                    // Student Name
-                    HStack(spacing: 6) {
-                        Image(systemName: "person.fill")
-                            .font(.caption)
-                            .foregroundColor(.primaryBlue)
-                        Text(studentName)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                    
-                    // Location
-                    HStack(spacing: 6) {
-                        Image(systemName: "mappin.and.ellipse")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                        Text(lesson.pickupLocation)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                .padding(16)
+                    Text(lesson.topic).font(.headline).foregroundColor(.primary).lineLimit(1)
+                    HStack(spacing: 6) { Image(systemName: "person.fill").font(.caption).foregroundColor(.primaryBlue); Text(studentName).font(.subheadline).foregroundColor(.secondary).lineLimit(1) }
+                    HStack(spacing: 6) { Image(systemName: "mappin.and.ellipse").font(.caption).foregroundColor(.orange); Text(lesson.pickupLocation).font(.caption).foregroundColor(.secondary).lineLimit(1) }
+                }.padding(16)
                 
                 Spacer()
                 
-                // Chevron
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.secondary.opacity(0.3))
-                    .padding(.trailing, 16)
-                    .padding(.top, 40)
+                Image(systemName: "chevron.right").foregroundColor(.secondary.opacity(0.3)).padding(.trailing, 16).padding(.top, 40)
             }
-            .background(Color(.secondarySystemGroupedBackground)) // Card background
-            .cornerRadius(12)
-            .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+            .background(Color(.secondarySystemGroupedBackground)).cornerRadius(12).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
         }
         .buttonStyle(.plain)
         .task {

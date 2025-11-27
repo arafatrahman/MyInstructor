@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Payments/AddPaymentFormView.swift
-// --- UPDATED: Added isReadOnly mode ---
+// --- UPDATED: Moved Save button to the top right toolbar ---
 
 import SwiftUI
 
@@ -69,28 +69,10 @@ struct AddPaymentFormView: View {
                     }
                 }
                 
-                // MARK: - Actions (Hide in Read Only)
-                if !isReadOnly {
+                // Show Error Message
+                if let error = errorMessage {
                     Section {
-                        if let error = errorMessage {
-                            Text(error).foregroundColor(.warningRed)
-                        }
-                        
-                        Button {
-                            savePayment()
-                        } label: {
-                            HStack {
-                                if isLoading {
-                                    ProgressView().tint(.white)
-                                } else {
-                                    Text(isEditing ? "Save Changes" : "Record Payment")
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.primaryDrivingApp)
-                        .disabled(!isFormValid || isLoading)
-                        .listRowBackground(Color.clear)
+                        Text(error).foregroundColor(.warningRed)
                     }
                 }
             }
@@ -98,8 +80,20 @@ struct AddPaymentFormView: View {
             .navigationTitle(isReadOnly ? "Payment Details" : (isEditing ? "Edit Payment" : "Record New Payment"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                // Cancel/Close Button
+                ToolbarItem(placement: .cancellationAction) {
                     Button(isReadOnly ? "Close" : "Cancel") { dismiss() }
+                }
+                
+                // Save Button (Only if not read-only)
+                if !isReadOnly {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            savePayment()
+                        }
+                        .bold()
+                        .disabled(!isFormValid || isLoading)
+                    }
                 }
             }
             .task {

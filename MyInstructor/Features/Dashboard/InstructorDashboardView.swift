@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: Fixed button responsiveness using unified Sheet management ---
+// --- UPDATED: Includes Service Book and My Vehicles features ---
 
 import SwiftUI
 
@@ -11,6 +11,8 @@ enum DashboardSheet: Identifiable {
     case quickOverview
     case trackIncome
     case trackExpense
+    case serviceBook  // New
+    case myVehicles   // New
     
     var id: Int { self.hashValue }
 }
@@ -105,6 +107,16 @@ struct InstructorDashboardView: View {
                                 QuickActionButton(title: "Track Expense", icon: "chart.line.downtrend.xyaxis", color: .warningRed, action: {
                                     activeSheet = .trackExpense
                                 })
+                                
+                                // --- Service Book Action ---
+                                QuickActionButton(title: "Service Book", icon: "wrench.and.screwdriver.fill", color: .gray, action: {
+                                    activeSheet = .serviceBook
+                                })
+                                
+                                // --- My Vehicles Action ---
+                                QuickActionButton(title: "My Vehicles", icon: "car.circle.fill", color: .primaryBlue, action: {
+                                    activeSheet = .myVehicles
+                                })
                             }
                             .padding(.horizontal)
                         }
@@ -139,6 +151,10 @@ struct InstructorDashboardView: View {
                     PaymentsView()
                 case .trackExpense:
                     ExpensesView()
+                case .serviceBook:
+                    ServiceBookView()
+                case .myVehicles:
+                    MyVehiclesView()
                 }
             }
         }

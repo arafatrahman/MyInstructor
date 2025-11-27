@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/MyInstructor.swift
-// --- UPDATED: Injected ExpenseManager to fix the Fatal Error ---
+// --- UPDATED: Injected ExpenseManager and VehicleManager ---
 
 import SwiftUI
 import FirebaseCore
@@ -30,9 +30,10 @@ struct DrivingApp: App {
     @StateObject var communityManager = CommunityManager()
     @StateObject var locationManager = LocationManager()
     @StateObject var chatManager = ChatManager()
-    
-    // --- THIS WAS MISSING ---
     @StateObject var expenseManager = ExpenseManager()
+    
+    // --- ADDED: VehicleManager ---
+    @StateObject var vehicleManager = VehicleManager()
 
     var body: some Scene {
         WindowGroup {
@@ -46,8 +47,9 @@ struct DrivingApp: App {
                 .environmentObject(locationManager)
                 .environmentObject(chatManager)
                 
-                // --- INJECT HERE ---
+                // --- INJECT MANAGERS HERE ---
                 .environmentObject(expenseManager)
+                .environmentObject(vehicleManager)
                 
                 // Apply the custom theme globally
                 .applyAppTheme()

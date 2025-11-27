@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/LessonManager.swift
-// --- UPDATED: Added fetchUpcomingLessons function ---
+// --- UPDATED: Added fetchLesson(id:) for notification deep linking ---
 
 import Foundation
 import FirebaseFirestore
@@ -25,7 +25,7 @@ class LessonManager: ObservableObject {
         return lessons
     }
     
-    // --- NEW: Fetch ALL upcoming scheduled lessons (Future Income) ---
+    // Fetch ALL upcoming scheduled lessons (Future Income)
     func fetchUpcomingLessons(for instructorID: String) async throws -> [Lesson] {
         let snapshot = try await lessonsCollection
             .whereField("instructorID", isEqualTo: instructorID)
@@ -36,11 +36,23 @@ class LessonManager: ObservableObject {
             
         return snapshot.documents.compactMap { try? $0.data(as: Lesson.self) }
     }
+    
+    // --- NEW: Fetch a single lesson by ID (For Notification Navigation) ---
+    func fetchLesson(id: String) async throws -> Lesson? {
+        let document = try await lessonsCollection.document(id).getDocument()
+        return try? document.data(as: Lesson.self)
+    }
 
     // Creates a new lesson entry in Firestore
     func addLesson(newLesson: Lesson) async throws {
-        try lessonsCollection.addDocument(from: newLesson)
+        // Add to Firestore and get the reference to retrieve the generated ID
+        let ref = try lessonsCollection.addDocument(from: newLesson)
         print("Lesson added successfully: \(newLesson.topic)")
+        
+        // Schedule Notifications
+        var lessonWithID = newLesson
+        lessonWithID.id = ref.documentID
+        NotificationManager.shared.scheduleLessonReminders(lesson: lessonWithID)
     }
     
     // Updates an existing lesson document in Firestore.
@@ -50,6 +62,9 @@ class LessonManager: ObservableObject {
         }
         try lessonsCollection.document(lessonID).setData(from: lesson)
         print("Lesson \(lessonID) updated successfully.")
+        
+        // Reschedule Notifications (updates time/topic)
+        NotificationManager.shared.scheduleLessonReminders(lesson: lesson)
     }
 
     // Updates the lesson status (e.g., completes a lesson)
@@ -58,5 +73,10 @@ class LessonManager: ObservableObject {
             "status": status.rawValue
         ])
         print("Lesson \(lessonID) updated to \(status.rawValue)")
+        
+        // Cancel notifications if lesson is Cancelled or Completed
+        if status == .cancelled || status == .completed {
+            NotificationManager.shared.cancelReminders(for: lessonID)
+        }
     }
 }

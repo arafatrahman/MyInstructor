@@ -1,4 +1,6 @@
 // File: MyInstructor/Core/Managers/ExpenseManager.swift
+// --- UPDATED: Suppressed Firestore warning ---
+
 import Foundation
 import FirebaseFirestore
 import Combine
@@ -11,14 +13,21 @@ class ExpenseManager: ObservableObject {
     
     // Add Expense
     func addExpense(_ expense: Expense) async throws {
-        try expensesCollection.addDocument(from: expense)
+        var expenseToSave = expense
+        expenseToSave.id = nil
+        try expensesCollection.addDocument(from: expenseToSave)
         print("Expense added: \(expense.title)")
     }
     
     // Update Expense
     func updateExpense(_ expense: Expense) async throws {
         guard let id = expense.id else { return }
-        try expensesCollection.document(id).setData(from: expense)
+        
+        // Create a copy and set id to nil
+        var expenseToSave = expense
+        expenseToSave.id = nil
+        
+        try expensesCollection.document(id).setData(from: expenseToSave)
         print("Expense updated: \(expense.title)")
     }
     

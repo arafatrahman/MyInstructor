@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Vehicle/AddServiceRecordView.swift
-// --- UPDATED: Moved Save button to the top right toolbar ---
+// --- UPDATED: Automatically records an expense when a new service record with cost is added ---
 
 import SwiftUI
 
@@ -7,6 +7,8 @@ struct AddServiceRecordView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var vehicleManager: VehicleManager
     @EnvironmentObject var authManager: AuthManager
+    // --- NEW: Inject ExpenseManager ---
+    @EnvironmentObject var expenseManager: ExpenseManager
     
     var recordToEdit: ServiceRecord?
     var onSave: () -> Void
@@ -193,9 +195,28 @@ struct AddServiceRecordView: View {
         Task {
             do {
                 if isEditing {
+                    // Update Service Record
                     try await vehicleManager.updateServiceRecord(newRecord)
+                    // Note: We do not auto-update the Expense here to avoid duplicates or complexity without linking IDs.
                 } else {
+                    // Add Service Record
                     try await vehicleManager.addServiceRecord(newRecord)
+                    
+                    // --- UPDATED: Automatically add to Expenses if cost > 0 ---
+                    if costVal > 0 {
+                        let expenseNote = "Auto-generated from Service Book.\nGarage: \(garageName)\nMileage: \(mileageVal)"
+                        let newExpense = Expense(
+                            instructorID: instructorID,
+                            title: "Vehicle Service: \(newRecord.serviceType)",
+                            amount: costVal,
+                            date: date,
+                            category: .maintenance, // Ensure ExpenseCategory has .maintenance case
+                            note: expenseNote
+                        )
+                        try await expenseManager.addExpense(newExpense)
+                        print("Auto-logged expense for service record.")
+                    }
+                    // ----------------------------------------------------------
                 }
                 onSave()
                 dismiss()

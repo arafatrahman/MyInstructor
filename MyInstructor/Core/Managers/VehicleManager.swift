@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/VehicleManager.swift
+// --- UPDATED: Suppressed Firestore warning by setting id to nil before setData ---
+
 import Foundation
 import FirebaseFirestore
 import Combine
@@ -16,12 +19,20 @@ class VehicleManager: ObservableObject {
     // MARK: - Vehicle CRUD
     
     func addVehicle(_ vehicle: Vehicle) async throws {
-        try vehiclesCollection.addDocument(from: vehicle)
+        // When adding, id is usually nil, but we enforce it just in case
+        var vehicleToSave = vehicle
+        vehicleToSave.id = nil
+        try vehiclesCollection.addDocument(from: vehicleToSave)
     }
     
     func updateVehicle(_ vehicle: Vehicle) async throws {
         guard let id = vehicle.id else { return }
-        try vehiclesCollection.document(id).setData(from: vehicle)
+        
+        // Create a copy and set id to nil to avoid [I-FST000002] warning
+        var vehicleToSave = vehicle
+        vehicleToSave.id = nil
+        
+        try vehiclesCollection.document(id).setData(from: vehicleToSave)
     }
     
     func deleteVehicle(id: String) async throws {
@@ -38,12 +49,19 @@ class VehicleManager: ObservableObject {
     // MARK: - Service Record CRUD
     
     func addServiceRecord(_ record: ServiceRecord) async throws {
-        try servicesCollection.addDocument(from: record)
+        var recordToSave = record
+        recordToSave.id = nil
+        try servicesCollection.addDocument(from: recordToSave)
     }
     
     func updateServiceRecord(_ record: ServiceRecord) async throws {
         guard let id = record.id else { return }
-        try servicesCollection.document(id).setData(from: record)
+        
+        // Create a copy and set id to nil to avoid [I-FST000002] warning
+        var recordToSave = record
+        recordToSave.id = nil
+        
+        try servicesCollection.document(id).setData(from: recordToSave)
     }
     
     func deleteServiceRecord(id: String) async throws {

@@ -1,95 +1,234 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Payments/PaymentsView.swift
+// --- UPDATED: Pending items are clickable (View Only) ---
+
 import SwiftUI
 
-// Flow Item 13: Payments View
+enum TimeFilter: String, CaseIterable, Identifiable {
+    case daily = "Daily"
+    case weekly = "Weekly"
+    case monthly = "Monthly"
+    case yearly = "Yearly"
+    case custom = "Specific"
+    
+    var id: String { self.rawValue }
+}
+
+enum PaymentTab {
+    case received, pending
+}
+
+// Wrapper struct to unify Payments and Lessons for the list
+struct IncomeItem: Identifiable {
+    let id: String
+    let date: Date
+    let amount: Double
+    let studentID: String
+    let isPaid: Bool
+    let type: ItemType
+    let originalPayment: Payment? // Non-nil if it's a record
+    let originalLesson: Lesson? // Non-nil if it's a lesson
+    
+    enum ItemType {
+        case paymentRecord // Actual Payment document
+        case upcomingLesson // Scheduled Lesson (Future Income)
+    }
+}
+
 struct PaymentsView: View {
     @EnvironmentObject var paymentManager: PaymentManager
+    @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var dataService: DataService
     @EnvironmentObject var authManager: AuthManager
     
     @State private var payments: [Payment] = []
-    @State private var selectedTab: PaymentTab = .pending // Tabs: Received | Pending
+    @State private var upcomingLessons: [Lesson] = []
+    
+    // Filters
+    @State private var selectedTab: PaymentTab = .received
+    @State private var timeFilter: TimeFilter = .monthly
+    
+    // Custom Date Range
+    @State private var customStartDate = Date()
+    @State private var customEndDate = Date()
+    
+    // Sheets & Loading
     @State private var isAddPaymentModalPresented = false
-    @State private var paymentToEdit: Payment? = nil // For Edit Sheet
+    @State private var paymentToEdit: Payment? = nil
+    
+    // Read-only state for pending payments
+    @State private var paymentToView: Payment? = nil
+    
     @State private var isLoading = true
     
-    var filteredPayments: [Payment] {
-        payments.filter { $0.isPaid == (selectedTab == .received) }
-            .sorted(by: { $0.date > $1.date }) // Sort by newest first
+    // MARK: - Computed Properties (Unified Logic)
+    
+    var allItems: [IncomeItem] {
+        var items: [IncomeItem] = []
+        
+        // Add Payments
+        for p in payments {
+            items.append(IncomeItem(
+                id: p.id ?? UUID().uuidString,
+                date: p.date,
+                amount: p.amount,
+                studentID: p.studentID,
+                isPaid: p.isPaid,
+                type: .paymentRecord,
+                originalPayment: p,
+                originalLesson: nil
+            ))
+        }
+        
+        // Add Upcoming Lessons
+        for l in upcomingLessons {
+            let durationHours = (l.duration ?? 3600) / 3600
+            let estimatedAmount = l.fee * durationHours
+            
+            items.append(IncomeItem(
+                id: l.id ?? UUID().uuidString,
+                date: l.startTime,
+                amount: estimatedAmount,
+                studentID: l.studentID,
+                isPaid: false,
+                type: .upcomingLesson,
+                originalPayment: nil,
+                originalLesson: l // Store lesson for navigation
+            ))
+        }
+        
+        return items
     }
     
-    // Calculate total earnings for the displayed tab
-    var totalAmount: Double {
-        filteredPayments.reduce(0) { $0 + $1.amount }
+    var timeFilteredItems: [IncomeItem] {
+        allItems.filter { item in
+            switch timeFilter {
+            case .daily:
+                return Calendar.current.isDateInToday(item.date)
+            case .weekly:
+                return Calendar.current.isDate(item.date, equalTo: Date(), toGranularity: .weekOfYear)
+            case .monthly:
+                return Calendar.current.isDate(item.date, equalTo: Date(), toGranularity: .month)
+            case .yearly:
+                return Calendar.current.isDate(item.date, equalTo: Date(), toGranularity: .year)
+            case .custom:
+                let start = Calendar.current.startOfDay(for: customStartDate)
+                let end = Calendar.current.endOfDay(for: customEndDate)
+                return item.date >= start && item.date <= end
+            }
+        }
+    }
+    
+    var listDisplayItems: [IncomeItem] {
+        timeFilteredItems
+            .filter { item in
+                if selectedTab == .received {
+                    return item.isPaid
+                } else {
+                    return !item.isPaid
+                }
+            }
+            .sorted(by: { $0.date > $1.date })
+    }
+    
+    var totalReceived: Double {
+        timeFilteredItems.filter { $0.isPaid }.reduce(0) { $0 + $1.amount }
+    }
+    
+    var totalPending: Double {
+        timeFilteredItems.filter { !$0.isPaid }.reduce(0) { $0 + $1.amount }
     }
 
     var body: some View {
         NavigationView {
-            VStack {
-                // Tabs: Received | Pending
-                Picker("Payment Status", selection: $selectedTab) {
-                    Text("🧾 Pending").tag(PaymentTab.pending)
-                    Text("💰 Received").tag(PaymentTab.received)
-                }
-                .pickerStyle(.segmented)
-                .padding([.horizontal, .top])
+            VStack(spacing: 15) {
                 
-                if isLoading {
-                    ProgressView("Loading Payments...")
-                        .padding(.top, 50)
-                } else if payments.isEmpty {
-                    EmptyStateView(
-                        icon: "dollarsign.circle",
-                        message: "No transactions recorded yet. Start tracking your income easily!",
-                        actionTitle: "Record Payment",
-                        action: { isAddPaymentModalPresented = true }
-                    )
-                } else if filteredPayments.isEmpty {
-                    EmptyStateView(
-                        icon: "hand.thumbsup",
-                        message: selectedTab == .pending ? "No pending payments! You're all caught up." : "No payments received in this period."
-                    )
-                } else {
-                    List {
-                        // Summary/Chart Section
-                        Section {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("\(selectedTab == .received ? "Total Received" : "Total Pending"): \(totalAmount, format: .currency(code: "GBP"))")
-                                    .font(.title2).bold()
-                                    .foregroundColor(selectedTab == .received ? .accentGreen : .warningRed)
-                                
-                                Text("Monthly Earnings Summary (Placeholder Chart)")
-                                    .font(.subheadline).foregroundColor(.textLight)
-                                
-                                Image(systemName: "chart.bar.xaxis") // Chart placeholder
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(height: 80)
-                                    .foregroundColor(.primaryBlue.opacity(0.7))
-                                    .padding(.vertical, 5)
+                // MARK: - Time Filter Bar
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(TimeFilter.allCases) { filter in
+                            Button {
+                                withAnimation { timeFilter = filter }
+                            } label: {
+                                Text(filter.rawValue)
+                                    .font(.subheadline).bold()
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 16)
+                                    .background(timeFilter == filter ? Color.primaryBlue : Color(.systemGray6))
+                                    .foregroundColor(timeFilter == filter ? .white : .secondary)
+                                    .cornerRadius(20)
                             }
                         }
-                        
-                        // Payment Cards
-                        Section("\(selectedTab.rawValue.capitalized) Transactions") {
-                            ForEach(filteredPayments) { payment in
+                    }
+                    .padding(.horizontal)
+                }
+                .padding(.top, 10)
+                
+                if timeFilter == .custom {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("From").font(.caption).foregroundColor(.secondary)
+                            DatePicker("", selection: $customStartDate, displayedComponents: .date).labelsHidden()
+                        }
+                        Spacer()
+                        VStack(alignment: .leading) {
+                            Text("To").font(.caption).foregroundColor(.secondary)
+                            DatePicker("", selection: $customEndDate, displayedComponents: .date).labelsHidden()
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                
+                // MARK: - Summary Cards
+                HStack(spacing: 15) {
+                    SummaryCard(
+                        title: "Pending",
+                        amount: totalPending,
+                        icon: "clock.arrow.circlepath",
+                        color: .orange,
+                        isSelected: selectedTab == .pending
+                    )
+                    .onTapGesture { withAnimation { selectedTab = .pending } }
+                    
+                    SummaryCard(
+                        title: "Received",
+                        amount: totalReceived,
+                        icon: "banknote.fill",
+                        color: .accentGreen,
+                        isSelected: selectedTab == .received
+                    )
+                    .onTapGesture { withAnimation { selectedTab = .received } }
+                }
+                .padding(.horizontal)
+                
+                // MARK: - Transactions List
+                if isLoading {
+                    Spacer()
+                    ProgressView("Loading Records...")
+                    Spacer()
+                } else if listDisplayItems.isEmpty {
+                    Spacer()
+                    EmptyStateView(
+                        icon: selectedTab == .pending ? "checkmark.seal" : "tray",
+                        message: selectedTab == .pending
+                            ? "No pending payments or upcoming lessons."
+                            : "No income recorded for this period."
+                    )
+                    Spacer()
+                } else {
+                    List {
+                        ForEach(listDisplayItems) { item in
+                            
+                            // 1. RECEIVED (Editable)
+                            if selectedTab == .received, item.type == .paymentRecord, let payment = item.originalPayment {
                                 Button {
-                                    paymentToEdit = payment // Tap to Edit
+                                    paymentToEdit = payment // Edit Mode
                                 } label: {
-                                    PaymentCard(payment: payment)
+                                    IncomeItemCard(item: item)
                                 }
-                                .buttonStyle(.plain) // Keep row styling clean
+                                .buttonStyle(.plain)
                                 .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-                                .swipeActions(edge: .leading) {
-                                    if !payment.isPaid {
-                                        Button("Mark Paid") {
-                                            Task { await markPaymentAsPaid(payment.id!) }
-                                        }
-                                        .tint(.accentGreen)
-                                    }
-                                }
-                                .swipeActions(edge: .trailing) { // Swipe to Delete
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .swipeActions(edge: .trailing) {
                                     Button(role: .destructive) {
                                         Task { await deletePayment(payment.id!) }
                                     } label: {
@@ -97,119 +236,228 @@ struct PaymentsView: View {
                                     }
                                 }
                             }
+                            
+                            // 2. UPCOMING LESSON (Navigate to Details)
+                            else if item.type == .upcomingLesson, let lesson = item.originalLesson {
+                                NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
+                                    IncomeItemCard(item: item)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            }
+                            
+                            // 3. PENDING RECORD (View Only)
+                            else if item.type == .paymentRecord, let payment = item.originalPayment {
+                                Button {
+                                    paymentToView = payment // View Mode (Read Only)
+                                } label: {
+                                    IncomeItemCard(item: item)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .swipeActions(edge: .leading) {
+                                    // Mark Paid
+                                    Button("Mark Paid") {
+                                        Task { await markPaymentAsPaid(payment.id!) }
+                                    }
+                                    .tint(.accentGreen)
+                                }
+                            }
                         }
                     }
                     .listStyle(.plain)
                 }
             }
-            .navigationTitle("Payments")
+            .navigationTitle("Track Income")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         isAddPaymentModalPresented = true
                     } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title2)
+                        Image(systemName: "plus")
+                            .font(.headline).bold()
                     }
                 }
             }
-            .task { await fetchPayments() }
-            .refreshable { await fetchPayments() }
+            .task { await fetchData() }
+            .refreshable { await fetchData() }
+            
             // Sheet for Adding
             .sheet(isPresented: $isAddPaymentModalPresented) {
-                AddPaymentFormView(onPaymentAdded: { Task { await fetchPayments() } })
+                AddPaymentFormView(onPaymentAdded: { Task { await fetchData() } })
             }
-            // Sheet for Editing
+            // Sheet for Editing (Received)
             .sheet(item: $paymentToEdit) { payment in
                 AddPaymentFormView(paymentToEdit: payment, onPaymentAdded: {
-                    paymentToEdit = nil // Close sheet
-                    Task { await fetchPayments() }
+                    paymentToEdit = nil
+                    Task { await fetchData() }
                 })
+            }
+            // Sheet for Viewing (Pending) - Read Only
+            .sheet(item: $paymentToView) { payment in
+                AddPaymentFormView(
+                    paymentToEdit: payment,
+                    onPaymentAdded: { }, // No action needed
+                    isReadOnly: true // --- Enable Read Only Mode ---
+                )
             }
         }
     }
     
-    // MARK: - Actions & Data Fetch
+    // MARK: - Logic Helpers
     
-    func fetchPayments() async {
+    func fetchData() async {
         guard let instructorID = authManager.user?.id else { return }
         isLoading = true
         do {
-            self.payments = try await paymentManager.fetchInstructorPayments(for: instructorID)
+            async let paymentsTask = paymentManager.fetchInstructorPayments(for: instructorID)
+            async let lessonsTask = lessonManager.fetchUpcomingLessons(for: instructorID)
+            
+            self.payments = try await paymentsTask
+            self.upcomingLessons = try await lessonsTask
+            
         } catch {
-            print("Failed to fetch payments: \(error)")
+            print("Failed to fetch data: \(error)")
         }
         isLoading = false
     }
     
     func markPaymentAsPaid(_ paymentID: String) async {
-        do {
-            try await paymentManager.updatePaymentStatus(paymentID: paymentID, isPaid: true)
-            if let index = payments.firstIndex(where: { $0.id == paymentID }) {
-                payments[index].isPaid = true
-            }
-        } catch {
-            print("Error marking payment as paid: \(error)")
+        try? await paymentManager.updatePaymentStatus(paymentID: paymentID, isPaid: true)
+        if let idx = payments.firstIndex(where: { $0.id == paymentID }) {
+            payments[idx].isPaid = true
         }
     }
     
     func deletePayment(_ paymentID: String) async {
-        do {
-            try await paymentManager.deletePayment(paymentID: paymentID)
-            withAnimation {
-                payments.removeAll(where: { $0.id == paymentID })
-            }
-        } catch {
-            print("Error deleting payment: \(error)")
+        try? await paymentManager.deletePayment(paymentID: paymentID)
+        withAnimation {
+            payments.removeAll(where: { $0.id == paymentID })
         }
     }
 }
 
-enum PaymentTab: String {
-    case received = "Received"
-    case pending = "Pending"
-}
+// MARK: - Components
 
-// Payment Card Component
-struct PaymentCard: View {
-    @State var payment: Payment
-    @EnvironmentObject var dataService: DataService
+struct SummaryCard: View {
+    let title: String
+    let amount: Double
+    let icon: String
+    let color: Color
+    let isSelected: Bool
     
     var body: some View {
-        let studentName = dataService.getStudentName(for: payment.studentID)
-        
-        HStack {
-            Image(systemName: payment.isPaid ? "checkmark.circle.fill" : "clock.fill")
-                .foregroundColor(payment.isPaid ? .accentGreen : .warningRed)
-                .font(.title)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.headline)
+                    .foregroundColor(isSelected ? .white : color)
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(isSelected ? .white.opacity(0.9) : .secondary)
+            }
             
-            VStack(alignment: .leading) {
-                Text(studentName).font(.headline) // Student name
-                Text(payment.isPaid ? "Received" : "Pending")
-                    .font(.caption).bold()
-                    .foregroundColor(payment.isPaid ? .accentGreen : .warningRed)
-                Text(payment.date, style: .date).font(.caption).foregroundColor(.textLight) // Date
+            Text(amount, format: .currency(code: "GBP"))
+                .font(.title2).bold()
+                .foregroundColor(isSelected ? .white : .primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(isSelected ? color : Color(.secondarySystemGroupedBackground))
+        .cornerRadius(16)
+        .shadow(color: isSelected ? color.opacity(0.3) : Color.black.opacity(0.03), radius: 8, x: 0, y: 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(isSelected ? Color.clear : color.opacity(0.2), lineWidth: 1)
+        )
+        .scaleEffect(isSelected ? 1.02 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+    }
+}
+
+struct IncomeItemCard: View {
+    let item: IncomeItem
+    @EnvironmentObject var dataService: DataService
+    @State private var studentName: String = "Loading..."
+    
+    var statusColor: Color {
+        if item.isPaid { return .accentGreen }
+        return item.type == .upcomingLesson ? .primaryBlue : .orange
+    }
+    
+    var statusIcon: String {
+        if item.isPaid { return "checkmark" }
+        return item.type == .upcomingLesson ? "calendar" : "clock"
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(statusColor.opacity(0.15))
+                    .frame(width: 45, height: 45)
+                
+                Image(systemName: statusIcon)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(statusColor)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(studentName)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                HStack(spacing: 6) {
+                    Text(item.date.formatted(date: .abbreviated, time: .shortened))
+                    if item.type == .upcomingLesson {
+                        Text("• Scheduled")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primaryBlue)
+                    }
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
             }
             
             Spacer()
             
-            VStack(alignment: .trailing) {
-                Text("£\(payment.amount, specifier: "%.2f")")
-                    .font(.title3).bold() // Amount
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(item.amount, format: .currency(code: "GBP"))
+                    .font(.headline)
+                    .foregroundColor(statusColor)
                 
-                if let method = payment.paymentMethod {
+                if item.isPaid, let method = item.originalPayment?.paymentMethod {
                     Text(method.rawValue)
                         .font(.caption2)
-                        .foregroundColor(.textLight)
-                        .padding(4)
-                        .background(Color.secondaryGray)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(.systemGray6))
                         .cornerRadius(4)
+                        .foregroundColor(.secondary)
                 }
             }
         }
-        .padding(10)
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.textDark.opacity(0.05), radius: 5, x: 0, y: 2)
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.03), radius: 5, x: 0, y: 2)
+        .task {
+            self.studentName = await dataService.resolveStudentName(studentID: item.studentID)
+        }
+    }
+}
+
+extension Calendar {
+    func endOfDay(for date: Date) -> Date {
+        var components = DateComponents()
+        components.day = 1
+        components.second = -1
+        return self.date(byAdding: components, to: startOfDay(for: date)) ?? date
     }
 }

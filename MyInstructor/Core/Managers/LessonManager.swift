@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/LessonManager.swift
-// --- UPDATED: Added updateLesson function ---
+// --- UPDATED: Added fetchUpcomingLessons function ---
 
 import Foundation
 import FirebaseFirestore
@@ -24,6 +24,18 @@ class LessonManager: ObservableObject {
         }
         return lessons
     }
+    
+    // --- NEW: Fetch ALL upcoming scheduled lessons (Future Income) ---
+    func fetchUpcomingLessons(for instructorID: String) async throws -> [Lesson] {
+        let snapshot = try await lessonsCollection
+            .whereField("instructorID", isEqualTo: instructorID)
+            .whereField("status", isEqualTo: LessonStatus.scheduled.rawValue)
+            .whereField("startTime", isGreaterThan: Date()) // Only future lessons
+            .order(by: "startTime")
+            .getDocuments()
+            
+        return snapshot.documents.compactMap { try? $0.data(as: Lesson.self) }
+    }
 
     // Creates a new lesson entry in Firestore
     func addLesson(newLesson: Lesson) async throws {
@@ -31,23 +43,17 @@ class LessonManager: ObservableObject {
         print("Lesson added successfully: \(newLesson.topic)")
     }
     
-    // --- *** NEW FUNCTION TO SUPPORT EDITING *** ---
-    /// Updates an existing lesson document in Firestore.
+    // Updates an existing lesson document in Firestore.
     func updateLesson(_ lesson: Lesson) async throws {
         guard let lessonID = lesson.id else {
             throw NSError(domain: "LessonManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Lesson ID missing, cannot update."])
         }
-        
-        // Use setData(from: lesson) on the specific document
-        // This will overwrite the entire document with the new lesson data.
         try lessonsCollection.document(lessonID).setData(from: lesson)
         print("Lesson \(lessonID) updated successfully.")
     }
 
-    
     // Updates the lesson status (e.g., completes a lesson)
     func updateLessonStatus(lessonID: String, status: LessonStatus) async throws {
-        // Ensure we are updating the document by its ID
         try await lessonsCollection.document(lessonID).updateData([
             "status": status.rawValue
         ])

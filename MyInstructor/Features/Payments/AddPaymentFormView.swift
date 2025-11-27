@@ -1,4 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Payments/AddPaymentFormView.swift
+// --- UPDATED: Added isReadOnly mode ---
+
 import SwiftUI
 
 struct AddPaymentFormView: View {
@@ -9,6 +11,9 @@ struct AddPaymentFormView: View {
 
     var paymentToEdit: Payment? // Optional: If provided, we are in "Edit" mode
     var onPaymentAdded: () -> Void
+    
+    // --- NEW: Read Only Mode ---
+    var isReadOnly: Bool = false
 
     // Form State
     @State private var availableStudents: [Student] = []
@@ -34,6 +39,7 @@ struct AddPaymentFormView: View {
                             Text(student.name).tag(student as Student?)
                         }
                     }
+                    .disabled(isReadOnly) // Disable in read-only
                     
                     HStack {
                         Text("Amount (£)")
@@ -41,12 +47,15 @@ struct AddPaymentFormView: View {
                         TextField("Amount", text: $amount)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
+                            .disabled(isReadOnly) // Disable in read-only
                     }
                     
                     DatePicker("Date", selection: $date, displayedComponents: .date)
+                        .disabled(isReadOnly) // Disable in read-only
                     
                     Toggle("Mark as Paid", isOn: $isPaid)
                         .tint(.accentGreen)
+                        .disabled(isReadOnly) // Disable in read-only
                     
                     // Conditionally show Payment Method Picker
                     if isPaid {
@@ -56,42 +65,46 @@ struct AddPaymentFormView: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                        .disabled(isReadOnly) // Disable in read-only
                     }
                 }
                 
-                // MARK: - Actions
-                Section {
-                    if let error = errorMessage {
-                        Text(error).foregroundColor(.warningRed)
-                    }
-                    
-                    Button {
-                        savePayment()
-                    } label: {
-                        HStack {
-                            if isLoading {
-                                ProgressView().tint(.white)
-                            } else {
-                                Text(isEditing ? "Save Changes" : "Record Payment")
-                            }
+                // MARK: - Actions (Hide in Read Only)
+                if !isReadOnly {
+                    Section {
+                        if let error = errorMessage {
+                            Text(error).foregroundColor(.warningRed)
                         }
-                        .frame(maxWidth: .infinity)
+                        
+                        Button {
+                            savePayment()
+                        } label: {
+                            HStack {
+                                if isLoading {
+                                    ProgressView().tint(.white)
+                                } else {
+                                    Text(isEditing ? "Save Changes" : "Record Payment")
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.primaryDrivingApp)
+                        .disabled(!isFormValid || isLoading)
+                        .listRowBackground(Color.clear)
                     }
-                    .buttonStyle(.primaryDrivingApp)
-                    .disabled(!isFormValid || isLoading)
-                    .listRowBackground(Color.clear)
                 }
             }
-            .navigationTitle(isEditing ? "Edit Payment" : "Record New Payment")
+            // Dynamic Title
+            .navigationTitle(isReadOnly ? "Payment Details" : (isEditing ? "Edit Payment" : "Record New Payment"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button(isReadOnly ? "Close" : "Cancel") { dismiss() }
                 }
             }
             .task {
                 await fetchStudents()
-                // If editing, populate fields
+                // If editing or viewing, populate fields
                 if let payment = paymentToEdit {
                     self.amount = String(format: "%.2f", payment.amount)
                     self.date = payment.date
@@ -121,9 +134,8 @@ struct AddPaymentFormView: View {
         }
         
         do {
-            availableStudents = try await dataService.fetchStudents(for: instructorID)
+            availableStudents = try await dataService.fetchAllStudents(for: instructorID)
             
-            // Re-check for selected student if we are in edit mode
             if let payment = paymentToEdit, selectedStudent == nil {
                  if let foundStudent = availableStudents.first(where: { $0.id == payment.studentID }) {
                     self.selectedStudent = foundStudent
@@ -145,14 +157,14 @@ struct AddPaymentFormView: View {
         isLoading = true
         errorMessage = nil
         
-        var payment = Payment(
-            id: paymentToEdit?.id, // Keep ID if editing
+        let payment = Payment(
+            id: paymentToEdit?.id,
             instructorID: instructorID,
             studentID: student.id ?? "unknown",
             amount: finalAmount,
             date: date,
             isPaid: isPaid,
-            paymentMethod: isPaid ? selectedMethod : nil // Only save method if paid
+            paymentMethod: isPaid ? selectedMethod : nil
         )
         
         Task {

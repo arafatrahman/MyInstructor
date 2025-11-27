@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/VehicleModels.swift
+// --- UPDATED: Added insuranceExpiry and motExpiry fields ---
+
 import Foundation
 import FirebaseFirestore
 
@@ -9,7 +12,11 @@ struct Vehicle: Identifiable, Codable, Hashable {
     var year: String
     var licensePlate: String
     var nickname: String?
-    var photoURLs: [String]? // --- ADDED: Store photo URLs
+    var photoURLs: [String]?
+    
+    // --- NEW FIELDS ---
+    var insuranceExpiry: Date?
+    var motExpiry: Date?
     
     var displayName: String {
         if let nick = nickname, !nick.isEmpty { return nick }

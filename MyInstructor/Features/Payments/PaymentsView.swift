@@ -1,13 +1,16 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Payments/PaymentsView.swift
 import SwiftUI
 
 // Flow Item 13: Payments View
 struct PaymentsView: View {
     @EnvironmentObject var paymentManager: PaymentManager
     @EnvironmentObject var dataService: DataService
+    @EnvironmentObject var authManager: AuthManager
     
     @State private var payments: [Payment] = []
     @State private var selectedTab: PaymentTab = .pending // Tabs: Received | Pending
     @State private var isAddPaymentModalPresented = false
+    @State private var paymentToEdit: Payment? = nil // For Edit Sheet
     @State private var isLoading = true
     
     var filteredPayments: [Payment] {
@@ -36,14 +39,14 @@ struct PaymentsView: View {
                         .padding(.top, 50)
                 } else if payments.isEmpty {
                     EmptyStateView(
-                        icon: "dollarsign.circle", 
+                        icon: "dollarsign.circle",
                         message: "No transactions recorded yet. Start tracking your income easily!",
                         actionTitle: "Record Payment",
                         action: { isAddPaymentModalPresented = true }
                     )
                 } else if filteredPayments.isEmpty {
                     EmptyStateView(
-                        icon: "hand.thumbsup", 
+                        icon: "hand.thumbsup",
                         message: selectedTab == .pending ? "No pending payments! You're all caught up." : "No payments received in this period."
                     )
                 } else {
@@ -70,17 +73,29 @@ struct PaymentsView: View {
                         // Payment Cards
                         Section("\(selectedTab.rawValue.capitalized) Transactions") {
                             ForEach(filteredPayments) { payment in
-                                PaymentCard(payment: payment)
-                                    .listRowSeparator(.hidden)
-                                    .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-                                    .swipeActions(edge: .leading) {
-                                        if !payment.isPaid {
-                                            Button("Mark Paid") {
-                                                Task { await markPaymentAsPaid(payment.id!) }
-                                            }
-                                            .tint(.accentGreen)
+                                Button {
+                                    paymentToEdit = payment // Tap to Edit
+                                } label: {
+                                    PaymentCard(payment: payment)
+                                }
+                                .buttonStyle(.plain) // Keep row styling clean
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                                .swipeActions(edge: .leading) {
+                                    if !payment.isPaid {
+                                        Button("Mark Paid") {
+                                            Task { await markPaymentAsPaid(payment.id!) }
                                         }
+                                        .tint(.accentGreen)
                                     }
+                                }
+                                .swipeActions(edge: .trailing) { // Swipe to Delete
+                                    Button(role: .destructive) {
+                                        Task { await deletePayment(payment.id!) }
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
                             }
                         }
                     }
@@ -100,8 +115,16 @@ struct PaymentsView: View {
             }
             .task { await fetchPayments() }
             .refreshable { await fetchPayments() }
+            // Sheet for Adding
             .sheet(isPresented: $isAddPaymentModalPresented) {
                 AddPaymentFormView(onPaymentAdded: { Task { await fetchPayments() } })
+            }
+            // Sheet for Editing
+            .sheet(item: $paymentToEdit) { payment in
+                AddPaymentFormView(paymentToEdit: payment, onPaymentAdded: {
+                    paymentToEdit = nil // Close sheet
+                    Task { await fetchPayments() }
+                })
             }
         }
     }
@@ -109,10 +132,10 @@ struct PaymentsView: View {
     // MARK: - Actions & Data Fetch
     
     func fetchPayments() async {
+        guard let instructorID = authManager.user?.id else { return }
         isLoading = true
-        // NOTE: Mocking instructor ID
         do {
-            self.payments = try await paymentManager.fetchInstructorPayments(for: "current_instructor_id")
+            self.payments = try await paymentManager.fetchInstructorPayments(for: instructorID)
         } catch {
             print("Failed to fetch payments: \(error)")
         }
@@ -122,12 +145,22 @@ struct PaymentsView: View {
     func markPaymentAsPaid(_ paymentID: String) async {
         do {
             try await paymentManager.updatePaymentStatus(paymentID: paymentID, isPaid: true)
-            // Update local array instantly
             if let index = payments.firstIndex(where: { $0.id == paymentID }) {
                 payments[index].isPaid = true
             }
         } catch {
             print("Error marking payment as paid: \(error)")
+        }
+    }
+    
+    func deletePayment(_ paymentID: String) async {
+        do {
+            try await paymentManager.deletePayment(paymentID: paymentID)
+            withAnimation {
+                payments.removeAll(where: { $0.id == paymentID })
+            }
+        } catch {
+            print("Error deleting payment: \(error)")
         }
     }
 }
@@ -160,8 +193,19 @@ struct PaymentCard: View {
             
             Spacer()
             
-            Text("£\(payment.amount, specifier: "%.2f")")
-                .font(.title3).bold() // Amount
+            VStack(alignment: .trailing) {
+                Text("£\(payment.amount, specifier: "%.2f")")
+                    .font(.title3).bold() // Amount
+                
+                if let method = payment.paymentMethod {
+                    Text(method.rawValue)
+                        .font(.caption2)
+                        .foregroundColor(.textLight)
+                        .padding(4)
+                        .background(Color.secondaryGray)
+                        .cornerRadius(4)
+                }
+            }
         }
         .padding(10)
         .background(Color(.systemBackground))

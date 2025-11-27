@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: Redesigned "Quick Overview" with professional cards and search ---
+// --- UPDATED: Added "Track Income" Quick Action and switched layout to Grid ---
 
 import SwiftUI
 
@@ -23,6 +23,9 @@ struct InstructorDashboardView: View {
     
     // --- NEW STATE for Quick View Popup ---
     @State private var isShowingQuickView = false
+    
+    // --- NEW STATE for Track Income ---
+    @State private var isShowingTrackIncome = false
 
     var body: some View {
         NavigationView {
@@ -77,7 +80,8 @@ struct InstructorDashboardView: View {
                                 .font(.headline)
                                 .padding(.horizontal)
                             
-                            HStack(spacing: 15) {
+                            // Switched to LazyVGrid to accommodate 4 items neatly (2 rows of 2)
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
                                 QuickActionButton(title: "Add Lesson", icon: "plus.circle.fill", color: .primaryBlue, action: {
                                     isAddingLesson = true
                                 })
@@ -88,6 +92,11 @@ struct InstructorDashboardView: View {
                                 
                                 QuickActionButton(title: "Record Payment", icon: "creditcard.fill", color: .purple, action: {
                                     isRecordingPayment = true
+                                })
+                                
+                                // --- NEW ACTION ---
+                                QuickActionButton(title: "Track Income", icon: "chart.line.uptrend.xyaxis", color: .orange, action: {
+                                    isShowingTrackIncome = true
                                 })
                             }
                             .padding(.horizontal)
@@ -129,6 +138,10 @@ struct InstructorDashboardView: View {
             // --- NEW POPUP SHEET ---
             .sheet(isPresented: $isShowingQuickView) {
                 StudentQuickOverviewSheet()
+            }
+            // --- NEW SHEET FOR TRACK INCOME ---
+            .sheet(isPresented: $isShowingTrackIncome) {
+                PaymentsView() // Opens the payments tracking view
             }
         }
     }

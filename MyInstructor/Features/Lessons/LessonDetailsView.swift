@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/LessonDetailsView.swift
-// --- UPDATED: Fixed calculation to use Lesson's own hourly rate ---
+// --- UPDATED: Payment creation now includes instructorID ---
 
 import SwiftUI
 
@@ -43,7 +43,6 @@ struct LessonDetailsView: View {
         lesson.topic.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
     }
     
-    // --- *** UPDATED CALCULATION *** ---
     // Uses the lesson's stored 'fee' as the Hourly Rate
     private var totalCalculatedFee: Double {
         let hourlyRate = lesson.fee
@@ -366,8 +365,9 @@ struct FinishLessonSheet: View {
                 try await lessonManager.updateLessonStatus(lessonID: lessonID, status: .completed)
                 
                 // 2. Record Payment
-                // We store the final Amount (whether Paid or Pending)
+                // --- UPDATED: Include instructorID ---
                 let paymentRecord = Payment(
+                    instructorID: lesson.instructorID,
                     studentID: lesson.studentID,
                     amount: finalAmount,
                     date: Date(),

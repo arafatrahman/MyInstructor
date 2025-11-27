@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Vehicle/MyVehiclesView.swift
-// --- UPDATED: Added Back button, Photo Picker, and Photo Display in List ---
+// --- UPDATED: Moved Save button to top right corner ---
 
 import SwiftUI
 import PhotosUI
@@ -33,7 +33,7 @@ struct MyVehiclesView: View {
                                 vehicleToEdit = vehicle
                             } label: {
                                 HStack(spacing: 15) {
-                                    // --- NEW: Vehicle Photo Thumbnail ---
+                                    // Vehicle Photo Thumbnail
                                     if let photoURL = vehicle.photoURLs?.first, let url = URL(string: photoURL) {
                                         AsyncImage(url: url) { phase in
                                             if let image = phase.image {
@@ -85,7 +85,7 @@ struct MyVehiclesView: View {
             .navigationTitle("My Vehicles")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // --- NEW: Back Button (Upper Left) ---
+                // Back Button (Upper Left)
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
                         HStack(spacing: 5) {
@@ -125,7 +125,6 @@ struct MyVehiclesView: View {
     
     func deleteVehicle(_ vehicle: Vehicle) async {
         guard let id = vehicle.id else { return }
-        // Optional: Delete photos from storage here if you want strict cleanup
         try? await vehicleManager.deleteVehicle(id: id)
         withAnimation { vehicles.removeAll { $0.id == id } }
     }
@@ -147,10 +146,10 @@ struct AddVehicleFormView: View {
     @State private var nickname = ""
     @State private var isLoading = false
     
-    // --- NEW: Photos State ---
+    // Photos State
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var selectedPhotoData: Data? = nil
-    @State private var existingPhotoURLs: [String] = [] // Keep track of existing photos
+    @State private var existingPhotoURLs: [String] = []
     
     var isEditing: Bool { vehicleToEdit != nil }
     var isValid: Bool { !make.isEmpty && !model.isEmpty && !licensePlate.isEmpty }
@@ -158,7 +157,7 @@ struct AddVehicleFormView: View {
     var body: some View {
         NavigationView {
             Form {
-                // --- NEW: Photos Section ---
+                // Photos Section
                 Section {
                     HStack {
                         Spacer()
@@ -213,27 +212,66 @@ struct AddVehicleFormView: View {
                 }
                 .listRowBackground(Color.clear)
                 
+                // Vehicle Details with Permanent Labels
                 Section("Vehicle Details") {
-                    TextField("Make (e.g. Toyota)", text: $make)
-                    TextField("Model (e.g. Corolla)", text: $model)
-                    TextField("Year", text: $year).keyboardType(.numberPad)
-                    TextField("License Plate", text: $licensePlate)
-                    TextField("Nickname (Optional)", text: $nickname)
+                    HStack {
+                        Text("Make")
+                        Spacer()
+                        TextField("e.g. Toyota", text: $make)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    
+                    HStack {
+                        Text("Model")
+                        Spacer()
+                        TextField("e.g. Corolla", text: $model)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    
+                    HStack {
+                        Text("Year")
+                        Spacer()
+                        TextField("YYYY", text: $year)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    
+                    HStack {
+                        Text("License Plate")
+                        Spacer()
+                        TextField("Required", text: $licensePlate)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    
+                    HStack {
+                        Text("Nickname")
+                        Spacer()
+                        TextField("Optional", text: $nickname)
+                            .multilineTextAlignment(.trailing)
+                    }
                 }
-                
-                Button {
-                    saveVehicle()
-                } label: {
-                    if isLoading { ProgressView().tint(.white) } else { Text(isEditing ? "Save Changes" : "Add Vehicle") }
-                }
-                .disabled(!isValid || isLoading)
-                .buttonStyle(.primaryDrivingApp)
-                .listRowBackground(Color.clear)
             }
             .navigationTitle(isEditing ? "Edit Vehicle" : "Add Vehicle")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                // Cancel Button
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                
+                // Save Button (Moved to Top Right)
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        saveVehicle()
+                    } label: {
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            Text("Save").bold()
+                        }
+                    }
+                    .disabled(!isValid || isLoading)
+                }
             }
             .onAppear {
                 if let v = vehicleToEdit {
@@ -259,12 +297,9 @@ struct AddVehicleFormView: View {
             if let data = selectedPhotoData {
                 do {
                     let url = try await StorageManager.shared.uploadVehiclePhoto(photoData: data, userID: instructorID)
-                    // For simplicity, we just replace the list with the new photo (single photo mode)
                     finalPhotoURLs = [url]
                 } catch {
                     print("Failed to upload vehicle photo: \(error)")
-                    // Proceed without photo if upload fails? Or return?
-                    // Let's proceed for now.
                 }
             }
             

@@ -1,8 +1,12 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Vehicle/ServiceBookView.swift
+// --- UPDATED: Removed duplicate AddServiceRecordView struct to fix redeclaration error ---
+
 import SwiftUI
 
 struct ServiceBookView: View {
     @EnvironmentObject var vehicleManager: VehicleManager
     @EnvironmentObject var authManager: AuthManager
+    @Environment(\.dismiss) var dismiss // To handle the back action
     
     @State private var serviceRecords: [ServiceRecord] = []
     @State private var isLoading = true
@@ -16,7 +20,6 @@ struct ServiceBookView: View {
             .sorted()
         
         guard let nextDate = futureServices.first else { return nil }
-        // Find the record that corresponds to this date (optional logic)
         return serviceRecords.first(where: { $0.nextServiceDate == nextDate })
     }
 
@@ -87,6 +90,17 @@ struct ServiceBookView: View {
             .navigationTitle("Service Book")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // --- Back Button (Upper Left) ---
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                    }
+                }
+                
+                // Add Button (Upper Right)
                 ToolbarItem(placement: .primaryAction) {
                     Button { isAddSheetPresented = true } label: {
                         Image(systemName: "plus").font(.headline.bold())

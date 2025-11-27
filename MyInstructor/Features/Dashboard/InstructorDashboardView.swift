@@ -1,6 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: Includes Service Book and My Vehicles features ---
-// --- UPDATED: Next Lesson and Weekly Earnings cards have equal height ---
+// --- UPDATED: Back Button Color set to Black (textDark) ---
 
 import SwiftUI
 
@@ -12,8 +11,8 @@ enum DashboardSheet: Identifiable {
     case quickOverview
     case trackIncome
     case trackExpense
-    case serviceBook  // New
-    case myVehicles   // New
+    case serviceBook
+    case myVehicles
     
     var id: Int { self.hashValue }
 }
@@ -25,7 +24,7 @@ struct InstructorDashboardView: View {
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var chatManager: ChatManager
     
-    // --- NEW: Single State for Sheet Management ---
+    // Single State for Sheet Management
     @State private var activeSheet: DashboardSheet?
 
     @State private var nextLesson: Lesson?
@@ -57,7 +56,7 @@ struct InstructorDashboardView: View {
                                     })
                                 }
                                 .buttonStyle(.plain)
-                                .frame(maxWidth: .infinity) // Ensure Link fills space
+                                .frame(maxWidth: .infinity)
                             } else {
                                 DashboardCard(title: "Next Lesson", systemIcon: "calendar.badge.clock", accentColor: .primaryBlue, fixedHeight: 150, content: {
                                     NextLessonContent(lesson: nextLesson)
@@ -107,17 +106,14 @@ struct InstructorDashboardView: View {
                                     activeSheet = .trackIncome
                                 })
                                 
-                                // --- Track Expense Action ---
                                 QuickActionButton(title: "Track Expense", icon: "chart.line.downtrend.xyaxis", color: .warningRed, action: {
                                     activeSheet = .trackExpense
                                 })
                                 
-                                // --- Service Book Action ---
                                 QuickActionButton(title: "Service Book", icon: "wrench.and.screwdriver.fill", color: .gray, action: {
                                     activeSheet = .serviceBook
                                 })
                                 
-                                // --- My Vehicles Action ---
                                 QuickActionButton(title: "My Vehicles", icon: "car.circle.fill", color: .primaryBlue, action: {
                                     activeSheet = .myVehicles
                                 })
@@ -186,7 +182,7 @@ struct InstructorDashboardView: View {
     }
 }
 
-// MARK: - Redesigned Quick View Sheet (Same as before)
+// MARK: - Redesigned Student Quick View Sheet
 struct StudentQuickOverviewSheet: View {
     @EnvironmentObject var dataService: DataService
     @EnvironmentObject var authManager: AuthManager
@@ -196,6 +192,9 @@ struct StudentQuickOverviewSheet: View {
     @State private var offlineStudents: [OfflineStudent] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    
+    // --- State for adding student directly from this sheet ---
+    @State private var isAddingStudent = false
     
     var filteredOnline: [Student] {
         if searchText.isEmpty { return onlineStudents }
@@ -211,43 +210,109 @@ struct StudentQuickOverviewSheet: View {
         NavigationView {
             ZStack {
                 Color(.systemGroupedBackground).ignoresSafeArea()
+                
                 VStack(spacing: 0) {
+                    // Search Bar
                     HStack {
-                        Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.secondary)
                         TextField("Search students...", text: $searchText)
                         if !searchText.isEmpty {
-                            Button(action: { searchText = "" }) { Image(systemName: "xmark.circle.fill").foregroundColor(.secondary) }
+                            Button(action: { searchText = "" }) {
+                                Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                            }
                         }
                     }
-                    .padding(10).background(Color(.secondarySystemGroupedBackground)).cornerRadius(10).padding(.horizontal).padding(.bottom, 10)
+                    .padding(10)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+                    .padding(.bottom, 10)
+                    .padding(.top, 10)
                     
-                    if isLoading { Spacer(); ProgressView("Loading Students..."); Spacer() }
-                    else if filteredOnline.isEmpty && filteredOffline.isEmpty { Spacer(); Text("No students found.").foregroundColor(.secondary); Spacer() }
-                    else {
+                    if isLoading {
+                        Spacer()
+                        ProgressView("Loading Students...")
+                        Spacer()
+                    } else if filteredOnline.isEmpty && filteredOffline.isEmpty {
+                        Spacer()
+                        Text("No students found.")
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    } else {
                         ScrollView {
                             LazyVStack(spacing: 16) {
+                                // Online Section
                                 if !filteredOnline.isEmpty {
                                     VStack(alignment: .leading, spacing: 8) {
-                                        Text("ONLINE").font(.caption).bold().foregroundColor(.secondary).padding(.leading, 4)
-                                        ForEach(filteredOnline) { s in NavigationLink(destination: StudentProfileView(student: s)) { StudentCardRow(student: s, isOffline: false) }.buttonStyle(.plain) }
-                                    }.padding(.horizontal)
+                                        Text("ONLINE")
+                                            .font(.caption).bold()
+                                            .foregroundColor(.secondary)
+                                            .padding(.leading, 20)
+                                        
+                                        ForEach(filteredOnline) { s in
+                                            NavigationLink(destination: StudentProfileView(student: s)) {
+                                                StudentCardRow(student: s, isOffline: false)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
                                 }
+                                
+                                // Offline Section
                                 if !filteredOffline.isEmpty {
                                     VStack(alignment: .leading, spacing: 8) {
-                                        Text("OFFLINE").font(.caption).bold().foregroundColor(.secondary).padding(.leading, 4)
-                                        ForEach(filteredOffline) { o in NavigationLink(destination: StudentProfileView(student: convertToStudent(o))) { StudentCardRow(student: convertToStudent(o), isOffline: true) }.buttonStyle(.plain) }
-                                    }.padding(.horizontal)
+                                        Text("OFFLINE")
+                                            .font(.caption).bold()
+                                            .foregroundColor(.secondary)
+                                            .padding(.leading, 20)
+                                        
+                                        ForEach(filteredOffline) { o in
+                                            NavigationLink(destination: StudentProfileView(student: convertToStudent(o))) {
+                                                StudentCardRow(student: convertToStudent(o), isOffline: true)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
                                 }
-                            }.padding(.vertical)
+                            }
+                            .padding(.vertical)
                         }
                     }
-                }.padding(.top, 10)
+                }
             }
-            .navigationTitle("Your Students").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() }.bold() } }
+            .navigationTitle("Your Students")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // --- UPDATE: Back Button (Left) - NOW BLACK ---
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                        .foregroundColor(.textDark) // Changed to Black/Dark text
+                    }
+                }
+                
+                // --- UPDATE: Add Button (Right) ---
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { isAddingStudent = true }) {
+                        Image(systemName: "plus")
+                            .font(.headline)
+                            .foregroundColor(.primaryBlue)
+                    }
+                }
+            }
             .task { await loadStudents() }
+            .sheet(isPresented: $isAddingStudent) {
+                OfflineStudentFormView(studentToEdit: nil, onStudentAdded: {
+                    Task { await loadStudents() }
+                })
+            }
         }
     }
+    
     private func loadStudents() async {
         guard let id = authManager.user?.id else { return }
         isLoading = true
@@ -259,33 +324,97 @@ struct StudentQuickOverviewSheet: View {
         } catch { print("Error: \(error)") }
         isLoading = false
     }
+    
     private func convertToStudent(_ o: OfflineStudent) -> Student {
         Student(id: o.id, userID: o.id ?? UUID().uuidString, name: o.name, email: o.email ?? "", phone: o.phone, address: o.address, isOffline: true, averageProgress: o.progress ?? 0.0)
     }
 }
 
-// MARK: - Reusable Components (Same as before)
+// MARK: - Reusable Components
+
 struct StudentCardRow: View {
-    let student: Student; let isOffline: Bool
+    let student: Student
+    let isOffline: Bool
+    
     var body: some View {
         HStack(spacing: 15) {
-            AsyncImage(url: URL(string: student.photoURL ?? "")) { p in if let i = p.image { i.resizable().scaledToFill() } else { Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(isOffline ? .gray : .primaryBlue) } }.frame(width: 50, height: 50).clipShape(Circle()).overlay(Circle().stroke(Color.secondary.opacity(0.1), lineWidth: 1))
-            VStack(alignment: .leading, spacing: 4) { Text(student.name).font(.headline).foregroundColor(.primary); HStack(spacing: 6) { Circle().fill(isOffline ? Color.gray : Color.accentGreen).frame(width: 8, height: 8); Text(isOffline ? "Offline Student" : "Active Student").font(.subheadline).foregroundColor(.secondary) } }
+            // Avatar
+            AsyncImage(url: URL(string: student.photoURL ?? "")) { p in
+                if let i = p.image {
+                    i.resizable().scaledToFill()
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .foregroundColor(isOffline ? .gray : .primaryBlue)
+                }
+            }
+            .frame(width: 50, height: 50)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.secondary.opacity(0.1), lineWidth: 1))
+            
+            // Name & Info
+            VStack(alignment: .leading, spacing: 4) {
+                Text(student.name)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(isOffline ? Color.gray : Color.accentGreen)
+                        .frame(width: 8, height: 8)
+                    Text(isOffline ? "Offline Student" : "Active Student")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
             Spacer()
-            HStack(spacing: 12) { CircularProgressView(progress: student.averageProgress, color: isOffline ? .gray : .primaryBlue, lineWidth: 4, size: 40); Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary.opacity(0.5)) }
-        }.padding(16).background(Color(.secondarySystemGroupedBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.03), radius: 5, x: 0, y: 2)
+            
+            // --- UPDATED PROGRESS RING ---
+            ZStack {
+                Circle()
+                    .stroke(lineWidth: 4)
+                    .opacity(0.15)
+                    .foregroundColor(isOffline ? .gray : .primaryBlue)
+                
+                Circle()
+                    .trim(from: 0.0, to: CGFloat(min(student.averageProgress, 1.0)))
+                    .stroke(style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                    .foregroundColor(isOffline ? .gray : .primaryBlue)
+                    .rotationEffect(Angle(degrees: 270.0))
+                
+                // --- FIX: Smaller font and minimum scale factor to prevent clipping ---
+                Text("\(Int(student.averageProgress * 100))%")
+                    .font(.system(size: 10, weight: .bold)) // Reduced base size
+                    .minimumScaleFactor(0.5) // Allow shrinking if 100%
+                    .foregroundColor(.primary)
+                    .padding(2) // Add padding to keep away from stroke
+            }
+            .frame(width: 50, height: 50)
+            
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundColor(.secondary.opacity(0.5))
+        }
+        .padding(16)
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(16)
+        .padding(.horizontal)
+        .shadow(color: Color.black.opacity(0.03), radius: 5, x: 0, y: 2)
     }
 }
+
+// ... (Rest of the helper components remain the same)
+
 struct NextLessonContent: View { let lesson: Lesson?; var body: some View { VStack(alignment: .leading, spacing: 8) { if let l = lesson { Text(l.topic).font(.subheadline).bold().lineLimit(1); HStack { Image(systemName: "clock"); Text("\(l.startTime, style: .time)") }.font(.callout).foregroundColor(.textLight); HStack { Image(systemName: "map.pin.circle.fill"); Text("Pickup: \(l.pickupLocation)").lineLimit(1) }.font(.callout).foregroundColor(.textLight) } else { Text("No Upcoming Lessons").font(.subheadline).bold().foregroundColor(.textLight) } } } }
 struct EarningsSummaryContent: View { let earnings: Double; var body: some View { VStack(alignment: .leading, spacing: 4) { Text("£\(earnings, specifier: "%.2f")").font(.title2).bold().foregroundColor(.accentGreen); Text("This Week").font(.subheadline).foregroundColor(.textLight); Rectangle().fill(Color.accentGreen.opacity(0.3)).frame(height: 10).cornerRadius(5) } } }
 struct StudentsOverviewContent: View { let progress: Double; var body: some View { HStack { CircularProgressView(progress: progress, color: .orange, size: 60).padding(.trailing, 10); VStack(alignment: .leading) { Text("Average Student Progress").font(.subheadline).foregroundColor(.textLight); Text("\(Int(progress * 100))% Mastery").font(.headline) }; Spacer(); Image(systemName: "chevron.right").foregroundColor(.textLight) } } }
 
-// --- UPDATED DashboardCard with fixedHeight support ---
 struct DashboardCard<Content: View>: View {
     let title: String
     let systemIcon: String
     var accentColor: Color = .primaryBlue
-    var fixedHeight: CGFloat? = nil // Optional fixed height
+    var fixedHeight: CGFloat? = nil
     @ViewBuilder let content: Content
     
     var body: some View {
@@ -296,10 +425,10 @@ struct DashboardCard<Content: View>: View {
             };
             Divider().opacity(0.5);
             content.frame(maxWidth: .infinity, alignment: .leading)
-            if fixedHeight != nil { Spacer(minLength: 0) } // Push content up if height is fixed
+            if fixedHeight != nil { Spacer(minLength: 0) }
         }
         .padding(15)
-        .frame(height: fixedHeight) // Apply fixed height if set
+        .frame(height: fixedHeight)
         .background(Color(.systemBackground))
         .cornerRadius(15)
         .shadow(color: Color.textDark.opacity(0.05), radius: 8, x: 0, y: 4)

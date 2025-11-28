@@ -1,7 +1,7 @@
-// File: Core/Managers/LocationManager.swift
+// File: MyInstructor/Core/Managers/LocationManager.swift
 import Foundation
 import CoreLocation
-import Combine // <-- THIS WAS THE MISSING LINE
+import Combine
 
 // This class will manage getting the user's location
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
@@ -19,7 +19,8 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     /// Asks for permission and then requests the user's current location.
     func requestLocation() async {
-        if authorizationStatus == .notDetermined {
+        // Check if authorization status is not determined, then request it
+        if locationManager.authorizationStatus == .notDetermined {
             locationManager.requestWhenInUseAuthorization()
         }
         

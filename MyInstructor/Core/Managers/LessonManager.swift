@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/LessonManager.swift
-// --- UPDATED: Added fetchLesson(id:) for notification deep linking ---
+// --- UPDATED: Sends cancellation notifications to the counterparty ---
 
 import Foundation
 import FirebaseFirestore
@@ -11,72 +11,108 @@ class LessonManager: ObservableObject {
         db.collection("lessons")
     }
 
-    // Fetches lessons for the current instructor within a specific date range
     func fetchLessons(for instructorID: String, start: Date, end: Date) async throws -> [Lesson] {
         let snapshot = try await lessonsCollection
             .whereField("instructorID", isEqualTo: instructorID)
-            .whereField("startTime", isGreaterThanOrEqualTo: start)
-            .whereField("startTime", isLessThan: end)
             .getDocuments()
-            
-        let lessons = snapshot.documents.compactMap { document in
-            try? document.data(as: Lesson.self)
-        }
-        return lessons
+        let allLessons = snapshot.documents.compactMap { try? $0.data(as: Lesson.self) }
+        return allLessons.filter { $0.startTime >= start && $0.startTime < end }
     }
     
-    // Fetch ALL upcoming scheduled lessons (Future Income)
+    func fetchLessonsForStudent(studentID: String, start: Date, end: Date) async throws -> [Lesson] {
+        let snapshot = try await lessonsCollection
+            .whereField("studentID", isEqualTo: studentID)
+            .getDocuments()
+        let allLessons = snapshot.documents.compactMap { try? $0.data(as: Lesson.self) }
+        return allLessons.filter { $0.startTime >= start && $0.startTime < end }
+    }
+    
     func fetchUpcomingLessons(for instructorID: String) async throws -> [Lesson] {
         let snapshot = try await lessonsCollection
             .whereField("instructorID", isEqualTo: instructorID)
             .whereField("status", isEqualTo: LessonStatus.scheduled.rawValue)
-            .whereField("startTime", isGreaterThan: Date()) // Only future lessons
-            .order(by: "startTime")
             .getDocuments()
-            
-        return snapshot.documents.compactMap { try? $0.data(as: Lesson.self) }
+        let allLessons = snapshot.documents.compactMap { try? $0.data(as: Lesson.self) }
+        return allLessons.filter { $0.startTime > Date() }.sorted(by: { $0.startTime < $1.startTime })
     }
     
-    // --- NEW: Fetch a single lesson by ID (For Notification Navigation) ---
     func fetchLesson(id: String) async throws -> Lesson? {
         let document = try await lessonsCollection.document(id).getDocument()
         return try? document.data(as: Lesson.self)
     }
 
-    // Creates a new lesson entry in Firestore
     func addLesson(newLesson: Lesson) async throws {
-        // Add to Firestore and get the reference to retrieve the generated ID
         let ref = try lessonsCollection.addDocument(from: newLesson)
         print("Lesson added successfully: \(newLesson.topic)")
         
-        // Schedule Notifications
         var lessonWithID = newLesson
         lessonWithID.id = ref.documentID
         NotificationManager.shared.scheduleLessonReminders(lesson: lessonWithID)
+        
+        // Notify Student
+        let dateString = newLesson.startTime.formatted(date: .abbreviated, time: .shortened)
+        NotificationManager.shared.sendNotification(
+            to: newLesson.studentID,
+            title: "New Lesson Scheduled",
+            message: "A new lesson '\(newLesson.topic)' has been scheduled for \(dateString).",
+            type: "lesson"
+        )
     }
     
-    // Updates an existing lesson document in Firestore.
     func updateLesson(_ lesson: Lesson) async throws {
         guard let lessonID = lesson.id else {
-            throw NSError(domain: "LessonManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Lesson ID missing, cannot update."])
+            throw NSError(domain: "LessonManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Lesson ID missing."])
         }
         try lessonsCollection.document(lessonID).setData(from: lesson)
-        print("Lesson \(lessonID) updated successfully.")
-        
-        // Reschedule Notifications (updates time/topic)
         NotificationManager.shared.scheduleLessonReminders(lesson: lesson)
+        
+        // Notify Student of Update
+        let dateString = lesson.startTime.formatted(date: .abbreviated, time: .shortened)
+        NotificationManager.shared.sendNotification(
+            to: lesson.studentID,
+            title: "Lesson Updated",
+            message: "Your lesson '\(lesson.topic)' has been updated to \(dateString).",
+            type: "lesson"
+        )
     }
 
-    // Updates the lesson status (e.g., completes a lesson)
-    func updateLessonStatus(lessonID: String, status: LessonStatus) async throws {
+    // --- UPDATED FUNCTION ---
+    func updateLessonStatus(lessonID: String, status: LessonStatus, initiatorID: String? = nil) async throws {
+        // 1. Update Firestore
         try await lessonsCollection.document(lessonID).updateData([
             "status": status.rawValue
         ])
-        print("Lesson \(lessonID) updated to \(status.rawValue)")
         
-        // Cancel notifications if lesson is Cancelled or Completed
+        // 2. Cleanup Local Reminders
         if status == .cancelled || status == .completed {
             NotificationManager.shared.cancelReminders(for: lessonID)
+        }
+        
+        // 3. Send Cancellation Notification (If we know who initiated it)
+        if status == .cancelled, let senderID = initiatorID {
+            // Fetch lesson to identify the OTHER party
+            let document = try await lessonsCollection.document(lessonID).getDocument()
+            if let lesson = try? document.data(as: Lesson.self) {
+                let dateString = lesson.startTime.formatted(date: .abbreviated, time: .shortened)
+                
+                if senderID == lesson.studentID {
+                    // Initiated by Student -> Notify Instructor
+                    NotificationManager.shared.sendNotification(
+                        to: lesson.instructorID,
+                        title: "Lesson Cancelled",
+                        message: "Student cancelled the lesson scheduled for \(dateString).",
+                        type: "lesson"
+                    )
+                } else if senderID == lesson.instructorID {
+                    // Initiated by Instructor -> Notify Student
+                    NotificationManager.shared.sendNotification(
+                        to: lesson.studentID,
+                        title: "Lesson Cancelled",
+                        message: "Your instructor cancelled the lesson scheduled for \(dateString).",
+                        type: "lesson"
+                    )
+                }
+            }
         }
     }
 }

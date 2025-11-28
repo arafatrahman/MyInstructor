@@ -1,106 +1,138 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/NotificationManager.swift
-// --- UPDATED: Added Delegate handling to open lesson on tap ---
+// --- UPDATED: Ensures UI updates happen on the Main Thread ---
 
 import Foundation
 import UserNotifications
 import Combine
+import FirebaseFirestore
 
 class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationManager()
     private let center = UNUserNotificationCenter.current()
+    private let db = Firestore.firestore()
     
-    // Published property to trigger navigation in RootView
     @Published var selectedLessonID: String? = nil
+    @Published var notifications: [AppNotification] = []
+    
+    private var listenerRegistration: ListenerRegistration?
 
     override init() {
         super.init()
-        center.delegate = self // Set delegate to handle taps
+        center.delegate = self
         requestAuthorization()
     }
 
     func requestAuthorization() {
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error = error {
-                print("Notification permission error: \(error.localizedDescription)")
-            } else if granted {
-                print("Notification permission granted.")
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+    }
+
+    // MARK: - Firestore: Send & Listen
+    
+    func sendNotification(to userID: String, title: String, message: String, type: String) {
+        let newNotification = AppNotification(
+            recipientID: userID,
+            title: title,
+            message: message,
+            type: type,
+            timestamp: Date(),
+            isRead: false
+        )
+        try? db.collection("users").document(userID).collection("notifications").addDocument(from: newNotification)
+    }
+    
+    func listenForNotifications(for userID: String) {
+        listenerRegistration?.remove()
+        
+        let query = db.collection("users")
+            .document(userID)
+            .collection("notifications")
+            .order(by: "timestamp", descending: true)
+            .limit(to: 20)
+            
+        listenerRegistration = query.addSnapshotListener { [weak self] snapshot, error in
+            guard let self = self, let documents = snapshot?.documents else { return }
+            
+            // Check for new items to trigger banner
+            snapshot?.documentChanges.forEach { change in
+                if change.type == .added {
+                    if let notif = try? change.document.data(as: AppNotification.self), !notif.isRead {
+                        self.triggerLocalBanner(title: notif.title, body: notif.message)
+                    }
+                }
+            }
+            
+            // --- FIX: Update UI on Main Thread ---
+            DispatchQueue.main.async {
+                self.notifications = documents.compactMap { try? $0.data(as: AppNotification.self) }
             }
         }
     }
+    
+    private func triggerLocalBanner(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        center.add(request)
+    }
+    
+    func markAllAsRead(userID: String) {
+        let batch = db.batch()
+        for notif in notifications where !notif.isRead {
+            if let id = notif.id {
+                let ref = db.collection("users").document(userID).collection("notifications").document(id)
+                batch.updateData(["isRead": true], forDocument: ref)
+            }
+        }
+        batch.commit()
+    }
 
-    /// Schedules two notifications: One at the exact start time, and one 1 hour before.
+    // MARK: - Lesson Reminders
+    
     func scheduleLessonReminders(lesson: Lesson) {
         guard let lessonID = lesson.id else { return }
-        
-        // 1. Cancel any existing reminders for this lesson (to avoid duplicates on update)
         cancelReminders(for: lessonID)
         
-        // Prepare User Info for Deep Linking
         let userInfo: [AnyHashable: Any] = ["lessonID": lessonID]
         
-        // 2. Schedule "1 Hour Before" Reminder
-        let date1HrBefore = lesson.startTime.addingTimeInterval(-3600) // -1 hour
+        // 1 Hr Before
+        let date1HrBefore = lesson.startTime.addingTimeInterval(-3600)
         if date1HrBefore > Date() {
             let content = UNMutableNotificationContent()
             content.title = "Upcoming Lesson"
-            content.body = "You have a lesson '\(lesson.topic)' starting in 1 hour."
+            content.body = "Lesson '\(lesson.topic)' starts in 1 hour."
             content.sound = .default
-            content.userInfo = userInfo // Attach ID
-            
-            let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date1HrBefore)
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            let request = UNNotificationRequest(identifier: "lesson_1hr_\(lessonID)", content: content, trigger: trigger)
-            
-            center.add(request) { error in
-                if let error = error { print("Error scheduling 1hr notification: \(error)") }
-            }
+            content.userInfo = userInfo
+            let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date1HrBefore), repeats: false)
+            center.add(UNNotificationRequest(identifier: "lesson_1hr_\(lessonID)", content: content, trigger: trigger))
         }
         
-        // 3. Schedule "Exact Time" Notification
+        // Exact Time
         if lesson.startTime > Date() {
             let content = UNMutableNotificationContent()
             content.title = "Lesson Starting Now"
-            content.body = "Your lesson '\(lesson.topic)' is starting now."
+            content.body = "Lesson '\(lesson.topic)' is starting."
             content.sound = .default
-            content.userInfo = userInfo // Attach ID
-            
-            let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: lesson.startTime)
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            let request = UNNotificationRequest(identifier: "lesson_exact_\(lessonID)", content: content, trigger: trigger)
-            
-            center.add(request) { error in
-                if let error = error { print("Error scheduling exact notification: \(error)") }
-            }
+            content.userInfo = userInfo
+            let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: lesson.startTime), repeats: false)
+            center.add(UNNotificationRequest(identifier: "lesson_exact_\(lessonID)", content: content, trigger: trigger))
         }
     }
     
-    /// Cancels all notifications associated with a specific lesson ID.
     func cancelReminders(for lessonID: String) {
-        let identifiers = ["lesson_1hr_\(lessonID)", "lesson_exact_\(lessonID)"]
-        center.removePendingNotificationRequests(withIdentifiers: identifiers)
-        print("Cancelled notifications for lesson \(lessonID)")
+        center.removePendingNotificationRequests(withIdentifiers: ["lesson_1hr_\(lessonID)", "lesson_exact_\(lessonID)"])
     }
     
-    // MARK: - UNUserNotificationCenterDelegate Methods
-    
-    // Handle notification tap (Background/Closed -> App Open)
+    // Delegate Methods
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
-        let userInfo = response.notification.request.content.userInfo
-        
-        if let lessonID = userInfo["lessonID"] as? String {
-            print("Notification tapped for lesson ID: \(lessonID)")
-            // Update on Main Thread
-            DispatchQueue.main.async {
-                self.selectedLessonID = lessonID
-            }
+        if let lessonID = response.notification.request.content.userInfo["lessonID"] as? String {
+            DispatchQueue.main.async { self.selectedLessonID = lessonID }
         }
-        
         completionHandler()
     }
     
-    // Handle notification while app is in foreground
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        // Show banner and sound even if app is open
         completionHandler([.banner, .sound])
     }
 }

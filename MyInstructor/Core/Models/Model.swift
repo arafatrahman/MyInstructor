@@ -1,6 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/Model.swift
-// --- UPDATED: Ensuring StudentNote and StudentRecord are available ---
-
 import Foundation
 import FirebaseFirestore
 import CoreLocation
@@ -62,9 +59,28 @@ struct Student: Identifiable, Codable, Hashable {
 
 // MARK: - Note Models
 struct StudentNote: Identifiable, Codable, Hashable {
-    var id = UUID()
+    var id: UUID = UUID()
     let content: String
     let timestamp: Date
+    
+    // Custom init to allow decoding even if 'id' is missing in legacy data
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.content = try container.decode(String.self, forKey: .content)
+        self.timestamp = try container.decode(Date.self, forKey: .timestamp)
+        // Attempt decode 'id', otherwise create new
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+    }
+    
+    init(id: UUID = UUID(), content: String, timestamp: Date) {
+        self.id = id
+        self.content = content
+        self.timestamp = timestamp
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, content, timestamp
+    }
 }
 
 struct StudentRecord: Identifiable, Codable {
@@ -111,4 +127,15 @@ struct OfflineStudent: Identifiable, Codable, Hashable {
     @ServerTimestamp var timestamp: Date? = Date()
     var progress: Double? = 0.0
     var notes: [StudentNote]? = []
+}
+
+// MARK: - Notification Model
+struct AppNotification: Identifiable, Codable {
+    @DocumentID var id: String?
+    let recipientID: String
+    let title: String
+    let message: String
+    let type: String // "lesson", "note", "progress"
+    let timestamp: Date
+    var isRead: Bool
 }

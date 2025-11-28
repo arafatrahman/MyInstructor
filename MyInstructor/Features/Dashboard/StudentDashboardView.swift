@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/StudentDashboardView.swift
+// --- UPDATED: Changed "Lessons Taken" card color to green ---
+
 import SwiftUI
 
 struct StudentDashboardView: View {
@@ -11,6 +14,7 @@ struct StudentDashboardView: View {
     @State private var progress: Double = 0.0
     @State private var latestFeedback: String = ""
     @State private var paymentDue: Bool = false
+    @State private var completedLessonsCount: Int = 0
     @State private var isLoading = true
     
     // Notification count now reflects unread app notifications + requests
@@ -27,35 +31,90 @@ struct StudentDashboardView: View {
                     if isLoading {
                         ProgressView("Loading Dashboard...").padding(.top, 50).frame(maxWidth: .infinity)
                     } else {
-                        // Lesson Card
-                        if let lesson = upcomingLesson {
-                            NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
-                                DashboardCard(title: "Upcoming Lesson", systemIcon: "car.fill", accentColor: .accentGreen, content: {
-                                    StudentUpcomingLessonContent(lesson: lesson)
-                                })
-                            }.buttonStyle(.plain).padding(.horizontal)
-                        } else {
-                            DashboardCard(title: "Upcoming Lesson", systemIcon: "car.fill", accentColor: .accentGreen, content: {
-                                StudentUpcomingLessonContent(lesson: nil)
-                            }).padding(.horizontal)
+                        // MARK: - Top Row: Upcoming Lesson & Lessons Taken
+                        HStack(spacing: 15) {
+                            // 1. Upcoming Lesson Card
+                            if let lesson = upcomingLesson {
+                                NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
+                                    StudentDashboardCard(
+                                        title: "Next Lesson",
+                                        systemIcon: "calendar.badge.clock",
+                                        accentColor: .primaryBlue,
+                                        fixedHeight: 150,
+                                        backgroundColor: Color.primaryBlue.opacity(0.1),
+                                        content: {
+                                            // Compact version for the grid
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(lesson.topic)
+                                                    .font(.headline)
+                                                    .lineLimit(1)
+                                                    .foregroundColor(.primary)
+                                                Text(lesson.startTime, style: .date)
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                                Text(lesson.startTime, style: .time)
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .frame(maxWidth: .infinity)
+                            } else {
+                                StudentDashboardCard(
+                                    title: "Next Lesson",
+                                    systemIcon: "calendar.badge.clock",
+                                    accentColor: .primaryBlue,
+                                    fixedHeight: 150,
+                                    backgroundColor: Color.primaryBlue.opacity(0.1),
+                                    content: {
+                                        Text("No upcoming lessons.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                )
+                                .frame(maxWidth: .infinity)
+                            }
+                            
+                            // 2. Lessons Taken Card
+                            StudentDashboardCard(
+                                title: "Lessons Taken",
+                                systemIcon: "checkmark.circle.fill",
+                                accentColor: .accentGreen, // --- UPDATED: Green ---
+                                fixedHeight: 150,
+                                backgroundColor: Color.accentGreen.opacity(0.1), // --- UPDATED: Green BG ---
+                                content: {
+                                    VStack(alignment: .center, spacing: 2) {
+                                        Text("\(completedLessonsCount)")
+                                            .font(.system(size: 36, weight: .bold))
+                                            .foregroundColor(.accentGreen) // --- UPDATED: Green Text ---
+                                        Text("Completed")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                            )
+                            .frame(maxWidth: .infinity)
                         }
+                        .padding(.horizontal)
                         
-                        // Progress
-                        DashboardCard(title: "Your Progress", systemIcon: "book.fill", accentColor: .primaryBlue, content: {
+                        // MARK: - Progress Card
+                        StudentDashboardCard(title: "Your Progress", systemIcon: "book.fill", accentColor: .primaryBlue, content: {
                             StudentProgressContent(progress: progress)
                         }).padding(.horizontal)
                         
-                        // --- UPDATED: Clickable Feedback Card ---
+                        // MARK: - Latest Feedback (Clickable)
                         NavigationLink(destination: StudentFeedbackListView(studentID: authManager.user?.id ?? "")) {
-                            DashboardCard(title: "Latest Feedback", systemIcon: "note.text", accentColor: .orange, content: {
+                            StudentDashboardCard(title: "Latest Feedback", systemIcon: "note.text", accentColor: .orange, content: {
                                 StudentFeedbackContent(feedback: latestFeedback)
                             })
                         }
                         .buttonStyle(.plain)
                         .padding(.horizontal)
-                        // ----------------------------------------
                         
-                        // Payment
+                        // MARK: - Payment Due
                         if paymentDue { PaymentDueCard().padding(.horizontal) }
                     }
                     Spacer()
@@ -68,7 +127,6 @@ struct StudentDashboardView: View {
                     isLoading = false
                     return
                 }
-                // Start Listeners
                 chatManager.listenForConversations(for: studentID)
                 notificationManager.listenForNotifications(for: studentID)
                 
@@ -82,12 +140,12 @@ struct StudentDashboardView: View {
         guard let studentID = authManager.user?.id else { isLoading = false; return }
         isLoading = true
         do {
-            async let dataTask = dataService.fetchStudentDashboardData(for: studentID)
-            let data = try await dataTask
+            let data = try await dataService.fetchStudentDashboardData(for: studentID)
             self.upcomingLesson = data.upcomingLesson
             self.progress = data.progress
             self.latestFeedback = data.latestFeedback
             self.paymentDue = data.paymentDue
+            self.completedLessonsCount = data.completedLessonsCount
             
             if let lesson = self.upcomingLesson {
                 notificationManager.scheduleLessonReminders(lesson: lesson)
@@ -97,7 +155,39 @@ struct StudentDashboardView: View {
     }
 }
 
-// ... (Sub-views) ...
+// MARK: - Separate Student Dashboard Card
+struct StudentDashboardCard<Content: View>: View {
+    let title: String
+    let systemIcon: String
+    var accentColor: Color = .primaryBlue
+    var fixedHeight: CGFloat? = nil
+    var backgroundColor: Color? = nil
+    @ViewBuilder let content: Content
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(title, systemImage: systemIcon)
+                    .font(.subheadline).bold()
+                    .foregroundColor(accentColor)
+                Spacer()
+            }
+            Divider().opacity(0.5)
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            if fixedHeight != nil { Spacer(minLength: 0) }
+        }
+        .padding(15)
+        .frame(height: fixedHeight)
+        .background(backgroundColor ?? Color(.systemBackground))
+        .cornerRadius(15)
+        .shadow(color: Color.textDark.opacity(0.05), radius: 8, x: 0, y: 4)
+    }
+}
+
+// MARK: - Sub-views
+
 struct StudentUpcomingLessonContent: View {
     let lesson: Lesson?
     var body: some View {
@@ -139,7 +229,6 @@ struct StudentFeedbackContent: View {
                 Text(feedback).font(.body).lineLimit(3).foregroundColor(.primary)
                 HStack {
                     Spacer()
-                    // This text serves as a visual cue that the card is tappable
                     Text("View All History").font(.caption).bold().foregroundColor(.orange)
                 }
             }

@@ -45,15 +45,22 @@ class DataService: ObservableObject {
 
     // MARK: - Dashboard Data Fetching (Student)
     
-    func fetchStudentDashboardData(for studentID: String) async throws -> (upcomingLesson: Lesson?, progress: Double, latestFeedback: String, paymentDue: Bool) {
-        // 1. Fetch Upcoming Lesson
+    func fetchStudentDashboardData(for studentID: String) async throws -> (upcomingLesson: Lesson?, progress: Double, latestFeedback: String, paymentDue: Bool, completedLessonsCount: Int) {
+        // 1. Fetch All Lessons for Student (to get upcoming AND count completed)
         let lessonSnapshot = try await lessonsCollection
             .whereField("studentID", isEqualTo: studentID)
-            .whereField("status", isEqualTo: LessonStatus.scheduled.rawValue)
             .getDocuments()
             
-        let lessons = lessonSnapshot.documents.compactMap { try? $0.data(as: Lesson.self) }
-        let upcomingLesson = lessons.filter { $0.startTime > Date() }.sorted(by: { $0.startTime < $1.startTime }).first
+        let allLessons = lessonSnapshot.documents.compactMap { try? $0.data(as: Lesson.self) }
+        
+        // Filter Upcoming
+        let upcomingLesson = allLessons
+            .filter { $0.status == .scheduled && $0.startTime > Date() }
+            .sorted(by: { $0.startTime < $1.startTime })
+            .first
+            
+        // Count Completed
+        let completedCount = allLessons.filter { $0.status == .completed }.count
         
         // 2. Fetch Progress & Feedback
         // Get ALL instructor IDs associated with this student via requests
@@ -97,7 +104,7 @@ class DataService: ObservableObject {
         
         let avgProgress = count > 0 ? totalProgress / Double(count) : 0.0
         
-        return (upcomingLesson, avgProgress, latestNoteContent, false)
+        return (upcomingLesson, avgProgress, latestNoteContent, false, completedCount)
     }
     
     // --- NEW FUNCTION: Fetch all notes for a student ---

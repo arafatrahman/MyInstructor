@@ -1,6 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/DataService.swift
-// --- UPDATED: More robust fetching logic for progress/notes ---
-
 import Foundation
 import Combine
 import FirebaseFirestore
@@ -46,7 +43,7 @@ class DataService: ObservableObject {
         return (nextLesson, 0.0, avgProgress)
     }
 
-    // MARK: - Dashboard Data Fetching (Student) - UPDATED
+    // MARK: - Dashboard Data Fetching (Student)
     
     func fetchStudentDashboardData(for studentID: String) async throws -> (upcomingLesson: Lesson?, progress: Double, latestFeedback: String, paymentDue: Bool) {
         // 1. Fetch Upcoming Lesson
@@ -101,6 +98,34 @@ class DataService: ObservableObject {
         let avgProgress = count > 0 ? totalProgress / Double(count) : 0.0
         
         return (upcomingLesson, avgProgress, latestNoteContent, false)
+    }
+    
+    // --- NEW FUNCTION: Fetch all notes for a student ---
+    func fetchAllStudentNotes(for studentID: String) async throws -> [StudentNote] {
+        // Get ALL instructor IDs associated with this student via requests
+        let requestsQuery = try await db.collection("student_requests")
+            .whereField("studentID", isEqualTo: studentID)
+            .getDocuments()
+            
+        // Use Set to avoid duplicates
+        let instructorIDs = Set(requestsQuery.documents.compactMap { $0.data()["instructorID"] as? String })
+        
+        var allNotes: [StudentNote] = []
+        
+        for instructorID in instructorIDs {
+            let recordDoc = try? await usersCollection
+                .document(instructorID)
+                .collection("student_records")
+                .document(studentID)
+                .getDocument()
+            
+            if let record = try? recordDoc?.data(as: StudentRecord.self), let notes = record.notes {
+                allNotes.append(contentsOf: notes)
+            }
+        }
+        
+        // Return sorted by date (newest first)
+        return allNotes.sorted(by: { $0.timestamp > $1.timestamp })
     }
     
     // MARK: - User Management Fetching (Helper Methods)

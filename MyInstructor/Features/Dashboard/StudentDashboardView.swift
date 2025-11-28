@@ -5,7 +5,7 @@ struct StudentDashboardView: View {
     @EnvironmentObject var dataService: DataService
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var chatManager: ChatManager
-    @EnvironmentObject var notificationManager: NotificationManager // Injected
+    @EnvironmentObject var notificationManager: NotificationManager
 
     @State private var upcomingLesson: Lesson?
     @State private var progress: Double = 0.0
@@ -45,10 +45,15 @@ struct StudentDashboardView: View {
                             StudentProgressContent(progress: progress)
                         }).padding(.horizontal)
                         
-                        // Feedback
-                        DashboardCard(title: "Latest Feedback", systemIcon: "note.text", accentColor: .orange, content: {
-                            StudentFeedbackContent(feedback: latestFeedback)
-                        }).padding(.horizontal)
+                        // --- UPDATED: Clickable Feedback Card ---
+                        NavigationLink(destination: StudentFeedbackListView(studentID: authManager.user?.id ?? "")) {
+                            DashboardCard(title: "Latest Feedback", systemIcon: "note.text", accentColor: .orange, content: {
+                                StudentFeedbackContent(feedback: latestFeedback)
+                            })
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal)
+                        // ----------------------------------------
                         
                         // Payment
                         if paymentDue { PaymentDueCard().padding(.horizontal) }
@@ -65,7 +70,7 @@ struct StudentDashboardView: View {
                 }
                 // Start Listeners
                 chatManager.listenForConversations(for: studentID)
-                notificationManager.listenForNotifications(for: studentID) // <--- Start listening
+                notificationManager.listenForNotifications(for: studentID)
                 
                 await fetchData()
             }
@@ -92,7 +97,7 @@ struct StudentDashboardView: View {
     }
 }
 
-// ... (Sub-views remain same as previous step) ...
+// ... (Sub-views) ...
 struct StudentUpcomingLessonContent: View {
     let lesson: Lesson?
     var body: some View {
@@ -128,8 +133,16 @@ struct StudentFeedbackContent: View {
     let feedback: String
     var body: some View {
         VStack(alignment: .leading) {
-            if feedback.isEmpty { Text("No feedback notes yet.").font(.body).foregroundColor(.textLight) }
-            else { Text(feedback).font(.body).lineLimit(3).foregroundColor(.primary); HStack { Spacer(); Text("Read Latest Note").font(.caption).bold().foregroundColor(.orange) } }
+            if feedback.isEmpty {
+                Text("No feedback notes yet.").font(.body).foregroundColor(.textLight)
+            } else {
+                Text(feedback).font(.body).lineLimit(3).foregroundColor(.primary)
+                HStack {
+                    Spacer()
+                    // This text serves as a visual cue that the card is tappable
+                    Text("View All History").font(.caption).bold().foregroundColor(.orange)
+                }
+            }
         }
     }
 }

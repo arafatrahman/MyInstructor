@@ -1,5 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Student/StudentCalendarView.swift
-// --- NEW FILE: Calendar View specifically for Students ---
 
 import SwiftUI
 
@@ -10,6 +8,9 @@ struct StudentCalendarView: View {
     @State private var selectedDate: Date = Date()
     @State private var calendarItems: [CalendarItem] = []
     @State private var isLoading = false
+    
+    // --- NEW: State for presenting stats ---
+    @State private var isShowingStats = false
     
     // Computed property: Group items by the start of the day
     private var itemsByDay: [(Date, [CalendarItem])] {
@@ -77,12 +78,28 @@ struct StudentCalendarView: View {
                     }
                     .font(.subheadline)
                 }
+                
+                // --- NEW: Stats Button ---
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        isShowingStats = true
+                    } label: {
+                        Image(systemName: "chart.bar.doc.horizontal.fill") // Icon for "Report/Stats"
+                            .font(.headline)
+                    }
+                }
             }
             .onAppear {
                 Task { await fetchStudentCalendarData() }
             }
             .onChange(of: selectedDate) { _, _ in
                 Task { await fetchStudentCalendarData() }
+            }
+            // --- NEW: Sheet ---
+            .sheet(isPresented: $isShowingStats) {
+                if let studentID = authManager.user?.id {
+                    StudentLessonStatsView(studentID: studentID)
+                }
             }
         }
     }

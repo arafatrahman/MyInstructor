@@ -1,6 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/AddLessonFormView.swift
-// --- UPDATED: Suggestions list is now scrollable with fixed height and filters based on input ---
-
 import SwiftUI
 
 struct SelectableStudent: Identifiable, Hashable {
@@ -37,7 +34,11 @@ struct AddLessonFormView: View {
     @State private var selectedTopics: [String] = []
     @State private var customTopic: String = ""
     
-    // --- *** HELPER: Filter suggestions based on typing *** ---
+    // --- UPDATED: Use shared model ---
+    private var predefinedTopics: [String] {
+        DrivingTopics.all
+    }
+    
     private var filteredTopics: [String] {
         if customTopic.isEmpty {
             return predefinedTopics
@@ -45,72 +46,6 @@ struct AddLessonFormView: View {
             return predefinedTopics.filter { $0.localizedCaseInsensitiveContains(customTopic) }
         }
     }
-    
-    private let predefinedTopics = [
-        // Core Driving Skills
-        "Junctions",
-        "Roundabouts",
-        "Parking",
-        "Reverse Parking",
-        "Parallel Parking",
-        "Bay Parking",
-        "Clutch Control",
-        "Speed Control",
-        "Steering Control",
-        "Hill Starts",
-        "Moving Off and Stopping",
-        "Gear Changing",
-        "Smooth Braking",
-        "Emergency Stops",
-        "Use of Mirrors",
-        "Signalling and Observation",
-        "Following Distance",
-        "Lane Discipline",
-        
-        // Complex Road Types
-        "Motorway Driving",
-        "Dual Carriageways",
-        "Rural Roads",
-        "Urban Driving",
-        "City Centre Driving",
-        "One-Way Systems",
-        "Slip Roads and Merging",
-        "Overtaking Safely",
-        
-        // Awareness and Judgement
-        "Hazard Perception",
-        "Anticipation and Planning",
-        "Defensive Driving",
-        "Blind Spots and Observation",
-        "Pedestrian Awareness",
-        "Cyclist Awareness",
-        "Weather Conditions (Rain, Fog, Ice)",
-        "Night Driving",
-        "Driving in Traffic",
-        
-        // Manoeuvres and Control
-        "Turning in the Road",
-        "Reverse Around a Corner",
-        "Pull Up on the Right and Reverse",
-        "Controlled Stops",
-        "Angle Start (Uphill/Downhill)",
-        
-        // Legal and Safety Knowledge
-        "Road Signs and Markings",
-        "Speed Limits",
-        "Vehicle Safety Checks (Show Me, Tell Me)",
-        "Seat Belt and Safety Rules",
-        "Eco-Friendly Driving",
-        "Understanding the Highway Code",
-        
-        // Test and Beyond
-        "Mock Test Preparation",
-        "Driving Test Manoeuvres",
-        "Independent Driving",
-        "Sat Nav Practice",
-        "Post-Test Motorway Lessons",
-        "Confidence Building"
-    ]
     
     // Student State
     @State private var allStudents: [SelectableStudent] = []
@@ -127,7 +62,7 @@ struct AddLessonFormView: View {
     
     @State private var isEditing: Bool = false
     
-    // State to control suggestion expansion (optional, to auto-expand when typing)
+    // State to control suggestion expansion
     @State private var isSuggestionsExpanded: Bool = false
     
     private var durationSeconds: TimeInterval {
@@ -144,7 +79,7 @@ struct AddLessonFormView: View {
                 // MARK: - Topic Section
                 Section("Topics") {
                     
-                    // 1. List of *selected* topics (always visible)
+                    // 1. List of *selected* topics
                     if selectedTopics.isEmpty {
                         Text("Add a custom topic or select from suggestions.")
                             .foregroundColor(.textLight)
@@ -167,10 +102,10 @@ struct AddLessonFormView: View {
                         }
                     }
                     
-                    // 2. Custom topic input (always visible)
+                    // 2. Custom topic input
                     HStack {
                         TextField("Add custom topic...", text: $customTopic)
-                            .onChange(of: customTopic) { newValue, _ in // iOS 17 syntax
+                            .onChange(of: customTopic) { newValue, _ in
                                 if !newValue.isEmpty {
                                     withAnimation { isSuggestionsExpanded = true }
                                 }
@@ -181,7 +116,7 @@ struct AddLessonFormView: View {
                         .disabled(customTopic.isEmpty)
                     }
                     
-                    // 3. Pre-defined topics (Scrollable & Filtered)
+                    // 3. Pre-defined topics
                     DisclosureGroup("Select from suggestions", isExpanded: $isSuggestionsExpanded) {
                         ScrollView {
                             LazyVStack(alignment: .leading) {
@@ -189,7 +124,7 @@ struct AddLessonFormView: View {
                                     Button(action: { toggleTopic(topic) }) {
                                         HStack {
                                             Text(topic)
-                                                .foregroundColor(.primary) // Keep text readable
+                                                .foregroundColor(.primary)
                                             Spacer()
                                             if selectedTopics.contains(topic) {
                                                 Image(systemName: "checkmark.circle.fill")
@@ -199,12 +134,12 @@ struct AddLessonFormView: View {
                                                     .foregroundColor(.textLight)
                                             }
                                         }
-                                        .contentShape(Rectangle()) // Make full row tappable
+                                        .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
                                     .padding(.vertical, 4)
                                     
-                                    Divider() // Clean separator
+                                    Divider()
                                 }
                                 
                                 if filteredTopics.isEmpty {
@@ -216,7 +151,7 @@ struct AddLessonFormView: View {
                             }
                             .padding(.vertical, 5)
                         }
-                        .frame(height: 200) // --- *** FIX: LIMIT HEIGHT & ENABLE SCROLL *** ---
+                        .frame(height: 200)
                     }
                     .foregroundColor(.primaryBlue)
                 }
@@ -317,7 +252,7 @@ struct AddLessonFormView: View {
         }
     }
     
-    // --- *** HELPER FUNCTIONS *** ---
+    // --- HELPER FUNCTIONS ---
     
     private func toggleTopic(_ topic: String) {
         withAnimation {
@@ -325,8 +260,6 @@ struct AddLessonFormView: View {
                 selectedTopics.remove(at: index)
             } else {
                 selectedTopics.append(topic)
-                // Optional: clear search when a suggestion is picked?
-                // customTopic = ""
             }
         }
     }
@@ -337,8 +270,6 @@ struct AddLessonFormView: View {
             withAnimation {
                 selectedTopics.append(trimmedTopic)
                 customTopic = ""
-                // Optional: Close suggestions if done typing
-                // isSuggestionsExpanded = false
             }
         }
     }
@@ -400,7 +331,7 @@ struct AddLessonFormView: View {
                     try await lessonManager.addLesson(newLesson: lessonToSave)
                 }
                 
-                onLessonAdded(lessonToSave) // Pass the saved lesson back
+                onLessonAdded(lessonToSave)
                 dismiss()
                 
             } catch {

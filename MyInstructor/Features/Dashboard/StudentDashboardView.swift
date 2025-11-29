@@ -1,7 +1,14 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/StudentDashboardView.swift
-// --- UPDATED: Changed "Lessons Taken" card color to green ---
+// --- UPDATED: "Track Lessons" now opens Lesson Statistics directly ---
 
 import SwiftUI
+
+// 1. Sheet Enum for Student Dashboard
+enum StudentDashboardSheet: Identifiable {
+    case lessonStats // Changed from .trackLesson to .lessonStats
+    case myInstructors
+    var id: Int { self.hashValue }
+}
 
 struct StudentDashboardView: View {
     @EnvironmentObject var authManager: AuthManager
@@ -17,7 +24,9 @@ struct StudentDashboardView: View {
     @State private var completedLessonsCount: Int = 0
     @State private var isLoading = true
     
-    // Notification count now reflects unread app notifications + requests
+    // 2. State for active sheet
+    @State private var activeSheet: StudentDashboardSheet?
+    
     var notificationCount: Int {
         notificationManager.notifications.filter { !$0.isRead }.count
     }
@@ -31,9 +40,10 @@ struct StudentDashboardView: View {
                     if isLoading {
                         ProgressView("Loading Dashboard...").padding(.top, 50).frame(maxWidth: .infinity)
                     } else {
-                        // MARK: - Top Row: Upcoming Lesson & Lessons Taken
+                        // --- EXISTING CARDS ---
+                        
+                        // Top Row
                         HStack(spacing: 15) {
-                            // 1. Upcoming Lesson Card
                             if let lesson = upcomingLesson {
                                 NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
                                     StudentDashboardCard(
@@ -43,7 +53,6 @@ struct StudentDashboardView: View {
                                         fixedHeight: 150,
                                         backgroundColor: Color.primaryBlue.opacity(0.1),
                                         content: {
-                                            // Compact version for the grid
                                             VStack(alignment: .leading, spacing: 4) {
                                                 Text(lesson.topic)
                                                     .font(.headline)
@@ -77,18 +86,17 @@ struct StudentDashboardView: View {
                                 .frame(maxWidth: .infinity)
                             }
                             
-                            // 2. Lessons Taken Card
                             StudentDashboardCard(
                                 title: "Lessons Taken",
                                 systemIcon: "checkmark.circle.fill",
-                                accentColor: .accentGreen, // --- UPDATED: Green ---
+                                accentColor: .accentGreen,
                                 fixedHeight: 150,
-                                backgroundColor: Color.accentGreen.opacity(0.1), // --- UPDATED: Green BG ---
+                                backgroundColor: Color.accentGreen.opacity(0.1),
                                 content: {
                                     VStack(alignment: .center, spacing: 2) {
                                         Text("\(completedLessonsCount)")
                                             .font(.system(size: 36, weight: .bold))
-                                            .foregroundColor(.accentGreen) // --- UPDATED: Green Text ---
+                                            .foregroundColor(.accentGreen)
                                         Text("Completed")
                                             .font(.caption)
                                             .foregroundColor(.secondary)
@@ -100,12 +108,12 @@ struct StudentDashboardView: View {
                         }
                         .padding(.horizontal)
                         
-                        // MARK: - Progress Card
+                        // Progress
                         StudentDashboardCard(title: "Your Progress", systemIcon: "book.fill", accentColor: .primaryBlue, content: {
                             StudentProgressContent(progress: progress)
                         }).padding(.horizontal)
                         
-                        // MARK: - Latest Feedback (Clickable)
+                        // Feedback
                         NavigationLink(destination: StudentFeedbackListView(studentID: authManager.user?.id ?? "")) {
                             StudentDashboardCard(title: "Latest Feedback", systemIcon: "note.text", accentColor: .orange, content: {
                                 StudentFeedbackContent(feedback: latestFeedback)
@@ -114,8 +122,34 @@ struct StudentDashboardView: View {
                         .buttonStyle(.plain)
                         .padding(.horizontal)
                         
-                        // MARK: - Payment Due
+                        // Payment
                         if paymentDue { PaymentDueCard().padding(.horizontal) }
+                        
+                        // --- 3. QUICK ACTIONS SECTION ---
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Quick Actions")
+                                .font(.headline)
+                                .padding(.horizontal)
+                            
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
+                                StudentQuickActionButton(
+                                    title: "Track Lessons",
+                                    icon: "chart.bar.fill", // --- UPDATED ICON ---
+                                    color: .primaryBlue,
+                                    action: { activeSheet = .lessonStats } // --- UPDATED ACTION ---
+                                )
+                                
+                                StudentQuickActionButton(
+                                    title: "My Instructors",
+                                    icon: "person.2.fill",
+                                    color: .accentGreen,
+                                    action: { activeSheet = .myInstructors }
+                                )
+                            }
+                            .padding(.horizontal)
+                        }
+                        .padding(.top, 5)
+                        // -----------------------------
                     }
                     Spacer()
                 }
@@ -133,6 +167,18 @@ struct StudentDashboardView: View {
                 await fetchData()
             }
             .refreshable { await fetchData() }
+            // 4. Sheet Handler
+            .sheet(item: $activeSheet) { item in
+                switch item {
+                case .lessonStats:
+                    // --- UPDATED: Opens Stats View directly ---
+                    if let studentID = authManager.user?.id {
+                        StudentLessonStatsView(studentID: studentID)
+                    }
+                case .myInstructors:
+                    MyInstructorsView()
+                }
+            }
         }
     }
     
@@ -155,7 +201,8 @@ struct StudentDashboardView: View {
     }
 }
 
-// MARK: - Separate Student Dashboard Card
+// MARK: - Components
+
 struct StudentDashboardCard<Content: View>: View {
     let title: String
     let systemIcon: String
@@ -186,7 +233,30 @@ struct StudentDashboardCard<Content: View>: View {
     }
 }
 
-// MARK: - Sub-views
+// 5. Unique Quick Action Button for Student
+struct StudentQuickActionButton: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.title2)
+                Text(title)
+                    .font(.caption).bold()
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+            .background(color.opacity(0.15))
+            .foregroundColor(color)
+            .cornerRadius(12)
+        }
+    }
+}
 
 struct StudentUpcomingLessonContent: View {
     let lesson: Lesson?

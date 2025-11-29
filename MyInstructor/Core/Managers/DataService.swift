@@ -1,6 +1,21 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/DataService.swift
+// --- UPDATED: Added instructor breakdown to StudentStats ---
+
 import Foundation
 import Combine
 import FirebaseFirestore
+
+// DTO for Stats
+struct StudentStats {
+    let totalLessons: Int
+    let completedLessons: Int
+    let cancelledLessons: Int
+    let totalHours: Double
+    let topicsCovered: Set<String>
+    let topicsRemaining: [String]
+    // --- NEW FIELD ---
+    let instructorBreakdown: [(name: String, count: Int)]
+}
 
 class DataService: ObservableObject {
     
@@ -46,7 +61,7 @@ class DataService: ObservableObject {
     // MARK: - Dashboard Data Fetching (Student)
     
     func fetchStudentDashboardData(for studentID: String) async throws -> (upcomingLesson: Lesson?, progress: Double, latestFeedback: String, paymentDue: Bool, completedLessonsCount: Int) {
-        // 1. Fetch All Lessons for Student (to get upcoming AND count completed)
+        // 1. Fetch All Lessons for Student
         let lessonSnapshot = try await lessonsCollection
             .whereField("studentID", isEqualTo: studentID)
             .getDocuments()
@@ -63,12 +78,10 @@ class DataService: ObservableObject {
         let completedCount = allLessons.filter { $0.status == .completed }.count
         
         // 2. Fetch Progress & Feedback
-        // Get ALL instructor IDs associated with this student via requests
         let requestsQuery = try await db.collection("student_requests")
             .whereField("studentID", isEqualTo: studentID)
             .getDocuments()
             
-        // Use Set to avoid duplicates
         let instructorIDs = Set(requestsQuery.documents.compactMap { $0.data()["instructorID"] as? String })
         
         var totalProgress: Double = 0.0
@@ -84,13 +97,11 @@ class DataService: ObservableObject {
                 .getDocument()
             
             if let record = try? recordDoc?.data(as: StudentRecord.self) {
-                // Progress
                 if let p = record.progress {
                     totalProgress += p
                     count += 1
                 }
                 
-                // Notes - Find the absolute newest note
                 if let notes = record.notes, !notes.isEmpty {
                     if let newestInRecord = notes.sorted(by: { $0.timestamp < $1.timestamp }).last {
                         if newestInRecord.timestamp > latestNoteDate {
@@ -107,35 +118,77 @@ class DataService: ObservableObject {
         return (upcomingLesson, avgProgress, latestNoteContent, false, completedCount)
     }
     
-    // --- NEW FUNCTION: Fetch all notes for a student ---
-    func fetchAllStudentNotes(for studentID: String) async throws -> [StudentNote] {
-        // Get ALL instructor IDs associated with this student via requests
-        let requestsQuery = try await db.collection("student_requests")
+    // --- UPDATED: Calculate Instructor Breakdown ---
+    func fetchStudentLessonStats(for studentID: String) async throws -> StudentStats {
+        let snapshot = try await lessonsCollection
             .whereField("studentID", isEqualTo: studentID)
             .getDocuments()
-            
-        // Use Set to avoid duplicates
+        
+        let allLessons = snapshot.documents.compactMap { try? $0.data(as: Lesson.self) }
+        
+        let completed = allLessons.filter { $0.status == .completed }
+        let cancelled = allLessons.filter { $0.status == .cancelled }
+        
+        // Calculate total hours
+        let totalSeconds = completed.reduce(0) { $0 + ($1.duration ?? 3600) }
+        let totalHours = totalSeconds / 3600.0
+        
+        // Extract covered topics
+        var coveredSet = Set<String>()
+        for lesson in completed {
+            let topics = lesson.topic.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            for topic in topics {
+                coveredSet.insert(topic)
+            }
+        }
+        
+        // Calculate remaining topics
+        let masterList = DrivingTopics.all
+        let coveredLower = coveredSet.map { $0.lowercased() }
+        let remaining = masterList.filter { !coveredLower.contains($0.lowercased()) }
+        
+        // --- NEW: Calculate Instructor Breakdown ---
+        var instructorCounts: [String: Int] = [:]
+        for lesson in completed {
+            instructorCounts[lesson.instructorID, default: 0] += 1
+        }
+        
+        var breakdown: [(name: String, count: Int)] = []
+        for (id, count) in instructorCounts {
+            // Resolve name (simple cache could be used here optimization)
+            if let user = try? await fetchUser(withId: id) {
+                breakdown.append((name: user.name ?? "Instructor", count: count))
+            } else {
+                breakdown.append((name: "Unknown Instructor", count: count))
+            }
+        }
+        // Sort by count (highest first)
+        breakdown.sort { $0.count > $1.count }
+        
+        return StudentStats(
+            totalLessons: allLessons.count,
+            completedLessons: completed.count,
+            cancelledLessons: cancelled.count,
+            totalHours: totalHours,
+            topicsCovered: coveredSet,
+            topicsRemaining: remaining,
+            instructorBreakdown: breakdown
+        )
+    }
+    
+    // MARK: - Other Helper Methods
+    func fetchAllStudentNotes(for studentID: String) async throws -> [StudentNote] {
+        let requestsQuery = try await db.collection("student_requests").whereField("studentID", isEqualTo: studentID).getDocuments()
         let instructorIDs = Set(requestsQuery.documents.compactMap { $0.data()["instructorID"] as? String })
-        
         var allNotes: [StudentNote] = []
-        
         for instructorID in instructorIDs {
-            let recordDoc = try? await usersCollection
-                .document(instructorID)
-                .collection("student_records")
-                .document(studentID)
-                .getDocument()
-            
+            let recordDoc = try? await usersCollection.document(instructorID).collection("student_records").document(studentID).getDocument()
             if let record = try? recordDoc?.data(as: StudentRecord.self), let notes = record.notes {
                 allNotes.append(contentsOf: notes)
             }
         }
-        
-        // Return sorted by date (newest first)
         return allNotes.sorted(by: { $0.timestamp > $1.timestamp })
     }
-    
-    // MARK: - User Management Fetching (Helper Methods)
     
     func fetchStudents(for instructorID: String) async throws -> [Student] {
         let instructorDoc = try await usersCollection.document(instructorID).getDocument()
@@ -172,7 +225,6 @@ class DataService: ObservableObject {
     func fetchAllStudents(for instructorID: String) async throws -> [Student] {
         async let online = fetchStudents(for: instructorID)
         async let offline = fetchOfflineStudents(for: instructorID)
-        
         let convertedOffline = try await offline.map { off -> Student in
             Student(id: off.id, userID: off.id ?? UUID().uuidString, name: off.name, photoURL: nil, email: off.email ?? "", drivingSchool: nil, phone: off.phone, address: off.address, isOffline: true, averageProgress: off.progress ?? 0.0)
         }

@@ -1,12 +1,8 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/NotificationsView.swift
-// --- UPDATED: Connects to live NotificationManager data ---
-
 import SwiftUI
 
 struct NotificationsView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var communityManager: CommunityManager
-    // --- THIS INJECTS THE LIVE DATA ---
     @EnvironmentObject var notificationManager: NotificationManager
     
     @State private var pendingRequests: [StudentRequest] = []
@@ -93,8 +89,13 @@ struct AppNotificationRow: View {
         case "lesson": return "calendar"
         case "progress": return "chart.bar.fill"
         case "note": return "note.text"
+        // --- NEW ICONS ---
+        case "reaction": return "heart.fill"
+        case "comment": return "bubble.left.fill"
+        case "reply": return "arrowshape.turn.up.left.fill"
+        // ----------------
         default: return "bell.fill"
-    }
+        }
     }
     
     var iconColor: Color {
@@ -102,6 +103,10 @@ struct AppNotificationRow: View {
         case "lesson": return .accentGreen
         case "progress": return .primaryBlue
         case "note": return .orange
+        // --- NEW COLORS ---
+        case "reaction": return .red
+        case "comment", "reply": return .primaryBlue
+        // ------------------
         default: return .gray
         }
     }

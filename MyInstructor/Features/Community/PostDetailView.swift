@@ -1,6 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/PostDetailView.swift
-// --- UPDATED: Fixed missing 'ReactionActionButton' error by ensuring all structs are defined ---
-
 import SwiftUI
 
 struct PostDetailView: View {
@@ -287,9 +284,10 @@ struct PostDetailView: View {
 
 // MARK: - Supporting Views
 
-// 1. ReactionActionButton
+// 1. ReactionActionButton - UPDATED with AuthManager injection
 struct ReactionActionButton: View {
     @EnvironmentObject var communityManager: CommunityManager
+    @EnvironmentObject var authManager: AuthManager // Added
     @Binding var post: Post
     let reactionType: String
     let icon: String
@@ -301,9 +299,9 @@ struct ReactionActionButton: View {
         Button {
             isDisabled = true
             Task {
-                guard let postID = post.id else { isDisabled = false; return }
+                guard let postID = post.id, let user = authManager.user else { isDisabled = false; return } // Updated check
                 do {
-                    try await communityManager.addReaction(postID: postID, reactionType: reactionType)
+                    try await communityManager.addReaction(postID: postID, user: user, reactionType: reactionType) // Pass user
                     post.reactionsCount[reactionType, default: 0] += 1
                 } catch { print("Failed: \(error)") }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDisabled = false }

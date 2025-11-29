@@ -1,6 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: Replaced context menu with a visible 3-dot Menu button in the comment row header to ensure correct selection ---
-
 import SwiftUI
 import PhotosUI
 
@@ -263,7 +260,6 @@ struct PostCard: View {
             .sorted(by: { $0.timestamp < $1.timestamp })
     }
     
-    // Helper to get a unique ID for ForEach, even if Firestore ID is pending
     private func safeID(for comment: Comment) -> String {
         comment.id ?? "\(comment.authorID)-\(comment.timestamp.timeIntervalSince1970)"
     }
@@ -564,8 +560,10 @@ struct PostCard: View {
     }
 }
 
+// --- UPDATED: ReactionButton now has AuthManager injected ---
 struct ReactionButton: View {
     @EnvironmentObject var communityManager: CommunityManager
+    @EnvironmentObject var authManager: AuthManager // Added
     @Binding var post: Post
     let reactionType: String; let icon: String; var color: Color
     
@@ -574,8 +572,8 @@ struct ReactionButton: View {
         Button {
             isDisabled = true
             Task {
-                guard let postID = post.id else { return }
-                try? await communityManager.addReaction(postID: postID, reactionType: reactionType)
+                guard let postID = post.id, let user = authManager.user else { isDisabled = false; return } // Updated check
+                try? await communityManager.addReaction(postID: postID, user: user, reactionType: reactionType) // Pass user
                 post.reactionsCount[reactionType, default: 0] += 1
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDisabled = false }
             }
@@ -633,7 +631,6 @@ struct FeedCommentRow: View {
                     
                     Spacer()
                     
-                    // --- VISIBLE MENU BUTTON (REPLACES CONTEXT MENU) ---
                     if canEdit || canDelete {
                         Menu {
                             if canEdit {

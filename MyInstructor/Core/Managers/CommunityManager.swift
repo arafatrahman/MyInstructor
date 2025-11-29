@@ -26,7 +26,6 @@ class CommunityManager: ObservableObject {
     // MARK: - Community Posts
     
     func fetchPosts(filter: String) async throws -> [Post] {
-        // Basic filtering logic can be expanded. Currently fetching all for simplicity.
         let snapshot = try await postsCollection.order(by: "timestamp", descending: true).limit(to: 20).getDocuments()
         return snapshot.documents.compactMap { try? $0.data(as: Post.self) }
     }
@@ -60,8 +59,24 @@ class CommunityManager: ObservableObject {
         }
     }
     
-    func addReaction(postID: String, reactionType: String) async throws {
+    // --- UPDATED: Now takes 'user' to send notification ---
+    func addReaction(postID: String, user: AppUser, reactionType: String) async throws {
+        // 1. Increment Counter
         try await postsCollection.document(postID).updateData(["reactionsCount.\(reactionType)": FieldValue.increment(1.0)])
+        
+        // 2. Notify Author
+        let doc = try await postsCollection.document(postID).getDocument()
+        if let post = try? doc.data(as: Post.self), post.authorID != user.id {
+            // Determine friendly text
+            let reactionName = reactionType == "thumbsup" ? "liked" : (reactionType == "heart" ? "loved" : "reacted to")
+            
+            NotificationManager.shared.sendNotification(
+                to: post.authorID,
+                title: "New Reaction",
+                message: "\(user.name ?? "Someone") \(reactionName) your post.",
+                type: "reaction"
+            )
+        }
     }
     
     // MARK: - Comments
@@ -71,10 +86,39 @@ class CommunityManager: ObservableObject {
         return snapshot.documents.compactMap { try? $0.data(as: Comment.self) }
     }
     
+    // --- UPDATED: Added notification logic for comments and replies ---
     func addComment(postID: String, authorID: String, authorName: String, authorRole: UserRole, authorPhotoURL: String?, content: String, parentCommentID: String?) async throws {
+        // 1. Add Comment
         let newComment = Comment(postID: postID, authorID: authorID, authorName: authorName, authorPhotoURL: authorPhotoURL, authorRole: authorRole, timestamp: Date(), content: content, parentCommentID: parentCommentID)
         try postsCollection.document(postID).collection("comments").addDocument(from: newComment)
         try await postsCollection.document(postID).updateData(["commentsCount": FieldValue.increment(1.0)])
+        
+        // 2. Notify Relevant Users
+        let postDoc = try await postsCollection.document(postID).getDocument()
+        guard let post = try? postDoc.data(as: Post.self) else { return }
+        
+        if let parentID = parentCommentID {
+            // It's a REPLY -> Notify the author of the parent comment
+            let parentDoc = try await postsCollection.document(postID).collection("comments").document(parentID).getDocument()
+            if let parentComment = try? parentDoc.data(as: Comment.self), parentComment.authorID != authorID {
+                NotificationManager.shared.sendNotification(
+                    to: parentComment.authorID,
+                    title: "New Reply",
+                    message: "\(authorName) replied to your comment.",
+                    type: "reply"
+                )
+            }
+        } else {
+            // It's a Top-Level COMMENT -> Notify the post author
+            if post.authorID != authorID {
+                NotificationManager.shared.sendNotification(
+                    to: post.authorID,
+                    title: "New Comment",
+                    message: "\(authorName) commented on your post.",
+                    type: "comment"
+                )
+            }
+        }
     }
     
     func deleteComment(postID: String, commentID: String, parentCommentID: String?) async throws {
@@ -89,7 +133,6 @@ class CommunityManager: ObservableObject {
     // MARK: - Student Requests
     
     func sendRequest(from student: AppUser, to instructorID: String) async throws {
-        // Check for existing
         let query = requestsCollection
             .whereField("studentID", isEqualTo: student.id!)
             .whereField("instructorID", isEqualTo: instructorID)
@@ -125,7 +168,6 @@ class CommunityManager: ObservableObject {
         guard let id = request.id else { return }
         try await requestsCollection.document(id).updateData(["status": RequestStatus.approved.rawValue])
         try await usersCollection.document(request.instructorID).updateData(["studentIDs": FieldValue.arrayUnion([request.studentID])])
-        // Also update student's instructor list
         try await usersCollection.document(request.studentID).updateData(["instructorIDs": FieldValue.arrayUnion([request.instructorID])])
     }
     
@@ -135,12 +177,9 @@ class CommunityManager: ObservableObject {
     }
     
     func removeStudent(studentID: String, instructorID: String) async throws {
-        // Remove from instructor's list
         try await usersCollection.document(instructorID).updateData(["studentIDs": FieldValue.arrayRemove([studentID])])
-        // Remove from student's instructor list
         try await usersCollection.document(studentID).updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])])
         
-        // Remove the connection request
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
         for doc in snapshot.documents {
@@ -260,7 +299,6 @@ class CommunityManager: ObservableObject {
         }
     }
     
-    // --- UPDATED: Implemented Logic ---
     func deleteStudentNote(instructorID: String, studentID: String, note: StudentNote, isOffline: Bool) async throws {
         let ref: DocumentReference
         if isOffline {
@@ -273,7 +311,6 @@ class CommunityManager: ObservableObject {
         if doc.exists {
             var notesToUpdate: [StudentNote] = []
             
-            // Extract existing notes based on offline status
             if isOffline {
                 if let student = try? doc.data(as: OfflineStudent.self), let notes = student.notes {
                     notesToUpdate = notes
@@ -284,16 +321,12 @@ class CommunityManager: ObservableObject {
                 }
             }
             
-            // Filter out the note to delete
             let filteredNotes = notesToUpdate.filter { $0.id != note.id }
-            
-            // Encode and save back
             let encodedNotes = try filteredNotes.map { try Firestore.Encoder().encode($0) }
             try await ref.updateData(["notes": encodedNotes])
         }
     }
     
-    // --- UPDATED: Implemented Logic ---
     func updateStudentNote(instructorID: String, studentID: String, oldNote: StudentNote, newContent: String, isOffline: Bool) async throws {
         let ref: DocumentReference
         if isOffline {
@@ -316,13 +349,10 @@ class CommunityManager: ObservableObject {
                 }
             }
             
-            // Find the index of the old note
             if let index = notesToUpdate.firstIndex(where: { $0.id == oldNote.id }) {
-                // Update content but keep ID and timestamp
                 let updatedNote = StudentNote(id: oldNote.id, content: newContent, timestamp: oldNote.timestamp)
                 notesToUpdate[index] = updatedNote
                 
-                // Encode and save back
                 let encodedNotes = try notesToUpdate.map { try Firestore.Encoder().encode($0) }
                 try await ref.updateData(["notes": encodedNotes])
             }

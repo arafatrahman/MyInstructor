@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/PostDetailView.swift
+// --- UPDATED: Complete file with real-time comments and notification-ready reactions ---
+
 import SwiftUI
 
 struct PostDetailView: View {
@@ -10,7 +13,7 @@ struct PostDetailView: View {
     @State private var commentText: String = ""
     @State private var isReportFlowPresented = false
     
-    @State private var comments: [Comment] = []
+    // We rely on communityManager.comments for live updates
     
     @State private var visibleCommentLimit: Int = 3
     @State private var expandedReplyIDs: Set<String> = []
@@ -47,18 +50,18 @@ struct PostDetailView: View {
                     Divider()
                     
                     // Comments Section
-                    Text("Comments (\(post.commentsCount))")
+                    Text("Comments (\(communityManager.comments.count))")
                         .font(.headline)
                         .padding(.horizontal)
                     
                     VStack(alignment: .leading, spacing: 20) {
-                        if comments.isEmpty {
+                        if communityManager.comments.isEmpty {
                             Text("No comments yet.")
                                 .foregroundColor(.textLight)
                                 .padding(.top, 10)
                         } else {
-                            // Filter and sort parent comments
-                            let allParentComments = comments
+                            // Filter and sort parent comments from LIVE data
+                            let allParentComments = communityManager.comments
                                 .filter { $0.parentCommentID == nil }
                                 .sorted(by: { $0.timestamp < $1.timestamp })
                             
@@ -85,8 +88,8 @@ struct PostDetailView: View {
                                     onDelete: { deleteComment(comment) }
                                 )
                                 
-                                // Replies
-                                let replyComments = comments
+                                // Replies (from LIVE data)
+                                let replyComments = communityManager.comments
                                     .filter { $0.parentCommentID == comment.id }
                                     .sorted(by: { $0.timestamp < $1.timestamp })
                                 
@@ -182,7 +185,14 @@ struct PostDetailView: View {
             ReportFlowView()
         }
         .task {
-            await fetchComments()
+            // Start listening for real-time updates when view appears
+            if let id = post.id {
+                communityManager.listenToComments(for: id)
+            }
+        }
+        .onDisappear {
+            // Stop listening when leaving the screen
+            communityManager.stopListeningToComments()
         }
         .onTapGesture {
             isCommentFieldFocused = false
@@ -191,21 +201,13 @@ struct PostDetailView: View {
     
     // MARK: - Logic Functions
     
-    private func fetchComments() async {
-        guard let postID = post.id else { return }
-        do {
-            self.comments = try await communityManager.fetchComments(for: postID)
-        } catch {
-            print("Failed to fetch comments: \(error.localizedDescription)")
-        }
-    }
-    
     private func replyTo(_ comment: Comment) {
         // Clear edit state if active
         editingComment = nil
         
         if let parentID = comment.parentCommentID {
-            self.replyingToComment = comments.first(where: { $0.id == parentID })
+            // Find parent in live data
+            self.replyingToComment = communityManager.comments.first(where: { $0.id == parentID })
         } else {
             self.replyingToComment = comment
         }
@@ -227,8 +229,8 @@ struct PostDetailView: View {
         Task {
             do {
                 try await communityManager.deleteComment(postID: postID, commentID: commentID, parentCommentID: comment.parentCommentID)
+                // We update local count for UI consistency, but the list updates automatically via listener
                 post.commentsCount -= 1
-                await fetchComments()
             } catch {
                 print("Error deleting comment: \(error)")
             }
@@ -249,7 +251,7 @@ struct PostDetailView: View {
                 editingComment = nil
                 commentText = ""
                 isCommentFieldFocused = false
-                await fetchComments()
+                // No manual fetch needed, listener updates UI
             } catch {
                 print("Failed to update comment: \(error)")
             }
@@ -274,7 +276,7 @@ struct PostDetailView: View {
             replyingToComment = nil
             isCommentFieldFocused = false
             post.commentsCount += 1
-            await fetchComments()
+            // No manual fetch needed
             
         } catch {
             print("Failed to post comment: \(error.localizedDescription)")
@@ -284,10 +286,10 @@ struct PostDetailView: View {
 
 // MARK: - Supporting Views
 
-// 1. ReactionActionButton - UPDATED with AuthManager injection
+// 1. ReactionActionButton
 struct ReactionActionButton: View {
     @EnvironmentObject var communityManager: CommunityManager
-    @EnvironmentObject var authManager: AuthManager // Added
+    @EnvironmentObject var authManager: AuthManager
     @Binding var post: Post
     let reactionType: String
     let icon: String
@@ -299,9 +301,10 @@ struct ReactionActionButton: View {
         Button {
             isDisabled = true
             Task {
-                guard let postID = post.id, let user = authManager.user else { isDisabled = false; return } // Updated check
+                guard let postID = post.id, let user = authManager.user else { isDisabled = false; return }
                 do {
-                    try await communityManager.addReaction(postID: postID, user: user, reactionType: reactionType) // Pass user
+                    // Send user object for notification generation
+                    try await communityManager.addReaction(postID: postID, user: user, reactionType: reactionType)
                     post.reactionsCount[reactionType, default: 0] += 1
                 } catch { print("Failed: \(error)") }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDisabled = false }
@@ -385,15 +388,27 @@ struct CommentRow: View {
                     
                     Spacer()
                     
-                    // Context Menu (Long Press) is applied to the whole row,
-                    // but we can also have a visible menu or rely on the gesture.
-                    // Per request, using Long Press on the row (configured below).
-                    // If you want a visible button too:
-                    /*
                     if canEdit || canDelete {
-                        Menu { ... } label: { Image(systemName: "ellipsis") ... }
+                        Menu {
+                            if canEdit {
+                                Button(action: { onEdit?() }) {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                            }
+                            if canDelete {
+                                Button(role: .destructive, action: { onDelete?() }) {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.caption)
+                                .foregroundColor(.textLight)
+                                .padding(8)
+                                .background(Color.white.opacity(0.01))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    */
                 }
                 
                 Text(comment.content)
@@ -419,19 +434,7 @@ struct CommentRow: View {
                 }
             }
         }
-        .contentShape(Rectangle()) // Make entire row tappable/pressable
-        .contextMenu {
-            if canEdit {
-                Button(action: { onEdit?() }) {
-                    Label("Edit", systemImage: "pencil")
-                }
-            }
-            if canDelete {
-                Button(role: .destructive, action: { onDelete?() }) {
-                    Label("Delete", systemImage: "trash")
-                }
-            }
-        }
+        .contentShape(Rectangle()) // Make entire row tappable
     }
 }
 

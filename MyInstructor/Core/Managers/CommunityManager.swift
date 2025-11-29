@@ -12,6 +12,14 @@ class CommunityManager: ObservableObject {
     private var conversationsCollection: CollectionReference { db.collection("conversations") }
     private var offlineStudentsCollection: CollectionReference { db.collection("offline_students") }
     
+    // --- LIVE DATA PUBLISHERS ---
+    @Published var posts: [Post] = []
+    @Published var comments: [Comment] = []
+    
+    // --- LISTENERS ---
+    private var postsListener: ListenerRegistration?
+    private var commentsListener: ListenerRegistration?
+    
     enum RequestError: Error, LocalizedError {
         case alreadyPending, alreadyApproved, blocked
         var errorDescription: String? {
@@ -23,8 +31,34 @@ class CommunityManager: ObservableObject {
         }
     }
 
-    // MARK: - Community Posts
+    // MARK: - Community Posts (Real-time)
     
+    /// Starts a real-time listener for community posts.
+    func listenToFeed(filter: String) {
+        postsListener?.remove() // Clean up old listener
+        
+        // Basic query: ordered by timestamp
+        // (Filter logic can be expanded here if needed)
+        let query = postsCollection.order(by: "timestamp", descending: true).limit(to: 50)
+        
+        postsListener = query.addSnapshotListener { [weak self] snapshot, error in
+            guard let self = self else { return }
+            if let error = error {
+                print("Error listening to feed: \(error.localizedDescription)")
+                return
+            }
+            guard let documents = snapshot?.documents else { return }
+            
+            self.posts = documents.compactMap { try? $0.data(as: Post.self) }
+        }
+    }
+    
+    func stopListeningToFeed() {
+        postsListener?.remove()
+        postsListener = nil
+    }
+    
+    // Kept for compatibility if needed, but UI should prefer listenToFeed
     func fetchPosts(filter: String) async throws -> [Post] {
         let snapshot = try await postsCollection.order(by: "timestamp", descending: true).limit(to: 20).getDocuments()
         return snapshot.documents.compactMap { try? $0.data(as: Post.self) }
@@ -59,7 +93,6 @@ class CommunityManager: ObservableObject {
         }
     }
     
-    // --- UPDATED: Now takes 'user' to send notification ---
     func addReaction(postID: String, user: AppUser, reactionType: String) async throws {
         // 1. Increment Counter
         try await postsCollection.document(postID).updateData(["reactionsCount.\(reactionType)": FieldValue.increment(1.0)])
@@ -67,7 +100,6 @@ class CommunityManager: ObservableObject {
         // 2. Notify Author
         let doc = try await postsCollection.document(postID).getDocument()
         if let post = try? doc.data(as: Post.self), post.authorID != user.id {
-            // Determine friendly text
             let reactionName = reactionType == "thumbsup" ? "liked" : (reactionType == "heart" ? "loved" : "reacted to")
             
             NotificationManager.shared.sendNotification(
@@ -79,14 +111,39 @@ class CommunityManager: ObservableObject {
         }
     }
     
-    // MARK: - Comments
+    // MARK: - Comments (Real-time)
+    
+    /// Starts a real-time listener for comments on a specific post.
+    func listenToComments(for postID: String) {
+        commentsListener?.remove()
+        
+        let query = postsCollection.document(postID)
+            .collection("comments")
+            .order(by: "timestamp", descending: false)
+        
+        commentsListener = query.addSnapshotListener { [weak self] snapshot, error in
+            guard let self = self else { return }
+            if let error = error {
+                print("Error listening to comments: \(error.localizedDescription)")
+                return
+            }
+            guard let documents = snapshot?.documents else { return }
+            
+            self.comments = documents.compactMap { try? $0.data(as: Comment.self) }
+        }
+    }
+    
+    func stopListeningToComments() {
+        commentsListener?.remove()
+        commentsListener = nil
+        comments = [] // Clear data
+    }
     
     func fetchComments(for postID: String) async throws -> [Comment] {
         let snapshot = try await postsCollection.document(postID).collection("comments").order(by: "timestamp", descending: false).getDocuments()
         return snapshot.documents.compactMap { try? $0.data(as: Comment.self) }
     }
     
-    // --- UPDATED: Added notification logic for comments and replies ---
     func addComment(postID: String, authorID: String, authorName: String, authorRole: UserRole, authorPhotoURL: String?, content: String, parentCommentID: String?) async throws {
         // 1. Add Comment
         let newComment = Comment(postID: postID, authorID: authorID, authorName: authorName, authorPhotoURL: authorPhotoURL, authorRole: authorRole, timestamp: Date(), content: content, parentCommentID: parentCommentID)
@@ -98,7 +155,7 @@ class CommunityManager: ObservableObject {
         guard let post = try? postDoc.data(as: Post.self) else { return }
         
         if let parentID = parentCommentID {
-            // It's a REPLY -> Notify the author of the parent comment
+            // Reply -> Notify parent author
             let parentDoc = try await postsCollection.document(postID).collection("comments").document(parentID).getDocument()
             if let parentComment = try? parentDoc.data(as: Comment.self), parentComment.authorID != authorID {
                 NotificationManager.shared.sendNotification(
@@ -109,7 +166,7 @@ class CommunityManager: ObservableObject {
                 )
             }
         } else {
-            // It's a Top-Level COMMENT -> Notify the post author
+            // Comment -> Notify post author
             if post.authorID != authorID {
                 NotificationManager.shared.sendNotification(
                     to: post.authorID,

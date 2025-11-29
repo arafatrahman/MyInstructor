@@ -6,7 +6,9 @@ struct CommunityFeedView: View {
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var authManager: AuthManager
     
-    @State private var posts: [Post] = []
+    // REMOVED local @State private var posts: [Post] = []
+    // We now use communityManager.posts
+    
     @State private var searchText = ""
     @State private var filterMode: CommunityFilter = .all
     
@@ -15,25 +17,21 @@ struct CommunityFeedView: View {
     @State private var isProcessingPhotos = false
     @State private var loadedDataForSheet: [Data]? = nil
     
-    @State private var isLoading = true
+    // We can rely on communityManager.posts for loading state implicitly (empty vs populated),
+    // or keep a simple flag that toggles off after the listener is attached.
+    @State private var isInitialLoading = true
     
     var filteredPosts: [Post] {
+        let sourcePosts = communityManager.posts // Use live data
         if searchText.isEmpty {
-            return posts
+            return sourcePosts
         } else {
-            return posts.filter { $0.content?.localizedCaseInsensitiveContains(searchText) ?? false || $0.authorName.localizedCaseInsensitiveContains(searchText) }
+            return sourcePosts.filter { $0.content?.localizedCaseInsensitiveContains(searchText) ?? false || $0.authorName.localizedCaseInsensitiveContains(searchText) }
         }
     }
     
     private var postIndices: [Int] {
-        if searchText.isEmpty {
-            return Array(posts.indices)
-        } else {
-            return posts.indices.filter { index in
-                let post = posts[index]
-                return post.content?.localizedCaseInsensitiveContains(searchText) ?? false || post.authorName.localizedCaseInsensitiveContains(searchText)
-            }
-        }
+        return Array(filteredPosts.indices)
     }
 
     var body: some View {
@@ -49,7 +47,7 @@ struct CommunityFeedView: View {
                     Spacer()
                     
                     Button {
-                        print("Search tapped")
+                        // Search action
                     } label: {
                         Image(systemName: "magnifyingglass")
                             .font(.title2)
@@ -142,71 +140,78 @@ struct CommunityFeedView: View {
                 .padding(.horizontal)
                 
                 // Content View
-                if isLoading {
+                if isInitialLoading && communityManager.posts.isEmpty {
                     ProgressView("Loading Community...")
                         .padding(.top, 50)
-                } else if posts.isEmpty {
+                } else if communityManager.posts.isEmpty {
                     EmptyStateView(icon: "message.circle", message: "No posts yet. Start a conversation now!")
-                } else if postIndices.isEmpty {
+                } else if filteredPosts.isEmpty {
                      EmptyStateView(icon: "magnifyingglass", message: "No posts match your filters.")
                 } else {
                     List {
-                        ForEach(postIndices, id: \.self) { index in
-                            VStack(alignment: .leading) {
-                                PostCard(
-                                    post: $posts[index],
-                                    onDelete: deletePostFromFeed
-                                )
-                                .background(
-                                    NavigationLink(destination: PostDetailView(post: posts[index])) {
-                                        EmptyView()
+                        // Using indices to bind to the array
+                        ForEach(filteredPosts.indices, id: \.self) { index in
+                            // Safe check because filteredPosts is computed
+                            if index < filteredPosts.count {
+                                VStack(alignment: .leading) {
+                                    // Binding hack: Since filteredPosts is computed, we can't bind directly.
+                                    // However, PostCard expects a binding to update local counts optimistically.
+                                    // For now, we pass a binding to the element in the main array if we can find it,
+                                    // or just use the value.
+                                    // A safer way for live data is to pass the value and let the LISTENER update the UI.
+                                    // So we'll pass a .constant or change PostCard signature.
+                                    // Given PostCard expects Binding<Post>, we find the index in the main array.
+                                    
+                                    let post = filteredPosts[index]
+                                    if let mainIndex = communityManager.posts.firstIndex(where: { $0.id == post.id }) {
+                                        PostCard(
+                                            post: $communityManager.posts[mainIndex],
+                                            onDelete: { _ in /* Handled by listener */ }
+                                        )
+                                        .background(
+                                            NavigationLink(destination: PostDetailView(post: post)) {
+                                                EmptyView()
+                                            }
+                                            .opacity(0)
+                                        )
                                     }
-                                    .opacity(0)
-                                )
+                                }
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
                             }
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
                         }
                     }
                     .listStyle(.plain)
-                    .refreshable {
-                        await fetchPosts()
-                    }
                 }
             }
             .navigationBarHidden(true)
-            .task { await fetchPosts() }
+            .task {
+                // Start listening
+                communityManager.listenToFeed(filter: filterMode.rawValue)
+                // Fake loading delay removal or just wait for data
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                isInitialLoading = false
+            }
+            .onDisappear {
+                // Optional: Stop listening if you want to save data,
+                // but usually feeds are kept alive for back navigation.
+                // communityManager.stopListeningToFeed()
+            }
             .sheet(isPresented: $isCreatePostPresented) {
                 CreatePostView(
                     postToEdit: nil,
                     onPostCreated: {
                         isCreatePostPresented = false
-                        Task { await fetchPosts() }
                     }
                 )
             }
             .sheet(item: $loadedDataForSheet) { photoData in
                 CreatePostView(initialPhotoData: photoData, onPostCreated: {
                     loadedDataForSheet = nil
-                    Task { await fetchPosts() }
                 })
             }
         }
         .navigationViewStyle(.stack)
-    }
-    
-    func fetchPosts() async {
-        isLoading = true
-        do {
-            self.posts = try await communityManager.fetchPosts(filter: filterMode.rawValue)
-        } catch {
-            print("Failed to fetch posts: \(error)")
-        }
-        isLoading = false
-    }
-    
-    private func deletePostFromFeed(postID: String) {
-        posts.removeAll { $0.id == postID }
     }
 }
 
@@ -220,6 +225,7 @@ enum CommunityFilter: String {
     case all, instructors, local, trending
 }
 
+// PostCard remains the same, but now it relies on the parent's @Binding to the LIVE array
 struct PostCard: View {
     @Binding var post: Post
     let onDelete: (String) -> Void
@@ -284,6 +290,7 @@ struct PostCard: View {
                 postToEdit: post,
                 onPostSaved: { newContent, newLocation, newVisibility, newMediaURLs in
                     isShowingEditSheet = false
+                    // Optimistic update (listener will confirm)
                     post.content = newContent.isEmpty ? nil : newContent
                     post.location = newLocation
                     post.visibility = newVisibility
@@ -528,7 +535,9 @@ struct PostCard: View {
         guard let postID = post.id, let commentID = comment.id else { return }
         Task {
             try? await communityManager.deleteComment(postID: postID, commentID: commentID, parentCommentID: comment.parentCommentID)
-            post.commentsCount -= 1
+            // No manual count decrement needed for the view if listener is active, but we kept manual logic for FeedCard which has its own fetchComments.
+            // PostCard in Feed uses 'fetchComments' which is one-off.
+            // In a full refactor, PostCard would also listen, but for now we manually update the list to reflect immediate change.
             await fetchComments()
         }
     }
@@ -549,7 +558,6 @@ struct PostCard: View {
         } else {
             let parentID = replyingToComment?.id
             try? await communityManager.addComment(postID: postID, authorID: authorID, authorName: author.name ?? "User", authorRole: author.role, authorPhotoURL: author.photoURL, content: commentText, parentCommentID: parentID)
-            post.commentsCount += 1
             replyingToComment = nil
         }
         
@@ -560,10 +568,9 @@ struct PostCard: View {
     }
 }
 
-// --- UPDATED: ReactionButton now has AuthManager injected ---
 struct ReactionButton: View {
     @EnvironmentObject var communityManager: CommunityManager
-    @EnvironmentObject var authManager: AuthManager // Added
+    @EnvironmentObject var authManager: AuthManager
     @Binding var post: Post
     let reactionType: String; let icon: String; var color: Color
     
@@ -572,9 +579,9 @@ struct ReactionButton: View {
         Button {
             isDisabled = true
             Task {
-                guard let postID = post.id, let user = authManager.user else { isDisabled = false; return } // Updated check
-                try? await communityManager.addReaction(postID: postID, user: user, reactionType: reactionType) // Pass user
-                post.reactionsCount[reactionType, default: 0] += 1
+                guard let postID = post.id, let user = authManager.user else { isDisabled = false; return }
+                try? await communityManager.addReaction(postID: postID, user: user, reactionType: reactionType)
+                // Post object updates via binding from parent (which is listening to live feed)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDisabled = false }
             }
         } label: {
@@ -586,8 +593,7 @@ struct ReactionButton: View {
     }
 }
 
-// MARK: - Feed Comment Components
-
+// FeedCommentRow and extensions remain the same
 struct FeedCommentRow: View {
     let comment: Comment
     let isExpanded: Bool
@@ -623,7 +629,6 @@ struct FeedCommentRow: View {
             .frame(width: 35, height: 35).clipShape(Circle()).background(Color.secondaryGray.clipShape(Circle()))
             
             VStack(alignment: .leading, spacing: 4) {
-                // --- HEADER ROW ---
                 HStack(alignment: .center) {
                     Text(comment.authorName).font(.subheadline).bold()
                     Text("• \(comment.timestamp.timeAgoDisplay())").font(.caption).foregroundColor(.textLight)
@@ -647,16 +652,15 @@ struct FeedCommentRow: View {
                             Image(systemName: "ellipsis")
                                 .font(.caption)
                                 .foregroundColor(.textLight)
-                                .padding(8) // Increase touch target
-                                .background(Color.white.opacity(0.01)) // Make padding tappable
+                                .padding(8)
+                                .background(Color.white.opacity(0.01))
                         }
-                        .buttonStyle(.plain) // Crucial for List compatibility
+                        .buttonStyle(.plain)
                     }
                 }
                 
                 Text(comment.content).font(.body).multilineTextAlignment(.leading)
                 
-                // --- FOOTER ---
                 HStack(spacing: 12) {
                     if let onReply = onReply {
                         Button("Reply") { onReply() }.font(.caption).bold().foregroundColor(.textLight).buttonStyle(.plain)

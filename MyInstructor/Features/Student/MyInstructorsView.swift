@@ -1,5 +1,5 @@
-// File: MyInstructor/Features/Student/MyInstructorsView.swift
-// --- UPDATED: "Blocked by You" instructors are now tappable to view profile for unblocking ---
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Student/MyInstructorsView.swift
+// --- UPDATED: Redesigned UI with Inset Grouped List, badges, and modern typography ---
 
 import SwiftUI
 
@@ -41,119 +41,124 @@ struct MyInstructorsView: View {
     
     var body: some View {
         NavigationView {
-            VStack {
-                Picker("Request Status", selection: $selectedStatus) {
-                    Text("My Instructors (\(myInstructorsList.count))").tag(MyInstructorsFilter.approved)
-                    Text("Pending (\(otherRequestsCount))").tag(MyInstructorsFilter.pending)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
+            ZStack {
+                Color(.systemGroupedBackground) // Light gray background
+                    .ignoresSafeArea()
                 
-                if isLoading {
-                    ProgressView("Loading Requests...")
-                        .frame(maxHeight: .infinity)
-                } else {
-                    if selectedStatus == .approved {
-                        // --- *** THIS IS THE "MY INSTRUCTORS" (APPROVED) TAB *** ---
-                        if myInstructorsList.isEmpty {
-                            VStack(spacing: 15) {
-                                Image(systemName: "person.badge.plus")
-                                    .font(.system(size: 50))
-                                    .foregroundColor(.textLight)
-                                
-                                Text("You have no approved or blocked instructors yet.")
-                                    .font(.headline)
-                                    .foregroundColor(.textLight)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal)
-                                
-                                NavigationLink(destination: InstructorDirectoryView()) {
-                                    Text("Find an Instructor")
-                                }
-                                .buttonStyle(.primaryDrivingApp)
-                                .frame(width: 200)
-                            }
-                            .padding(40)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            
-                        } else {
-                            List {
-                                Section("My Instructors") {
-                                    // --- *** THIS IS THE UPDATED LOGIC *** ---
-                                    // The row is now always a NavigationLink.
-                                    ForEach(myInstructorsList) { request in
-                                        NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
-                                            MyInstructorRow(request: request)
-                                        }
-                                        // The swipe action changes based on the status
-                                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                            if request.status == .approved {
-                                                Button(role: .destructive) {
-                                                    Task { await removeInstructor(request) }
-                                                } label: {
-                                                    Label("Remove", systemImage: "trash.fill")
+                VStack(spacing: 0) {
+                    // Segmented Control Container
+                    VStack {
+                        Picker("Request Status", selection: $selectedStatus) {
+                            Text("Instructors").tag(MyInstructorsFilter.approved)
+                            Text("Pending (\(otherRequestsCount))").tag(MyInstructorsFilter.pending)
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal)
+                    }
+                    .background(Color(.systemBackground)) // White background for picker area
+                    
+                    if isLoading {
+                        Spacer()
+                        ProgressView("Loading Requests...")
+                        Spacer()
+                    } else {
+                        if selectedStatus == .approved {
+                            // --- APPROVED TAB ---
+                            if myInstructorsList.isEmpty {
+                                EmptyStateView(
+                                    icon: "person.badge.plus",
+                                    message: "You haven't connected with any instructors yet.",
+                                    actionTitle: "Find an Instructor",
+                                    action: {
+                                        // Navigation handled via sidebar/tab usually, but placeholder here
+                                    }
+                                )
+                            } else {
+                                List {
+                                    Section {
+                                        ForEach(myInstructorsList) { request in
+                                            ZStack {
+                                                // Navigation Link
+                                                NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
+                                                    EmptyView()
                                                 }
-                                            } else if request.status == .blocked && request.blockedBy == "student" {
-                                                Button("Unblock") {
-                                                    Task { await unblockInstructor(request) }
+                                                .opacity(0)
+                                                
+                                                // Custom Row Content
+                                                MyInstructorRow(request: request)
+                                            }
+                                            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                                            // Swipe Actions
+                                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                                if request.status == .approved {
+                                                    Button(role: .destructive) {
+                                                        Task { await removeInstructor(request) }
+                                                    } label: {
+                                                        Label("Remove", systemImage: "trash.fill")
+                                                    }
+                                                } else if request.status == .blocked && request.blockedBy == "student" {
+                                                    Button("Unblock") {
+                                                        Task { await unblockInstructor(request) }
+                                                    }
+                                                    .tint(.accentGreen)
                                                 }
-                                                .tint(.accentGreen)
                                             }
                                         }
-                                        // Disable navigation if blocked *by instructor* (though they're on the other tab)
-                                        .disabled(request.status == .blocked && request.blockedBy == "instructor")
+                                    } header: {
+                                        Text("Active Connections")
                                     }
-                                    // --- *** END OF UPDATED LOGIC *** ---
                                 }
+                                .listStyle(.insetGrouped) // Modern iOS card style
                             }
-                            .listStyle(.insetGrouped)
-                        }
-                    } else {
-                        // --- *** THIS IS THE "PENDING" TAB *** ---
-                        if otherRequestsCount == 0 {
-                            EmptyStateView(
-                                icon: "paperplane.fill",
-                                message: "You have no pending, denied, or instructor-blocked requests."
-                            )
                         } else {
-                            List {
-                                if !pendingRequests.isEmpty {
-                                    Section("Pending Requests") {
-                                        ForEach(pendingRequests) { request in
-                                            MyInstructorRow(request: request)
-                                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                                    Button(role: .destructive) {
-                                                        Task { await cancelRequest(request) }
-                                                    } label: {
-                                                        Label("Cancel", systemImage: "xmark.fill")
+                            // --- PENDING TAB ---
+                            if otherRequestsCount == 0 {
+                                EmptyStateView(
+                                    icon: "tray",
+                                    message: "No pending or denied requests."
+                                )
+                            } else {
+                                List {
+                                    if !pendingRequests.isEmpty {
+                                        Section(header: Text("Pending Approval")) {
+                                            ForEach(pendingRequests) { request in
+                                                MyInstructorRow(request: request)
+                                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                                        Button(role: .destructive) {
+                                                            Task { await cancelRequest(request) }
+                                                        } label: {
+                                                            Label("Cancel", systemImage: "xmark.fill")
+                                                        }
                                                     }
-                                                }
+                                            }
                                         }
                                     }
-                                }
-                                if !deniedRequests.isEmpty {
-                                    Section("Denied Requests") {
-                                        ForEach(deniedRequests) { request in
-                                            NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
+                                    
+                                    if !deniedRequests.isEmpty {
+                                        Section(header: Text("Denied")) {
+                                            ForEach(deniedRequests) { request in
+                                                MyInstructorRow(request: request)
+                                            }
+                                        }
+                                    }
+                                    
+                                    if !instructorBlockedRequests.isEmpty {
+                                        Section(header: Text("Unavailable")) {
+                                            ForEach(instructorBlockedRequests) { request in
                                                 MyInstructorRow(request: request)
                                             }
                                         }
                                     }
                                 }
-                                if !instructorBlockedRequests.isEmpty {
-                                    Section("Blocked by Instructor") {
-                                        ForEach(instructorBlockedRequests) { request in
-                                            MyInstructorRow(request: request)
-                                        }
-                                    }
-                                }
+                                .listStyle(.insetGrouped)
                             }
-                            .listStyle(.insetGrouped)
                         }
                     }
                 }
             }
             .navigationTitle("My Instructors")
+            .navigationBarTitleDisplayMode(.inline)
             .task {
                 await loadRequests()
             }
@@ -163,30 +168,23 @@ struct MyInstructorsView: View {
         }
     }
     
+    // MARK: - Logic (Same as before)
     private func loadRequests() async {
         guard let studentID = authManager.user?.id else { return }
         isLoading = true
         do {
-            // 1. Fetch all requests, sorted by priority (Blocked > Approved > etc)
             let allRequests = try await communityManager.fetchSentRequests(for: studentID)
-            
-            // 2. De-duplicate the list to prevent "double profiles"
             var uniqueRequests: [StudentRequest] = []
             var seenInstructorIDs = Set<String>()
             
             for request in allRequests {
-                // Because the list is pre-sorted, we only add the *first*
-                // request we see for each instructor.
                 if !seenInstructorIDs.contains(request.instructorID) {
                     uniqueRequests.append(request)
                     seenInstructorIDs.insert(request.instructorID)
                 }
             }
-            
-            // 3. Set the de-duplicated list as our main source
             self.sentRequests = uniqueRequests
             
-            // 4. Sync local profile with *only* the approved instructors
             let approvedIDs = self.myInstructorsList
                 .filter { $0.status == .approved }
                 .map { $0.instructorID }
@@ -204,36 +202,28 @@ struct MyInstructorsView: View {
         do {
             try await communityManager.cancelRequest(requestID: requestID)
             sentRequests.removeAll(where: { $0.id == requestID })
-        } catch {
-            print("Failed to cancel request: \(error.localizedDescription)")
-        }
+        } catch { print("Failed: \(error)") }
     }
     
     private func removeInstructor(_ request: StudentRequest) async {
         guard let studentID = authManager.user?.id else { return }
         do {
             try await communityManager.removeInstructor(instructorID: request.instructorID, studentID: studentID)
-            // Refresh list to move them to "Denied"
             await loadRequests()
-        } catch {
-            print("Failed to remove instructor: \(error.localizedDescription)")
-        }
+        } catch { print("Failed: \(error)") }
     }
     
     private func unblockInstructor(_ request: StudentRequest) async {
         guard let studentID = authManager.user?.id else { return }
         do {
             try await communityManager.unblockInstructor(instructorID: request.instructorID, studentID: studentID)
-            // After unblocking, refresh the list. The request will
-            // move to the "Denied" section.
             await loadRequests()
-        } catch {
-            print("Failed to unblock instructor: \(error.localizedDescription)")
-        }
+        } catch { print("Failed: \(error)") }
     }
 }
 
-// REDESIGNED ROW
+// MARK: - Redesigned Instructor Row Card
+
 struct MyInstructorRow: View {
     @EnvironmentObject var dataService: DataService
     let request: StudentRequest
@@ -241,87 +231,97 @@ struct MyInstructorRow: View {
     @State private var instructor: AppUser?
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 15) {
+            // 1. Profile Image
             AsyncImage(url: URL(string: instructor?.photoURL ?? "")) { phase in
                 if let image = phase.image {
-                    image.resizable().scaledToFill()
+                    image
+                        .resizable()
+                        .scaledToFill()
                 } else {
                     Image(systemName: "person.circle.fill")
                         .resizable()
                         .foregroundColor(.primaryBlue)
                 }
             }
-            .frame(width: 45, height: 45)
+            .frame(width: 55, height: 55)
             .clipShape(Circle())
-
-            VStack(alignment: .leading) {
-                if let instructor {
+            .overlay(Circle().stroke(Color(.systemGray5), lineWidth: 1))
+            
+            // 2. Info Stack
+            VStack(alignment: .leading, spacing: 4) {
+                if let instructor = instructor {
                     Text(instructor.name ?? "Instructor")
                         .font(.headline)
-                        .foregroundColor(request.status == .blocked ? .textLight : .textDark)
+                        .foregroundColor(.primary)
+                    
+                    if let school = instructor.drivingSchool, !school.isEmpty {
+                        Text(school)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Independent Instructor")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 } else {
-                    ProgressView()
-                        .frame(maxWidth: 100)
+                    Text("Loading...")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
                 }
-                Text(request.timestamp, style: .date)
-                    .font(.caption)
-                    .foregroundColor(.textLight)
             }
             
             Spacer()
             
-            StatusBadge(status: request.status, blockedBy: request.blockedBy)
+            // 3. Status Badge & Chevron
+            VStack(alignment: .trailing, spacing: 4) {
+                StatusBadge(status: request.status, blockedBy: request.blockedBy)
+                
+                Text(request.timestamp.formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption2)
+                    .foregroundColor(.tertiaryLabel)
+            }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .task {
             if instructor == nil {
                 do {
                     self.instructor = try await dataService.fetchUser(withId: request.instructorID)
                 } catch {
-                    print("Failed to fetch instructor for row: \(error)")
+                    print("Failed to fetch instructor: \(error)")
                 }
             }
         }
     }
 }
 
-
-// A simple badge to show the request status
+// Reusing your StatusBadge, tweaked for look
 struct StatusBadge: View {
     let status: RequestStatus
     let blockedBy: String?
     
-    var text: String {
+    var config: (text: String, color: Color) {
         switch status {
-        case .pending: return "Pending"
-        case .approved: return "Approved"
-        case .denied: return "Denied"
+        case .pending: return ("Pending", .orange)
+        case .approved: return ("Approved", .accentGreen)
+        case .denied: return ("Denied", .warningRed)
         case .blocked:
-            if blockedBy == "student" {
-                return "Blocked by You"
-            } else if blockedBy == "instructor" {
-                return "Blocked by Instructor"
-            }
-            return "Blocked" // Fallback
-        }
-    }
-    
-    var color: Color {
-        switch status {
-        case .pending: return .orange
-        case .approved: return .accentGreen
-        case .denied: return .warningRed
-        case .blocked: return .black
+            return (blockedBy == "student" ? "Blocked" : "Unavailable", .gray)
         }
     }
     
     var body: some View {
-        Text(text)
-            .font(.caption).bold()
+        Text(config.text)
+            .font(.system(size: 10, weight: .bold))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(color.opacity(0.15))
-            .foregroundColor(color)
-            .cornerRadius(8)
+            .background(config.color.opacity(0.15))
+            .foregroundColor(config.color)
+            .cornerRadius(12)
     }
+}
+
+// Helper color for tertiary text
+extension Color {
+    static let tertiaryLabel = Color(UIColor.tertiaryLabel)
 }

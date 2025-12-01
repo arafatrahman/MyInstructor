@@ -1,17 +1,16 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorDirectoryView.swift
-// --- UPDATED: Removed redundant NavigationView and fixed CLLocationCoordinateD typo ---
+// --- UPDATED: Separated Search Bar and Filter Button to fix layout issues ---
 
 import SwiftUI
 import Combine
 import MapKit
 import CoreLocation
 
-// Flow Item 21: Instructor Directory (Student/Public View)
 struct InstructorDirectoryView: View {
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var locationManager: LocationManager
     
-    @State private var allInstructors: [Student] = [] // This is the master list
+    @State private var allInstructors: [Student] = []
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var isShowingMapView = false
@@ -19,7 +18,6 @@ struct InstructorDirectoryView: View {
     // Computed property for filtering
     var filteredInstructors: [Student] {
         if searchText.isEmpty {
-            // Return the master list, already sorted by distance (if available)
             return allInstructors
         }
         
@@ -34,156 +32,156 @@ struct InstructorDirectoryView: View {
         }
     }
     
-    // Default region for the map (London)
-    // --- THIS IS THE FIX for the typo ---
     @State private var mapRegion: MKCoordinateRegion = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 51.5074, longitude: -0.1278), // Was CLLocationCoordinateD
+        center: CLLocationCoordinate2D(latitude: 51.5074, longitude: -0.1278),
         span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
     )
 
     var body: some View {
-        // --- The NavigationView was removed from here to fix the double back button ---
-        VStack {
-            // Search + Filter bar
-            HStack {
-                SearchBar(text: $searchText, placeholder: "Search by name, email, phone...")
-                
-                Button {
-                    // TODO: Open advanced filter modal
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.title2)
-                        .foregroundColor(.primaryBlue)
+        VStack(spacing: 0) {
+            
+            // MARK: - Safe Area Spacer
+            // Ensures content doesn't sit under the notch/dynamic island
+            Color.clear
+                .frame(height: 0)
+                .background(Color(.systemBackground))
+            
+            // MARK: - Header Section
+            VStack(spacing: 12) {
+                // Search Row
+                HStack(spacing: 12) {
+                    // 1. Search Field Container
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.secondary)
+                        
+                        TextField("Search instructors...", text: $searchText)
+                            .foregroundColor(.primary)
+                    }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 16)
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(12)
+                    
+                    // 2. Filter Button (Separated)
+                    Button {
+                        // TODO: Open filter options
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.headline)
+                            .foregroundColor(.primaryBlue)
+                            .frame(width: 48, height: 48) // Fixed touch target
+                            .background(Color(.secondarySystemBackground))
+                            .cornerRadius(12)
+                    }
                 }
+                .padding(.horizontal)
+                .padding(.top, 10)
+                
+                // View Mode Toggle
+                Picker("View Mode", selection: $isShowingMapView) {
+                    Text("List").tag(false)
+                    Text("Map").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.bottom, 10)
             }
-            .padding(.horizontal)
+            .background(Color(.systemBackground))
+            .shadow(color: Color.black.opacity(0.05), radius: 5, y: 5)
+            .zIndex(1)
             
-            // Toggle: List ↔ Map
-            Picker("View Mode", selection: $isShowingMapView) {
-                Text("List").tag(false)
-                Text("Map").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.bottom, 5)
-            
+            // MARK: - Main Content
             if isLoading {
-                ProgressView("Loading Directory...")
-                    .padding(.top, 50)
+                Spacer()
+                ProgressView("Finding Instructors...")
+                Spacer()
             } else if isShowingMapView {
-                // --- UPDATED MAP ANNOTATION ---
+                // Map View
                 Map(coordinateRegion: $mapRegion, annotationItems: allInstructors.filter { $0.coordinate != nil }) { instructor in
                     MapAnnotation(coordinate: instructor.coordinate!) {
                         NavigationLink(destination: InstructorPublicProfileView(instructorID: instructor.id ?? "")) {
-                            VStack(spacing: 4) {
-                                // Use AsyncImage to show profile pic, with car icon as fallback
+                            VStack(spacing: 0) {
                                 AsyncImage(url: URL(string: instructor.photoURL ?? "")) { phase in
-                                    switch phase {
-                                    case .success(let image):
-                                        image
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 35, height: 35) // Pin size
-                                            .clipShape(Circle())
-                                            .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 1.5))
-                                    case .failure, .empty:
-                                        // Fallback car icon
-                                        Image(systemName: "car.circle.fill")
-                                            .font(.title)
-                                            .foregroundColor(.primaryBlue)
-                                            .frame(width: 35, height: 35)
-                                    @unknown default:
-                                        // Default fallback
-                                        Image(systemName: "car.circle.fill")
-                                            .font(.title)
-                                            .foregroundColor(.primaryBlue)
-                                            .frame(width: 35, height: 35)
+                                    if let image = phase.image {
+                                        image.resizable().scaledToFill()
+                                    } else {
+                                        Image(systemName: "car.circle.fill").resizable().foregroundColor(.primaryBlue)
                                     }
                                 }
+                                .frame(width: 40, height: 40)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                                .shadow(radius: 3)
                                 
-                                // Show first name
-                                Text(instructor.name.split(separator: " ").first.map(String.init) ?? "")
-                                    .font(.caption)
-                                    .foregroundColor(.textDark)
-                                    .lineLimit(1)
+                                Image(systemName: "arrowtriangle.down.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(.white)
+                                    .offset(y: -4)
+                                    .shadow(radius: 2)
                             }
-                            .padding(5)
-                            .frame(minWidth: 60) // Ensure a minimum width for the tap area
-                            .background(Color(.systemBackground).opacity(0.8))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .shadow(radius: 3)
                         }
                     }
                 }
                 .ignoresSafeArea(edges: .bottom)
-                // --- *** END OF UPDATE *** ---
-            } else if filteredInstructors.isEmpty {
-                EmptyStateView(icon: "magnifyingglass", message: "No instructors match your search criteria.")
+                
             } else {
-                List {
-                    ForEach(filteredInstructors) { instructor in
-                        NavigationLink {
-                            InstructorPublicProfileView(instructorID: instructor.id ?? "")
-                        } label: {
-                            InstructorDirectoryCard(instructor: instructor)
+                // List View
+                if filteredInstructors.isEmpty {
+                    Spacer()
+                    EmptyStateView(icon: "magnifyingglass", message: "No instructors found.")
+                    Spacer()
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 16) {
+                            ForEach(filteredInstructors) { instructor in
+                                NavigationLink {
+                                    InstructorPublicProfileView(instructorID: instructor.id ?? "")
+                                } label: {
+                                    InstructorDirectoryCard(instructor: instructor)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                        .padding()
+                        .padding(.bottom, 20)
                     }
+                    .background(Color(.systemGroupedBackground))
                 }
-                .listStyle(.plain)
             }
         }
-        .navigationTitle("Find Instructors") // This title will now appear on the inherited navigation bar
+        .navigationTitle("Find Instructors")
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadData() }
-        // --- The matching } for the NavigationView was removed from here ---
     }
     
-    /// Loads instructors, geocodes them for the map, and *then* sorts by distance if location is available.
+    // MARK: - Data Helpers
     func loadData() async {
         isLoading = true
-        
-        // 1. Fetch all instructors from Firestore
         var instructors: [Student] = []
         do {
             instructors = try await communityManager.fetchInstructorDirectory(filters: [:])
-        } catch {
-            print("Failed to fetch directory: \(error)")
-        }
+        } catch { print("Failed to fetch: \(error)") }
         
-        // 2. Geocode all instructors to get their coordinates for the map
-        // This happens regardless of user location permission
         instructors = await geocodeInstructors(instructors)
         
-        // 3. Check for user's location
         if let userLocation = locationManager.location {
-            // Location is available! Calculate distances and sort.
             instructors = sortInstructorsByDistance(instructors, from: userLocation)
-            // Center the map on the user's location
             withAnimation {
                 mapRegion.center = userLocation.coordinate
                 mapRegion.span = MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
             }
-        } else {
-            // Location not available. Center map on the first instructor (if any).
-            if let firstCoord = instructors.first(where: { $0.coordinate != nil })?.coordinate {
-                withAnimation {
-                    mapRegion.center = firstCoord
-                }
-            }
+        } else if let first = instructors.first(where: { $0.coordinate != nil })?.coordinate {
+            withAnimation { mapRegion.center = first }
         }
         
-        // 4. Update the main state property to refresh the UI
         self.allInstructors = instructors
         isLoading = false
     }
 
-    /// Takes a list of instructors, finds their coordinates, and returns an updated list.
     func geocodeInstructors(_ instructors: [Student]) async -> [Student] {
         let geocoder = CLGeocoder()
         var geocodedInstructors: [Student] = []
-
         await withTaskGroup(of: Student.self) { group in
             for var instructor in instructors {
                 group.addTask {
@@ -193,95 +191,89 @@ struct InstructorDirectoryView: View {
                             if let location = placemarks.first?.location {
                                 instructor.coordinate = location.coordinate
                             }
-                        } catch {
-                            // Address is invalid or not found, coordinate remains nil
-                        }
+                        } catch { }
                     }
                     return instructor
                 }
             }
-            
-            for await instructor in group {
-                geocodedInstructors.append(instructor)
-            }
+            for await instructor in group { geocodedInstructors.append(instructor) }
         }
         return geocodedInstructors
     }
     
-    /// Calculates distance for each instructor (who has coordinates) and sorts the list.
     func sortInstructorsByDistance(_ instructors: [Student], from userLocation: CLLocation) -> [Student] {
-        var sortedInstructors = instructors
-        
-        // Calculate distance for each
-        for i in 0..<sortedInstructors.count {
-            if let coord = sortedInstructors[i].coordinate {
-                let instructorLocation = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
-                let distanceInMeters = userLocation.distance(from: instructorLocation)
-                sortedInstructors[i].distance = distanceInMeters
+        var sorted = instructors
+        for i in 0..<sorted.count {
+            if let coord = sorted[i].coordinate {
+                let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+                sorted[i].distance = userLocation.distance(from: loc)
             }
         }
-        
-        // Sort the list by distance (nil distances go to the end)
-        sortedInstructors.sort {
-            guard let dist1 = $0.distance else { return false } // $0 (lhs) has no distance, move to end
-            guard let dist2 = $1.distance else { return true }  // $1 (rhs) has no distance, $0 is closer
-            return dist1 < dist2
-        }
-        
-        return sortedInstructors
+        sorted.sort { ($0.distance ?? Double.greatestFiniteMagnitude) < ($1.distance ?? Double.greatestFiniteMagnitude) }
+        return sorted
     }
 }
 
-// Instructor Directory Card
+// MARK: - Card Component
 struct InstructorDirectoryCard: View {
     let instructor: Student
     
     var body: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .top, spacing: 15) {
+            // Avatar
             AsyncImage(url: URL(string: instructor.photoURL ?? "")) { phase in
                 if let image = phase.image {
                     image.resizable().scaledToFill()
                 } else {
-                    // Use a standard person icon for the list view
                     Image(systemName: "person.circle.fill")
                         .resizable().scaledToFit()
-                        .foregroundColor(.primaryBlue)
+                        .foregroundColor(.primaryBlue.opacity(0.3))
                 }
             }
-            .frame(width: 60, height: 60)
+            .frame(width: 65, height: 65)
             .clipShape(Circle())
-            .background(Color.secondaryGray)
-            .clipShape(Circle())
-
+            .overlay(Circle().stroke(Color(.systemGray5), lineWidth: 1))
             
-            VStack(alignment: .leading, spacing: 5) {
+            // Info Column
+            VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text(instructor.name).font(.headline)
-                    Image(systemName: "star.fill").foregroundColor(.yellow)
-                    Text("4.8").font(.subheadline) // Stars ⭐
+                    Text(instructor.name)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 3) {
+                        Image(systemName: "star.fill").font(.caption2)
+                        Text("4.8").font(.caption).bold()
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.yellow.opacity(0.2))
+                    .foregroundColor(.orange)
+                    .clipShape(Capsule())
                 }
                 
-                // Show distance if available
-                if let distance = instructor.distance {
-                    Text(String(format: "%.1f km away", distance / 1000))
-                        .font(.subheadline).bold()
-                        .foregroundColor(.accentGreen)
-                } else {
-                    Text(instructor.drivingSchool ?? "Independent")
-                        .font(.subheadline).bold()
-                        .foregroundColor(.accentGreen)
-                }
+                Text(instructor.drivingSchool ?? "Independent Instructor")
+                    .font(.subheadline)
+                    .foregroundColor(.accentGreen)
+                    .fontWeight(.medium)
                 
-                Text(instructor.address ?? "Location not provided")
-                    .font(.caption).foregroundColor(.textLight)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Image(systemName: "mappin.and.ellipse")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Text(instructor.address ?? "Location hidden")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
             }
-            
-            Spacer()
         }
-        .padding(10)
+        .padding(16)
         .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.textDark.opacity(0.05), radius: 5, x: 0, y: 2)
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
     }
 }

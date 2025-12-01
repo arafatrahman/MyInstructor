@@ -1,12 +1,16 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/StudentDashboardView.swift
-// --- UPDATED: Removed "My Instructors" quick action ---
+// --- UPDATED: Added "My Instructors", "Payment History", and "Find Instructor" quick actions ---
 
 import SwiftUI
+import FirebaseFirestore // Added for Payment History fetching
 
-// 1. Sheet Enum for Student Dashboard
+// 1. Updated Sheet Enum
 enum StudentDashboardSheet: Identifiable {
     case lessonStats
-    // case myInstructors // Removed
+    case myInstructors
+    case paymentHistory
+    case findInstructor
+    
     var id: Int { self.hashValue }
 }
 
@@ -122,8 +126,14 @@ struct StudentDashboardView: View {
                         .buttonStyle(.plain)
                         .padding(.horizontal)
                         
-                        // Payment
-                        if paymentDue { PaymentDueCard().padding(.horizontal) }
+                        // Payment Alert
+                        if paymentDue {
+                            Button { activeSheet = .paymentHistory } label: {
+                                PaymentDueCard()
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal)
+                        }
                         
                         // --- 3. QUICK ACTIONS SECTION ---
                         VStack(alignment: .leading, spacing: 10) {
@@ -132,14 +142,37 @@ struct StudentDashboardView: View {
                                 .padding(.horizontal)
                             
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
+                                // 1. Track Lessons
                                 StudentQuickActionButton(
-                                    title: "Track Lessons",
+                                    title: "Lesson Stats",
                                     icon: "chart.bar.fill",
                                     color: .primaryBlue,
                                     action: { activeSheet = .lessonStats }
                                 )
                                 
-                                // "My Instructors" action removed
+                                // 2. My Instructors
+                                StudentQuickActionButton(
+                                    title: "My Instructors",
+                                    icon: "person.2.fill",
+                                    color: .orange,
+                                    action: { activeSheet = .myInstructors }
+                                )
+                                
+                                // 3. Payment History
+                                StudentQuickActionButton(
+                                    title: "Payment History",
+                                    icon: "creditcard.fill",
+                                    color: .accentGreen,
+                                    action: { activeSheet = .paymentHistory }
+                                )
+                                
+                                // 4. Find Instructor
+                                StudentQuickActionButton(
+                                    title: "Find Instructor",
+                                    icon: "magnifyingglass.circle.fill",
+                                    color: .purple,
+                                    action: { activeSheet = .findInstructor }
+                                )
                             }
                             .padding(.horizontal)
                         }
@@ -169,6 +202,12 @@ struct StudentDashboardView: View {
                     if let studentID = authManager.user?.id {
                         StudentLessonStatsView(studentID: studentID)
                     }
+                case .myInstructors:
+                    MyInstructorsView() // Reusing existing view
+                case .paymentHistory:
+                    StudentPaymentHistoryView() // New View defined below
+                case .findInstructor:
+                    InstructorDirectoryView() // Reusing existing view
                 }
             }
         }
@@ -302,8 +341,67 @@ struct PaymentDueCard: View {
     var body: some View {
         HStack {
             Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.warningRed)
-            VStack(alignment: .leading) { Text("Payment Pending").font(.headline).foregroundColor(.warningRed); Text("Check 'Track Income'").font(.subheadline) }
+            VStack(alignment: .leading) { Text("Payment Pending").font(.headline).foregroundColor(.warningRed); Text("Tap to view details").font(.subheadline) }
             Spacer()
         }.padding(15).background(Color.warningRed.opacity(0.1)).cornerRadius(15).overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.warningRed, lineWidth: 1))
+    }
+}
+
+// --- NEW: Student Payment History View ---
+struct StudentPaymentHistoryView: View {
+    @EnvironmentObject var authManager: AuthManager
+    @Environment(\.dismiss) var dismiss
+    
+    @State private var payments: [Payment] = []
+    @State private var isLoading = true
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                if isLoading {
+                    ProgressView("Loading Payments...")
+                } else if payments.isEmpty {
+                    EmptyStateView(icon: "creditcard", message: "No payment history found.")
+                } else {
+                    List {
+                        ForEach(payments) { payment in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(payment.date.formatted(date: .abbreviated, time: .omitted))
+                                        .font(.headline)
+                                    Text(payment.isPaid ? "Paid via \(payment.paymentMethod?.rawValue ?? "Unknown")" : "Pending Payment")
+                                        .font(.caption)
+                                        .foregroundColor(payment.isPaid ? .secondary : .warningRed)
+                                }
+                                Spacer()
+                                Text(payment.amount, format: .currency(code: "GBP"))
+                                    .font(.headline)
+                                    .foregroundColor(payment.isPaid ? .accentGreen : .warningRed)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Payment History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .task {
+                guard let studentID = authManager.user?.id else { return }
+                do {
+                    let snapshot = try await Firestore.firestore().collection("payments")
+                        .whereField("studentID", isEqualTo: studentID)
+                        .order(by: "date", descending: true)
+                        .getDocuments()
+                    self.payments = snapshot.documents.compactMap { try? $0.data(as: Payment.self) }
+                } catch {
+                    print("Error fetching payments: \(error)")
+                }
+                isLoading = false
+            }
+        }
     }
 }

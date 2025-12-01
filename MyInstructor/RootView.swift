@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/RootView.swift
-// --- UPDATED: Added Student Calendar Tab ---
+// --- UPDATED: Removed "Instructors" tab for students to eliminate the "More" menu ---
 
 import SwiftUI
 
@@ -111,23 +111,27 @@ struct MainTabView: View {
                 
             } else if authManager.role == .student {
                 // Student Tabs
+                
+                // 1. Dashboard
                 StudentDashboardView()
                     .tabItem { Label("Dashboard", systemImage: "house.fill") }
                 
-                // --- NEW: Student Calendar ---
+                // 2. Schedule
                 StudentCalendarView()
                     .tabItem { Label("Schedule", systemImage: "calendar") }
                 
-                // Flow 9: Live Map (Placeholder for now)
+                // 3. Live Map
                 LiveLocationView(lesson: Lesson(instructorID: "", studentID: "", topic: "Live", startTime: Date(), pickupLocation: "Map View", fee: 0))
                     .tabItem { Label("Live Map", systemImage: "map.fill") }
                 
+                // 4. Community
                 CommunityFeedView()
                     .tabItem { Label("Community", systemImage: "person.3.fill") }
 
-                MyInstructorsView()
-                    .tabItem { Label("Instructors", systemImage: "person.crop.rectangle.stack.fill") }
+                // REMOVED: MyInstructorsView tab.
+                // It is now accessed via the "My Instructors" Quick Action on the Dashboard.
                 
+                // 5. Settings (Now takes the 5th slot, removing "More")
                 SettingsView()
                     .tabItem { Label("Settings", systemImage: "gearshape.fill") }
             

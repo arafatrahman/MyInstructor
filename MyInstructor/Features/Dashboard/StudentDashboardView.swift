@@ -1,12 +1,12 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/StudentDashboardView.swift
-// --- UPDATED: "Track Lessons" now opens Lesson Statistics directly ---
+// --- UPDATED: Removed "My Instructors" quick action ---
 
 import SwiftUI
 
 // 1. Sheet Enum for Student Dashboard
 enum StudentDashboardSheet: Identifiable {
-    case lessonStats // Changed from .trackLesson to .lessonStats
-    case myInstructors
+    case lessonStats
+    // case myInstructors // Removed
     var id: Int { self.hashValue }
 }
 
@@ -134,17 +134,12 @@ struct StudentDashboardView: View {
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
                                 StudentQuickActionButton(
                                     title: "Track Lessons",
-                                    icon: "chart.bar.fill", // --- UPDATED ICON ---
+                                    icon: "chart.bar.fill",
                                     color: .primaryBlue,
-                                    action: { activeSheet = .lessonStats } // --- UPDATED ACTION ---
+                                    action: { activeSheet = .lessonStats }
                                 )
                                 
-                                StudentQuickActionButton(
-                                    title: "My Instructors",
-                                    icon: "person.2.fill",
-                                    color: .accentGreen,
-                                    action: { activeSheet = .myInstructors }
-                                )
+                                // "My Instructors" action removed
                             }
                             .padding(.horizontal)
                         }
@@ -171,12 +166,9 @@ struct StudentDashboardView: View {
             .sheet(item: $activeSheet) { item in
                 switch item {
                 case .lessonStats:
-                    // --- UPDATED: Opens Stats View directly ---
                     if let studentID = authManager.user?.id {
                         StudentLessonStatsView(studentID: studentID)
                     }
-                case .myInstructors:
-                    MyInstructorsView()
                 }
             }
         }

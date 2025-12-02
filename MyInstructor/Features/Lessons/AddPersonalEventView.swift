@@ -11,11 +11,12 @@ struct AddPersonalEventView: View {
     
     @State private var title: String = ""
     @State private var date: Date = Date()
-    @State private var durationHours: Double = 1.0
+    @State private var durationHours: Double = 1.0 // Default 1 hour
     @State private var notes: String = ""
     
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var isShowingDeleteAlert = false
     
     var isEditing: Bool { eventToEdit != nil }
     var isFormValid: Bool { !title.isEmpty }
@@ -27,12 +28,6 @@ struct AddPersonalEventView: View {
                     TextField("Title (e.g. Dentist, Gym)", text: $title)
                     
                     DatePicker("Date & Time", selection: $date, displayedComponents: [.date, .hourAndMinute])
-                    
-                    VStack(alignment: .leading) {
-                        Text("Duration: \(durationHours, specifier: "%.1f") hours")
-                            .font(.subheadline)
-                        Slider(value: $durationHours, in: 0.5...5.0, step: 0.5)
-                    }
                 }
                 
                 Section("Notes") {
@@ -40,7 +35,24 @@ struct AddPersonalEventView: View {
                 }
                 
                 if let error = errorMessage {
-                    Text(error).foregroundColor(.red).font(.caption)
+                    Section {
+                        Text(error).foregroundColor(.red).font(.caption)
+                    }
+                }
+                
+                // --- Delete Button (Only when editing) ---
+                if isEditing {
+                    Section {
+                        Button(role: .destructive) {
+                            isShowingDeleteAlert = true
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Text("Delete Event")
+                                Spacer()
+                            }
+                        }
+                    }
                 }
             }
             .navigationTitle(isEditing ? "Edit Event" : "Add Personal Event")
@@ -62,10 +74,17 @@ struct AddPersonalEventView: View {
                     durationHours = event.duration / 3600.0
                     notes = event.notes ?? ""
                 } else {
-                    // Default start time to next hour
                     let nextHour = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date()
                     date = nextHour
                 }
+            }
+            .alert("Delete Event?", isPresented: $isShowingDeleteAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    deleteEvent()
+                }
+            } message: {
+                Text("Are you sure you want to delete this event?")
             }
         }
     }
@@ -79,7 +98,7 @@ struct AddPersonalEventView: View {
             userID: userID,
             title: title,
             date: date,
-            duration: durationHours * 3600,
+            duration: 3600, // Default to 1 hour fixed
             notes: notes.isEmpty ? nil : notes
         )
         
@@ -96,6 +115,21 @@ struct AddPersonalEventView: View {
                 errorMessage = "Failed to save: \(error.localizedDescription)"
             }
             isLoading = false
+        }
+    }
+    
+    private func deleteEvent() {
+        guard let eventID = eventToEdit?.id else { return }
+        isLoading = true
+        Task {
+            do {
+                try await personalEventManager.deleteEvent(id: eventID)
+                onSave() // Trigger refresh
+                dismiss()
+            } catch {
+                errorMessage = "Failed to delete: \(error.localizedDescription)"
+                isLoading = false
+            }
         }
     }
 }

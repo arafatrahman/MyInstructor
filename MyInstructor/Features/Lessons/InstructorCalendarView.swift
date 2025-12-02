@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/InstructorCalendarView.swift
-// --- UPDATED: Service cards are now tappable and editable ---
+// --- UPDATED: Added support for Personal Events ---
 
 import SwiftUI
 
@@ -7,6 +7,7 @@ import SwiftUI
 enum CalendarItemType {
     case lesson(Lesson)
     case service(ServiceRecord)
+    case personal(PersonalEvent) // <--- ADDED
 }
 
 struct CalendarItem: Identifiable {
@@ -21,13 +22,18 @@ struct InstructorCalendarView: View {
     @EnvironmentObject var dataService: DataService
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var vehicleManager: VehicleManager
+    @EnvironmentObject var personalEventManager: PersonalEventManager // <--- ADDED
     
     @State private var selectedDate: Date = Date()
     @State private var calendarItems: [CalendarItem] = []
     
+    // Sheets
     @State private var isAddLessonSheetPresented = false
-    // --- NEW: State for editing service record ---
+    @State private var isAddPersonalSheetPresented = false // <--- ADDED
+    
+    // Editing States
     @State private var serviceToEdit: ServiceRecord? = nil
+    @State private var personalEventToEdit: PersonalEvent? = nil // <--- ADDED
     
     @State private var isLoading = false
     
@@ -64,8 +70,8 @@ struct InstructorCalendarView: View {
                     } else if calendarItems.isEmpty {
                         EmptyStateView(
                             icon: "calendar.badge.plus",
-                            message: "No lessons or services scheduled for this week.",
-                            actionTitle: "Add Lesson",
+                            message: "No events scheduled for this week.",
+                            actionTitle: "Add Event",
                             action: { isAddLessonSheetPresented = true }
                         )
                     } else {
@@ -77,8 +83,10 @@ struct InstructorCalendarView: View {
                                         date: date,
                                         items: dailyItems,
                                         onSelectService: { service in
-                                            // Trigger edit sheet
                                             self.serviceToEdit = service
+                                        },
+                                        onSelectPersonal: { event in // <--- ADDED
+                                            self.personalEventToEdit = event
                                         }
                                     )
                                 }
@@ -101,8 +109,19 @@ struct InstructorCalendarView: View {
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        isAddLessonSheetPresented = true
+                    // Replaced simple button with Menu to choose event type
+                    Menu {
+                        Button {
+                            isAddLessonSheetPresented = true
+                        } label: {
+                            Label("Add Lesson", systemImage: "steeringwheel")
+                        }
+                        
+                        Button {
+                            isAddPersonalSheetPresented = true
+                        } label: {
+                            Label("Add Personal Event", systemImage: "person.circle")
+                        }
                     } label: {
                         Image(systemName: "plus.circle.fill")
                             .font(.title2)
@@ -123,10 +142,23 @@ struct InstructorCalendarView: View {
                     Task { await fetchCalendarData() }
                 })
             }
-            // --- NEW: Sheet for Editing Service ---
+            // Sheet for Adding Personal Events
+            .sheet(isPresented: $isAddPersonalSheetPresented) {
+                AddPersonalEventView(onSave: {
+                    Task { await fetchCalendarData() }
+                })
+            }
+            // Sheet for Editing Service
             .sheet(item: $serviceToEdit) { service in
                 AddServiceRecordView(recordToEdit: service, onSave: {
                     serviceToEdit = nil
+                    Task { await fetchCalendarData() }
+                })
+            }
+            // Sheet for Editing Personal Event
+            .sheet(item: $personalEventToEdit) { event in
+                AddPersonalEventView(eventToEdit: event, onSave: {
+                    personalEventToEdit = nil
                     Task { await fetchCalendarData() }
                 })
             }
@@ -142,18 +174,26 @@ struct InstructorCalendarView: View {
         
         do {
             // 1. Fetch Lessons
-            let fetchedLessons = try await lessonManager.fetchLessons(for: instructorID, start: start, end: end)
-            let lessonItems = fetchedLessons.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.startTime, type: .lesson($0)) }
-            
+            async let lessonsTask = lessonManager.fetchLessons(for: instructorID, start: start, end: end)
             // 2. Fetch Service Records
-            let allServices = try await vehicleManager.fetchServiceRecords(for: instructorID)
-            let filteredServices = allServices.filter { record in
-                return record.date >= start && record.date < end
-            }
-            let serviceItems = filteredServices.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.date, type: .service($0)) }
+            async let servicesTask = vehicleManager.fetchServiceRecords(for: instructorID)
+            // 3. Fetch Personal Events
+            async let personalTask = personalEventManager.fetchEvents(for: instructorID, start: start, end: end)
             
-            // 3. Merge and Sort
-            self.calendarItems = (lessonItems + serviceItems).sorted(by: { $0.date < $1.date })
+            let lessons = try await lessonsTask
+            let services = try await servicesTask
+            let personalEvents = try await personalTask
+            
+            let lessonItems = lessons.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.startTime, type: .lesson($0)) }
+            
+            let serviceItems = services
+                .filter { $0.date >= start && $0.date < end }
+                .map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.date, type: .service($0)) }
+            
+            let personalItems = personalEvents.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.date, type: .personal($0)) }
+            
+            // 4. Merge and Sort
+            self.calendarItems = (lessonItems + serviceItems + personalItems).sorted(by: { $0.date < $1.date })
             
         } catch {
             print("Error fetching calendar data: \(error)")
@@ -220,7 +260,8 @@ struct ModernWeekHeader: View {
 struct DaySectionView: View {
     let date: Date
     let items: [CalendarItem]
-    let onSelectService: (ServiceRecord) -> Void // Callback for service selection
+    let onSelectService: (ServiceRecord) -> Void
+    let onSelectPersonal: (PersonalEvent) -> Void // <--- ADDED Callback
     
     var isToday: Bool {
         Calendar.current.isDateInToday(date)
@@ -259,11 +300,18 @@ struct DaySectionView: View {
                     ModernLessonCard(lesson: lesson)
                         .padding(.horizontal)
                 case .service(let service):
-                    // Wrap Service Card in Button
                     Button {
                         onSelectService(service)
                     } label: {
                         ServiceEventCard(service: service)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                case .personal(let event): // <--- ADDED Personal Card
+                    Button {
+                        onSelectPersonal(event)
+                    } label: {
+                        PersonalEventCard(event: event)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal)
@@ -273,75 +321,112 @@ struct DaySectionView: View {
     }
 }
 
-struct ServiceEventCard: View {
-    let service: ServiceRecord
+// --- ADDED: Personal Event Card UI ---
+struct PersonalEventCard: View {
+    let event: PersonalEvent
+    @EnvironmentObject var personalEventManager: PersonalEventManager
+    
+    // Format duration nicely
+    private var durationString: String {
+        let hours = event.duration / 3600.0
+        return String(format: "%.1f h", hours)
+    }
     
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            // Left: Icon Strip
+            // Left Strip
             VStack(alignment: .center, spacing: 6) {
-                Image(systemName: "wrench.and.screwdriver.fill")
-                    .font(.title2)
-                    .foregroundColor(.gray)
+                Text(event.date, style: .time)
+                    .font(.subheadline).bold()
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
                 
-                Text("Service")
-                    .font(.system(size: 10, weight: .bold))
+                Text(durationString)
+                    .font(.caption2).bold()
                     .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.gray.opacity(0.15))
-                    .foregroundColor(.gray)
+                    .padding(.vertical, 2)
+                    .background(Color.purple.opacity(0.15))
+                    .foregroundColor(.purple)
                     .cornerRadius(4)
             }
             .frame(width: 75)
             .padding(.vertical, 16)
             
-            // Vertical Divider
-            Rectangle()
-                .fill(Color.secondaryGray)
-                .frame(width: 1)
-                .padding(.vertical, 10)
+            // Divider
+            Rectangle().fill(Color.secondaryGray).frame(width: 1).padding(.vertical, 10)
             
-            // Right: Content
+            // Content
             VStack(alignment: .leading, spacing: 6) {
-                Text(service.serviceType)
-                    .font(.headline)
-                    .foregroundColor(.primary)
+                HStack {
+                    Text(event.title)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "person.circle.fill")
+                        .foregroundColor(.purple)
+                }
                 
-                Text(service.garageName)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                
-                if let nextDate = service.nextServiceDate {
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar.badge.clock")
-                        Text("Next due: \(nextDate.formatted(date: .abbreviated, time: .omitted))")
-                    }
-                    .font(.caption)
-                    .foregroundColor(.orange)
+                if let notes = event.notes, !notes.isEmpty {
+                    Text(notes)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                } else {
+                    Text("Personal Time")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
             .padding(16)
             
             Spacer()
             
-            // Chevron to indicate tap-ability
             Image(systemName: "chevron.right")
                 .foregroundColor(.secondary.opacity(0.3))
                 .padding(.trailing, 16)
-                .padding(.top, 40)
+                .padding(.top, 30)
         }
         .background(Color(.secondarySystemGroupedBackground))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+        // Swipe to delete for personal events
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                Task { try? await personalEventManager.deleteEvent(id: event.id ?? "") }
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+}
+
+// ServiceEventCard and ModernLessonCard remain unchanged...
+struct ServiceEventCard: View {
+    let service: ServiceRecord
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            VStack(alignment: .center, spacing: 6) {
+                Image(systemName: "wrench.and.screwdriver.fill").font(.title2).foregroundColor(.gray)
+                Text("Service").font(.system(size: 10, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 3).background(Color.gray.opacity(0.15)).foregroundColor(.gray).cornerRadius(4)
+            }.frame(width: 75).padding(.vertical, 16)
+            Rectangle().fill(Color.secondaryGray).frame(width: 1).padding(.vertical, 10)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(service.serviceType).font(.headline).foregroundColor(.primary)
+                Text(service.garageName).font(.subheadline).foregroundColor(.secondary)
+                if let nextDate = service.nextServiceDate {
+                    HStack(spacing: 4) { Image(systemName: "calendar.badge.clock"); Text("Next due: \(nextDate.formatted(date: .abbreviated, time: .omitted))") }.font(.caption).foregroundColor(.orange)
+                }
+            }.padding(16)
+            Spacer()
+            Image(systemName: "chevron.right").foregroundColor(.secondary.opacity(0.3)).padding(.trailing, 16).padding(.top, 40)
+        }.background(Color(.secondarySystemGroupedBackground)).cornerRadius(12).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
     }
 }
 
 struct ModernLessonCard: View {
     @EnvironmentObject var dataService: DataService
     let lesson: Lesson
-    
     @State private var studentName: String = "Loading..."
-    
     private var statusConfig: (text: String, color: Color) {
         switch lesson.status {
         case .completed: return ("Finished", .accentGreen)
@@ -355,7 +440,6 @@ struct ModernLessonCard: View {
             else { return ("Booked", .secondary) }
         }
     }
-    
     var body: some View {
         NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
             HStack(alignment: .top, spacing: 0) {
@@ -365,28 +449,21 @@ struct ModernLessonCard: View {
                     Text(statusConfig.text).font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 3).background(statusConfig.color.opacity(0.15)).foregroundColor(statusConfig.color).cornerRadius(4).lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 }
                 .frame(width: 75).padding(.vertical, 16)
-                
                 Rectangle().fill(Color.secondaryGray).frame(width: 1).padding(.vertical, 10)
-                
                 VStack(alignment: .leading, spacing: 6) {
                     Text(lesson.topic).font(.headline).foregroundColor(.primary).lineLimit(1)
                     HStack(spacing: 6) { Image(systemName: "person.fill").font(.caption).foregroundColor(.primaryBlue); Text(studentName).font(.subheadline).foregroundColor(.secondary).lineLimit(1) }
                     HStack(spacing: 6) { Image(systemName: "mappin.and.ellipse").font(.caption).foregroundColor(.orange); Text(lesson.pickupLocation).font(.caption).foregroundColor(.secondary).lineLimit(1) }
                 }.padding(16)
-                
                 Spacer()
-                
                 Image(systemName: "chevron.right").foregroundColor(.secondary.opacity(0.3)).padding(.trailing, 16).padding(.top, 40)
             }
             .background(Color(.secondarySystemGroupedBackground)).cornerRadius(12).shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
         }
         .buttonStyle(.plain)
         .task {
-            if let user = try? await dataService.fetchUser(withId: lesson.studentID) {
-                self.studentName = user.name ?? "Unknown Student"
-            } else {
-                self.studentName = "Student"
-            }
+            if let user = try? await dataService.fetchUser(withId: lesson.studentID) { self.studentName = user.name ?? "Unknown Student" }
+            else { self.studentName = "Student" }
         }
     }
 }

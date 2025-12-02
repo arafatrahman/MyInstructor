@@ -1,6 +1,4 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/MyInstructor.swift
-// --- UPDATED: Injected NotificationManager ---
-
 import SwiftUI
 import FirebaseCore
 import Combine
@@ -33,9 +31,10 @@ struct DrivingApp: App {
     @StateObject var expenseManager = ExpenseManager()
     @StateObject var vehicleManager = VehicleManager()
     @StateObject var contactManager = ContactManager()
-    
-    // --- ADDED: NotificationManager ---
     @StateObject var notificationManager = NotificationManager()
+    
+    // --- ADDED: PersonalEventManager ---
+    @StateObject var personalEventManager = PersonalEventManager()
 
     var body: some Scene {
         WindowGroup {
@@ -51,9 +50,10 @@ struct DrivingApp: App {
                 .environmentObject(expenseManager)
                 .environmentObject(vehicleManager)
                 .environmentObject(contactManager)
-                
-                // --- INJECT NotificationManager ---
                 .environmentObject(notificationManager)
+                
+                // --- INJECT PersonalEventManager ---
+                .environmentObject(personalEventManager)
                 
                 // Apply the custom theme globally
                 .applyAppTheme()

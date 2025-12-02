@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/LessonManager.swift
-// --- UPDATED: Added updatePracticeSession function ---
+// --- UPDATED: id is set to nil before saving to suppress Firestore warnings ---
 
 import Foundation
 import FirebaseFirestore
@@ -49,7 +49,11 @@ class LessonManager: ObservableObject {
 
     // MARK: - Lesson CRUD
     func addLesson(newLesson: Lesson) async throws {
-        let ref = try lessonsCollection.addDocument(from: newLesson)
+        // Fix: Ensure ID is nil before adding to avoid warnings
+        var lessonToSave = newLesson
+        lessonToSave.id = nil
+        
+        let ref = try lessonsCollection.addDocument(from: lessonToSave)
         print("Lesson added successfully: \(newLesson.topic)")
         
         var lessonWithID = newLesson
@@ -70,7 +74,12 @@ class LessonManager: ObservableObject {
         guard let lessonID = lesson.id else {
             throw NSError(domain: "LessonManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Lesson ID missing."])
         }
-        try lessonsCollection.document(lessonID).setData(from: lesson)
+        
+        // Fix: Ensure ID is nil before updating
+        var lessonToSave = lesson
+        lessonToSave.id = nil
+        
+        try lessonsCollection.document(lessonID).setData(from: lessonToSave)
         NotificationManager.shared.scheduleLessonReminders(lesson: lesson)
         
         // Notify Student of Update
@@ -124,15 +133,21 @@ class LessonManager: ObservableObject {
     // MARK: - Student Practice Logs & Notes
     
     func logPracticeSession(_ session: PracticeSession) async throws {
-        try practiceCollection.addDocument(from: session)
+        // Fix: Ensure ID is nil
+        var sessionToSave = session
+        sessionToSave.id = nil
+        try practiceCollection.addDocument(from: sessionToSave)
         print("Practice session logged: \(session.durationHours) hours, Topic: \(session.topic ?? "None")")
     }
     
-    // --- NEW: Update function ---
     func updatePracticeSession(_ session: PracticeSession) async throws {
         guard let id = session.id else { return }
-        // setData overwrites the document with the new object data
-        try practiceCollection.document(id).setData(from: session)
+        
+        // Fix: Ensure ID is nil
+        var sessionToSave = session
+        sessionToSave.id = nil
+        
+        try practiceCollection.document(id).setData(from: sessionToSave)
         print("Practice session updated.")
     }
     

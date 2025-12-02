@@ -1,16 +1,21 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Student/StudentCalendarView.swift
+// --- UPDATED: Added support for Personal Events ---
 
 import SwiftUI
 
 struct StudentCalendarView: View {
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var authManager: AuthManager
+    @EnvironmentObject var personalEventManager: PersonalEventManager // <--- ADDED
     
     @State private var selectedDate: Date = Date()
     @State private var calendarItems: [CalendarItem] = []
     @State private var isLoading = false
     
-    // --- NEW: State for presenting stats ---
+    // Sheets
     @State private var isShowingStats = false
+    @State private var isAddPersonalSheetPresented = false // <--- ADDED
+    @State private var personalEventToEdit: PersonalEvent? = nil // <--- ADDED
     
     // Computed property: Group items by the start of the day
     private var itemsByDay: [(Date, [CalendarItem])] {
@@ -45,9 +50,9 @@ struct StudentCalendarView: View {
                     } else if calendarItems.isEmpty {
                         EmptyStateView(
                             icon: "calendar",
-                            message: "No lessons scheduled for this week.",
-                            actionTitle: "Refresh",
-                            action: { Task { await fetchStudentCalendarData() } }
+                            message: "No lessons or events scheduled.",
+                            actionTitle: "Add Event", // Update text
+                            action: { isAddPersonalSheetPresented = true } // Allow student to add personal event
                         )
                     } else {
                         // Timeline Scroll View
@@ -58,7 +63,10 @@ struct StudentCalendarView: View {
                                     DaySectionView(
                                         date: date,
                                         items: dailyItems,
-                                        onSelectService: { _ in } // Students don't edit services
+                                        onSelectService: { _ in }, // Students don't have services
+                                        onSelectPersonal: { event in
+                                            self.personalEventToEdit = event
+                                        }
                                     )
                                 }
                             }
@@ -79,13 +87,23 @@ struct StudentCalendarView: View {
                     .font(.subheadline)
                 }
                 
-                // --- NEW: Stats Button ---
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        isShowingStats = true
-                    } label: {
-                        Image(systemName: "chart.bar.doc.horizontal.fill") // Icon for "Report/Stats"
-                            .font(.headline)
+                    HStack(spacing: 15) {
+                        // Add Button for Student (Personal Events Only)
+                        Button {
+                            isAddPersonalSheetPresented = true
+                        } label: {
+                            Image(systemName: "plus.circle")
+                                .font(.headline)
+                        }
+                        
+                        // Stats Button
+                        Button {
+                            isShowingStats = true
+                        } label: {
+                            Image(systemName: "chart.bar.doc.horizontal.fill")
+                                .font(.headline)
+                        }
                     }
                 }
             }
@@ -95,11 +113,23 @@ struct StudentCalendarView: View {
             .onChange(of: selectedDate) { _, _ in
                 Task { await fetchStudentCalendarData() }
             }
-            // --- NEW: Sheet ---
             .sheet(isPresented: $isShowingStats) {
                 if let studentID = authManager.user?.id {
                     StudentLessonStatsView(studentID: studentID)
                 }
+            }
+            // Add Personal Event Sheet
+            .sheet(isPresented: $isAddPersonalSheetPresented) {
+                AddPersonalEventView(onSave: {
+                    Task { await fetchStudentCalendarData() }
+                })
+            }
+            // Edit Personal Event Sheet
+            .sheet(item: $personalEventToEdit) { event in
+                AddPersonalEventView(eventToEdit: event, onSave: {
+                    personalEventToEdit = nil
+                    Task { await fetchStudentCalendarData() }
+                })
             }
         }
     }
@@ -112,14 +142,19 @@ struct StudentCalendarView: View {
         let end = Calendar.current.date(byAdding: .day, value: 7, to: start) ?? Date()
         
         do {
-            // Fetch Lessons specifically for this student
-            let fetchedLessons = try await lessonManager.fetchLessonsForStudent(studentID: studentID, start: start, end: end)
+            // 1. Fetch Lessons
+            async let lessonsTask = lessonManager.fetchLessonsForStudent(studentID: studentID, start: start, end: end)
+            // 2. Fetch Personal Events
+            async let personalTask = personalEventManager.fetchEvents(for: studentID, start: start, end: end)
             
-            // Map to CalendarItems
-            self.calendarItems = fetchedLessons.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.startTime, type: .lesson($0)) }
+            let fetchedLessons = try await lessonsTask
+            let fetchedPersonal = try await personalTask
             
-            // Sort
-            self.calendarItems.sort(by: { $0.date < $1.date })
+            let lessonItems = fetchedLessons.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.startTime, type: .lesson($0)) }
+            let personalItems = fetchedPersonal.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.date, type: .personal($0)) }
+            
+            // Merge & Sort
+            self.calendarItems = (lessonItems + personalItems).sorted(by: { $0.date < $1.date })
             
         } catch {
             print("Error fetching student calendar: \(error)")

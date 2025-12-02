@@ -14,13 +14,16 @@ struct StudentCalendarView: View {
     @State private var isAddPersonalSheetPresented = false
     @State private var personalEventToEdit: PersonalEvent? = nil
     
-    private var itemsByDay: [(Date, [CalendarItem])] {
-        let grouped = Dictionary(grouping: calendarItems) { item in Calendar.current.startOfDay(for: item.date) }
-        return grouped.sorted { $0.key < $1.key }
+    // Calculate which dates have events for the "Dot" indicators
+    private var eventDates: Set<DateComponents> {
+        let components = calendarItems.map { Calendar.current.dateComponents([.year, .month, .day], from: $0.date) }
+        return Set(components)
     }
     
-    private var startOfWeek: Date {
-        Calendar.current.date(from: Calendar.current.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate)) ?? selectedDate
+    // Items for the selected day only
+    private var selectedDayItems: [CalendarItem] {
+        calendarItems.filter { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) }
+            .sorted { $0.date < $1.date }
     }
 
     var body: some View {
@@ -29,27 +32,35 @@ struct StudentCalendarView: View {
                 Color(.systemGroupedBackground).ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    ModernWeekHeader(selectedDate: $selectedDate)
-                        .background(Color(.systemBackground))
-                        .shadow(color: Color.black.opacity(0.05), radius: 5, y: 5)
+                    // MARK: - Custom Full Calendar with Event Dots
+                    CustomMonthlyCalendar(selectedDate: $selectedDate, eventDates: eventDates)
+                        .padding(.horizontal)
+                        .padding(.top, 10)
                         .zIndex(1)
                     
+                    // MARK: - List for Selected Day
                     if isLoading {
                         Spacer(); ProgressView("Loading Your Schedule..."); Spacer()
-                    } else if calendarItems.isEmpty {
-                        EmptyStateView(icon: "calendar", message: "No lessons or events scheduled.", actionTitle: "Add Event", action: { isAddPersonalSheetPresented = true })
+                    } else if selectedDayItems.isEmpty {
+                        Spacer()
+                        EmptyStateView(
+                            icon: "calendar",
+                            message: "No lessons on \(selectedDate.formatted(.dateTime.day().month()))",
+                            actionTitle: "Add Event",
+                            action: { isAddPersonalSheetPresented = true }
+                        )
+                        Spacer()
                     } else {
                         ScrollView {
                             LazyVStack(spacing: 20) {
-                                ForEach(itemsByDay, id: \.0) { (date, dailyItems) in
-                                    DaySectionView(
-                                        date: date,
-                                        items: dailyItems,
-                                        onSelectService: { _ in },
-                                        onSelectPersonal: { event in self.personalEventToEdit = event }
-                                    )
-                                }
-                            }.padding(.vertical, 20)
+                                DaySectionView(
+                                    date: selectedDate,
+                                    items: selectedDayItems,
+                                    onSelectService: { _ in },
+                                    onSelectPersonal: { event in self.personalEventToEdit = event }
+                                )
+                            }
+                            .padding(.vertical, 20)
                         }
                     }
                 }
@@ -69,9 +80,8 @@ struct StudentCalendarView: View {
             }
             .onAppear { Task { await fetchStudentCalendarData() } }
             .onChange(of: selectedDate) { _, _ in Task { await fetchStudentCalendarData() } }
-            .sheet(isPresented: $isShowingStats) {
-                if let studentID = authManager.user?.id { StudentLessonStatsView(studentID: studentID) }
-            }
+            
+            .sheet(isPresented: $isShowingStats) { if let studentID = authManager.user?.id { StudentLessonStatsView(studentID: studentID) } }
             .sheet(isPresented: $isAddPersonalSheetPresented) { AddPersonalEventView(onSave: { Task { await fetchStudentCalendarData() } }) }
             .sheet(item: $personalEventToEdit) { event in AddPersonalEventView(eventToEdit: event, onSave: { personalEventToEdit = nil; Task { await fetchStudentCalendarData() } }) }
         }
@@ -79,13 +89,20 @@ struct StudentCalendarView: View {
     
     private func fetchStudentCalendarData() async {
         guard let studentID = authManager.user?.id else { return }
-        isLoading = true
-        let start = startOfWeek
-        let end = Calendar.current.date(byAdding: .day, value: 7, to: start) ?? Date()
+        
+        let calendar = Calendar.current
+        guard let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: selectedDate)),
+              let endOfMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth) else { return }
+        
+        // Fetch surrounding
+        guard let startFetch = calendar.date(byAdding: .month, value: -1, to: startOfMonth),
+              let endFetch = calendar.date(byAdding: .month, value: 2, to: startOfMonth) else { return }
+        
+        if calendarItems.isEmpty { isLoading = true }
         
         do {
-            async let lessonsTask = lessonManager.fetchLessonsForStudent(studentID: studentID, start: start, end: end)
-            async let personalTask = personalEventManager.fetchEvents(for: studentID, start: start, end: end)
+            async let lessonsTask = lessonManager.fetchLessonsForStudent(studentID: studentID, start: startFetch, end: endFetch)
+            async let personalTask = personalEventManager.fetchEvents(for: studentID, start: startFetch, end: endFetch)
             
             let fetchedLessons = try await lessonsTask
             let fetchedPersonal = try await personalTask

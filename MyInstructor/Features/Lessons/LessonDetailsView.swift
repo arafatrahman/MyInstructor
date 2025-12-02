@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/LessonDetailsView.swift
-// --- UPDATED: Passes currentUserID to updateLessonStatus for notification logic ---
+// --- UPDATED: FinishLessonSheet now saves payment with a "Lesson: Topic" note ---
 
 import SwiftUI
 
@@ -166,7 +166,6 @@ struct LessonDetailsView: View {
     }
     
     private func cancelLesson() async {
-        // --- PASS currentUserID to manager ---
         guard let lessonID = lesson.id, let currentUserID = authManager.user?.id else { return }
         do {
             try await lessonManager.updateLessonStatus(lessonID: lessonID, status: .cancelled, initiatorID: currentUserID)
@@ -177,39 +176,87 @@ struct LessonDetailsView: View {
     }
 }
 
-// ... (Sub-views like FinishLessonSheet, RedBorderedButtonStyle, LessonStatusBadge, DetailRow remain unchanged) ...
+// MARK: - Finish Lesson Sheet
 struct FinishLessonSheet: View {
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var paymentManager: PaymentManager
+    
     let lesson: Lesson
     var onComplete: () -> Void
+    
     @State private var isPaymentReceived = true
     @State private var paymentMethod: PaymentMethod = .cash
-    @State private var note: String = ""
+    @State private var note: String = "" // Lesson feedback note
     @State private var isLoading = false
     @State private var amountString: String = ""
-    enum PaymentMethod: String, CaseIterable, Identifiable { case cash="Cash", card="Card", bank="Bank Transfer"; var id: String { self.rawValue } }
+    
+    enum PaymentMethod: String, CaseIterable, Identifiable {
+        case cash = "Cash", card = "Card", bank = "Bank Transfer"
+        var id: String { self.rawValue }
+    }
     
     var body: some View {
         NavigationView {
             Form {
-                Section("Completion Status") { Text("Mark lesson as Completed").font(.headline) }
+                Section("Completion Status") {
+                    Text("Mark lesson as Completed").font(.headline)
+                }
+                
                 Section("Payment Details") {
-                    Toggle("Payment Received", isOn: $isPaymentReceived).tint(.accentGreen)
+                    Toggle("Payment Received", isOn: $isPaymentReceived)
+                        .tint(.accentGreen)
+                    
                     if isPaymentReceived {
-                        Picker("Payment Method", selection: $paymentMethod) { ForEach(PaymentMethod.allCases) { method in Text(method.rawValue).tag(method) } }.pickerStyle(.segmented)
-                        HStack { Text("Amount (£)"); Spacer(); TextField("Amount", text: $amountString).keyboardType(.decimalPad).multilineTextAlignment(.trailing).foregroundColor(.accentGreen).font(.headline) }
+                        Picker("Payment Method", selection: $paymentMethod) {
+                            ForEach(PaymentMethod.allCases) { method in
+                                Text(method.rawValue).tag(method)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        
+                        HStack {
+                            Text("Amount (£)")
+                            Spacer()
+                            TextField("Amount", text: $amountString)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .foregroundColor(.accentGreen)
+                                .font(.headline)
+                        }
                     } else {
-                        HStack { Text("Amount Due (£)"); Spacer(); TextField("Amount", text: $amountString).keyboardType(.decimalPad).multilineTextAlignment(.trailing).foregroundColor(.warningRed) }
+                        HStack {
+                            Text("Amount Due (£)")
+                            Spacer()
+                            TextField("Amount", text: $amountString)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .foregroundColor(.warningRed)
+                        }
                     }
                 }
-                Section("Lesson Notes (Optional)") { TextField("How did the lesson go?", text: $note) }
+                
+                Section("Lesson Notes (Feedback)") {
+                    TextField("How did the lesson go?", text: $note)
+                }
+                
                 Section {
-                    Button { finalizeLesson() } label: { if isLoading { ProgressView() } else { Text("Confirm & Finish").bold().frame(maxWidth: .infinity) } }
-                    .buttonStyle(.primaryDrivingApp).listRowBackground(Color.clear)
+                    Button {
+                        finalizeLesson()
+                    } label: {
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            Text("Confirm & Finish")
+                                .bold()
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.primaryDrivingApp)
+                    .listRowBackground(Color.clear)
                 }
             }
-            .navigationTitle("Finish Lesson").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Finish Lesson")
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 let hourlyRate = lesson.fee
                 let durationHours = (lesson.duration ?? 3600) / 3600
@@ -225,31 +272,109 @@ struct FinishLessonSheet: View {
             do {
                 guard let lessonID = lesson.id else { return }
                 let finalAmount = Double(amountString) ?? 0.0
+                
+                // 1. Mark Lesson Completed
                 try await lessonManager.updateLessonStatus(lessonID: lessonID, status: .completed)
-                let paymentRecord = Payment(instructorID: lesson.instructorID, studentID: lesson.studentID, amount: finalAmount, date: Date(), isPaid: isPaymentReceived)
+                
+                // 2. Create Payment Record (Visible to Student)
+                // We add the lesson topic to the note so the student sees "Lesson: Parking" instead of just "Payment"
+                let paymentRecord = Payment(
+                    instructorID: lesson.instructorID,
+                    studentID: lesson.studentID,
+                    amount: finalAmount,
+                    date: Date(),
+                    isPaid: isPaymentReceived,
+                    paymentMethod: isPaymentReceived ? convertMethod(paymentMethod) : nil,
+                    note: "Lesson: \(lesson.topic)" // <--- THIS ENSURES IT SHOWS CORRECTLY
+                )
+                
                 try await paymentManager.recordPayment(newPayment: paymentRecord)
+                
                 isLoading = false
                 onComplete()
-            } catch { print("Error: \(error)"); isLoading = false }
+            } catch {
+                print("Error: \(error)")
+                isLoading = false
+            }
+        }
+    }
+    
+    // Helper to convert local enum to model enum
+    func convertMethod(_ local: PaymentMethod) -> MyInstructor.PaymentMethod {
+        switch local {
+        case .cash: return .cash
+        case .card: return .card
+        case .bank: return .bankTransfer
         }
     }
 }
 
+// MARK: - Shared Components
+
 struct RedBorderedButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.headline).padding().frame(maxWidth: .infinity).background(Color.white).cornerRadius(12).overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.warningRed, lineWidth: 2)).foregroundColor(.warningRed).opacity(configuration.isPressed ? 0.8 : 1.0).scaleEffect(configuration.isPressed ? 0.98 : 1.0).animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+        configuration.label
+            .font(.headline)
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(Color.white)
+            .cornerRadius(12)
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.warningRed, lineWidth: 2))
+            .foregroundColor(.warningRed)
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
 struct LessonStatusBadge: View {
     let status: LessonStatus
-    var color: Color { switch status { case .scheduled: return .primaryBlue; case .completed: return .accentGreen; case .cancelled: return .warningRed } }
-    var body: some View { Text(status.rawValue.capitalized).font(.caption).bold().padding(.horizontal, 10).padding(.vertical, 5).background(color.opacity(0.15)).foregroundColor(color).cornerRadius(10) }
+    var color: Color {
+        switch status {
+        case .scheduled: return .primaryBlue
+        case .completed: return .accentGreen
+        case .cancelled: return .warningRed
+        }
+    }
+    var body: some View {
+        Text(status.rawValue.capitalized)
+            .font(.caption).bold()
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(color.opacity(0.15))
+            .foregroundColor(color)
+            .cornerRadius(10)
+    }
 }
 
 struct DetailRow: View {
-    let icon: String; let title: String; let stringValue: String?; let dateValue: Date?; let dateStyle: Text.DateStyle?; let currencyValue: Double?; let currencyCode: String?
-    init(icon: String, title: String, stringValue: String) { self.icon = icon; self.title = title; self.stringValue = stringValue; self.dateValue = nil; self.dateStyle = nil; self.currencyValue = nil; self.currencyCode = nil }
-    init(icon: String, title: String, dateValue: Date, dateStyle: Text.DateStyle) { self.icon = icon; self.title = title; self.dateValue = dateValue; self.dateStyle = dateStyle; self.stringValue = nil; self.currencyValue = nil; self.currencyCode = nil }
-    var body: some View { HStack(alignment: .top) { Image(systemName: icon).foregroundColor(.primaryBlue).font(.body).frame(width: 25); VStack(alignment: .leading) { Text(title).font(.caption).foregroundColor(.textLight); if let date = dateValue, let style = dateStyle { Text(date, style: style).font(.headline).foregroundColor(.textDark) } else if let val = stringValue { Text(val).font(.headline).foregroundColor(.textDark) } } } }
+    let icon: String
+    let title: String
+    let stringValue: String?
+    let dateValue: Date?
+    let dateStyle: Text.DateStyle?
+    let currencyValue: Double?
+    let currencyCode: String?
+    
+    init(icon: String, title: String, stringValue: String) {
+        self.icon = icon; self.title = title; self.stringValue = stringValue
+        self.dateValue = nil; self.dateStyle = nil; self.currencyValue = nil; self.currencyCode = nil
+    }
+    init(icon: String, title: String, dateValue: Date, dateStyle: Text.DateStyle) {
+        self.icon = icon; self.title = title; self.dateValue = dateValue; self.dateStyle = dateStyle
+        self.stringValue = nil; self.currencyValue = nil; self.currencyCode = nil
+    }
+    var body: some View {
+        HStack(alignment: .top) {
+            Image(systemName: icon).foregroundColor(.primaryBlue).font(.body).frame(width: 25)
+            VStack(alignment: .leading) {
+                Text(title).font(.caption).foregroundColor(.textLight)
+                if let date = dateValue, let style = dateStyle {
+                    Text(date, style: style).font(.headline).foregroundColor(.textDark)
+                } else if let val = stringValue {
+                    Text(val).font(.headline).foregroundColor(.textDark)
+                }
+            }
+        }
+    }
 }

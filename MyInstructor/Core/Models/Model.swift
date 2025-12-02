@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/Model.swift
+// --- UPDATED: Added 'title' field to PracticeSession ---
+
 import Foundation
 import FirebaseFirestore
 import CoreLocation
@@ -63,12 +66,10 @@ struct StudentNote: Identifiable, Codable, Hashable {
     let content: String
     let timestamp: Date
     
-    // Custom init to allow decoding even if 'id' is missing in legacy data
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.content = try container.decode(String.self, forKey: .content)
         self.timestamp = try container.decode(Date.self, forKey: .timestamp)
-        // Attempt decode 'id', otherwise create new
         self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
     }
     
@@ -135,7 +136,26 @@ struct AppNotification: Identifiable, Codable {
     let recipientID: String
     let title: String
     let message: String
-    let type: String // "lesson", "note", "progress"
+    let type: String
     let timestamp: Date
     var isRead: Bool
+}
+
+// MARK: - Practice Session Model (Student Log)
+struct PracticeSession: Identifiable, Codable {
+    @DocumentID var id: String?
+    let studentID: String
+    var date: Date
+    var duration: TimeInterval // in seconds
+    var practiceType: String // "Private Practice", "Official Lesson", etc.
+    var topic: String?
+    
+    // --- NEW: Separate title field for notes ---
+    var title: String?
+    var notes: String?
+    
+    // Helper to convert to hours for display
+    var durationHours: Double {
+        return duration / 3600.0
+    }
 }

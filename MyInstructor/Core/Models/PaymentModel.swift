@@ -1,8 +1,8 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/PaymentModel.swift
+// --- UPDATED: Added 'hours' field ---
+
 import Foundation
 import FirebaseFirestore
-
-// MARK: - Payment Model
 
 enum PaymentMethod: String, Codable, CaseIterable, Identifiable {
     case cash = "Cash"
@@ -14,10 +14,12 @@ enum PaymentMethod: String, Codable, CaseIterable, Identifiable {
 
 struct Payment: Identifiable, Codable {
     @DocumentID var id: String?
-    let instructorID: String // The ID of the instructor (user)
-    let studentID: String // The ID of the student who owes/paid
+    let instructorID: String // Can be empty string "" if not linked to a specific instructor
+    let studentID: String
     var amount: Double
     var date: Date
-    var isPaid: Bool // True if received, False if pending
-    var paymentMethod: PaymentMethod? // Optional: Cash, Card, Bank Transfer
+    var isPaid: Bool
+    var paymentMethod: PaymentMethod?
+    var note: String?
+    var hours: Double? // <--- NEW: Optional hours field
 }

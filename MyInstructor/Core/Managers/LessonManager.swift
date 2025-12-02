@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/LessonManager.swift
-// --- UPDATED: Sends cancellation notifications to the counterparty ---
+// --- UPDATED: Added updatePracticeSession function ---
 
 import Foundation
 import FirebaseFirestore
@@ -10,7 +10,13 @@ class LessonManager: ObservableObject {
     private var lessonsCollection: CollectionReference {
         db.collection("lessons")
     }
+    
+    // --- Practice Sessions Collection ---
+    private var practiceCollection: CollectionReference {
+        db.collection("practice_sessions")
+    }
 
+    // MARK: - Lesson Fetching
     func fetchLessons(for instructorID: String, start: Date, end: Date) async throws -> [Lesson] {
         let snapshot = try await lessonsCollection
             .whereField("instructorID", isEqualTo: instructorID)
@@ -41,6 +47,7 @@ class LessonManager: ObservableObject {
         return try? document.data(as: Lesson.self)
     }
 
+    // MARK: - Lesson CRUD
     func addLesson(newLesson: Lesson) async throws {
         let ref = try lessonsCollection.addDocument(from: newLesson)
         print("Lesson added successfully: \(newLesson.topic)")
@@ -76,7 +83,6 @@ class LessonManager: ObservableObject {
         )
     }
 
-    // --- UPDATED FUNCTION ---
     func updateLessonStatus(lessonID: String, status: LessonStatus, initiatorID: String? = nil) async throws {
         // 1. Update Firestore
         try await lessonsCollection.document(lessonID).updateData([
@@ -90,7 +96,6 @@ class LessonManager: ObservableObject {
         
         // 3. Send Cancellation Notification (If we know who initiated it)
         if status == .cancelled, let senderID = initiatorID {
-            // Fetch lesson to identify the OTHER party
             let document = try await lessonsCollection.document(lessonID).getDocument()
             if let lesson = try? document.data(as: Lesson.self) {
                 let dateString = lesson.startTime.formatted(date: .abbreviated, time: .shortened)
@@ -114,5 +119,33 @@ class LessonManager: ObservableObject {
                 }
             }
         }
+    }
+    
+    // MARK: - Student Practice Logs & Notes
+    
+    func logPracticeSession(_ session: PracticeSession) async throws {
+        try practiceCollection.addDocument(from: session)
+        print("Practice session logged: \(session.durationHours) hours, Topic: \(session.topic ?? "None")")
+    }
+    
+    // --- NEW: Update function ---
+    func updatePracticeSession(_ session: PracticeSession) async throws {
+        guard let id = session.id else { return }
+        // setData overwrites the document with the new object data
+        try practiceCollection.document(id).setData(from: session)
+        print("Practice session updated.")
+    }
+    
+    func fetchPracticeSessions(for studentID: String) async throws -> [PracticeSession] {
+        let snapshot = try await practiceCollection
+            .whereField("studentID", isEqualTo: studentID)
+            .order(by: "date", descending: true)
+            .getDocuments()
+        
+        return snapshot.documents.compactMap { try? $0.data(as: PracticeSession.self) }
+    }
+    
+    func deletePracticeSession(id: String) async throws {
+        try await practiceCollection.document(id).delete()
     }
 }

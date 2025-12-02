@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Contacts/ContactsView.swift
-// --- UPDATED: Added safety check to callNumber to prevent Simulator errors ---
+// --- UPDATED: Now supports Student view (fetches Instructors) ---
 
 import SwiftUI
 
@@ -8,7 +8,7 @@ struct ContactsView: View {
     @EnvironmentObject var contactManager: ContactManager
     @EnvironmentObject var dataService: DataService
     @EnvironmentObject var authManager: AuthManager
-    @EnvironmentObject var communityManager: CommunityManager // For deleting students
+    @EnvironmentObject var communityManager: CommunityManager
     
     @State private var contacts: [DisplayContact] = []
     @State private var searchText = ""
@@ -21,8 +21,6 @@ struct ContactsView: View {
     
     @State private var itemToDelete: DisplayContact? = nil
     @State private var isShowingDeleteAlert = false
-    
-    // Alert for Simulator/No Phone capability
     @State private var isShowingCallErrorAlert = false
     
     var filteredContacts: [DisplayContact] {
@@ -38,7 +36,6 @@ struct ContactsView: View {
     var body: some View {
         NavigationView {
             VStack {
-                // Search Bar
                 SearchBar(text: $searchText, placeholder: "Search contacts...")
                     .padding(.horizontal)
                     .padding(.top, 10)
@@ -63,7 +60,6 @@ struct ContactsView: View {
                                 callNumber(contact.phone)
                             })
                             .swipeActions(edge: .trailing) {
-                                // Delete Action
                                 Button(role: .destructive) {
                                     itemToDelete = contact
                                     isShowingDeleteAlert = true
@@ -71,20 +67,21 @@ struct ContactsView: View {
                                     Label("Delete", systemImage: "trash")
                                 }
                                 
-                                // Edit Action
-                                Button {
-                                    handleEdit(contact)
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
+                                // Only allow editing custom contacts or offline students
+                                if case .custom = contact.type {
+                                    Button { handleEdit(contact) } label: { Label("Edit", systemImage: "pencil") }
+                                        .tint(.primaryBlue)
+                                } else if case .student(let s) = contact.type, s.isOffline {
+                                    Button { handleEdit(contact) } label: { Label("Edit", systemImage: "pencil") }
+                                        .tint(.primaryBlue)
                                 }
-                                .tint(.primaryBlue)
                             }
                         }
                     }
                     .listStyle(.plain)
                 }
             }
-            .navigationTitle("Quick Contacts")
+            .navigationTitle("Contacts")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -93,18 +90,14 @@ struct ContactsView: View {
                             Image(systemName: "chevron.left")
                             Text("Back")
                         }
-                        .foregroundColor(.textDark)
                     }
                 }
-                
                 ToolbarItem(placement: .primaryAction) {
                     Button { isAddContactSheetPresented = true } label: {
-                        Image(systemName: "plus")
-                            .font(.headline.bold())
+                        Image(systemName: "plus").font(.headline.bold())
                     }
                 }
             }
-            // Sheets
             .sheet(isPresented: $isAddContactSheetPresented) {
                 AddContactFormView(onSave: { Task { await fetchData() } })
             }
@@ -120,7 +113,6 @@ struct ContactsView: View {
                     Task { await fetchData() }
                 })
             }
-            // Delete Alert
             .alert("Delete Contact?", isPresented: $isShowingDeleteAlert, presenting: itemToDelete) { item in
                 Button("Cancel", role: .cancel) {}
                 Button("Delete", role: .destructive) {
@@ -128,16 +120,17 @@ struct ContactsView: View {
                 }
             } message: { item in
                 if case .student(let s) = item.type, !s.isOffline {
-                    Text("Warning: You are about to remove an active Online Student. This will disconnect them from your account.")
+                    Text("Remove \(s.name) from your students list?")
+                } else if case .instructor(let u) = item.type {
+                    Text("Remove instructor \(u.name ?? "User") from your list?")
                 } else {
                     Text("Are you sure you want to delete \(item.name)?")
                 }
             }
-            // Call Error Alert (For Simulator)
             .alert("Cannot Make Call", isPresented: $isShowingCallErrorAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
-                Text("Your device does not support phone calls, or is a Simulator.")
+                Text("Your device cannot make calls.")
             }
             .task { await fetchData() }
         }
@@ -149,18 +142,27 @@ struct ContactsView: View {
         guard let id = authManager.user?.id else { return }
         isLoading = true
         
-        async let studentsTask = fetchStudentsSafe(for: id)
+        // 1. Fetch Custom Contacts (Everyone has these)
         async let customContactsTask = fetchCustomContactsSafe(for: id)
         
-        let studentContacts = await studentsTask
-        let customContacts = await customContactsTask
+        var mergedContacts: [DisplayContact] = []
         
-        // Merge & Sort
-        self.contacts = (studentContacts + customContacts).sorted { $0.name < $1.name }
+        // 2. Fetch Role-Specific Contacts
+        if authManager.role == .student {
+            async let instructorsTask = fetchInstructorsSafe(for: id)
+            let (custom, instructors) = await (customContactsTask, instructorsTask)
+            mergedContacts = custom + instructors
+        } else {
+            async let studentsTask = fetchStudentsSafe(for: id)
+            let (custom, students) = await (customContactsTask, studentsTask)
+            mergedContacts = custom + students
+        }
         
+        self.contacts = mergedContacts.sorted { $0.name < $1.name }
         isLoading = false
     }
     
+    // Fetch Students (For Instructor)
     private func fetchStudentsSafe(for id: String) async -> [DisplayContact] {
         do {
             let students = try await dataService.fetchAllStudents(for: id)
@@ -174,10 +176,26 @@ struct ContactsView: View {
                     type: .student(student)
                 )
             }
-        } catch {
-            print("Error fetching students: \(error.localizedDescription)")
-            return []
+        } catch { return [] }
+    }
+    
+    // Fetch Instructors (For Student) - NEW
+    private func fetchInstructorsSafe(for id: String) async -> [DisplayContact] {
+        let instructorIDs = authManager.user?.instructorIDs ?? []
+        var results: [DisplayContact] = []
+        
+        for instID in instructorIDs {
+            if let user = try? await dataService.fetchUser(withId: instID), let phone = user.phone, !phone.isEmpty {
+                results.append(DisplayContact(
+                    id: user.id ?? UUID().uuidString,
+                    name: user.name ?? "Instructor",
+                    phone: phone,
+                    photoURL: user.photoURL,
+                    type: .instructor(user)
+                ))
+            }
         }
+        return results
     }
     
     private func fetchCustomContactsSafe(for id: String) async -> [DisplayContact] {
@@ -192,22 +210,15 @@ struct ContactsView: View {
                     type: .custom(c)
                 )
             }
-        } catch {
-            print("Error fetching custom contacts: \(error.localizedDescription)")
-            return []
-        }
+        } catch { return [] }
     }
     
-    // --- UPDATED CALL FUNCTION ---
     func callNumber(_ number: String) {
         let cleanNumber = number.filter("0123456789+".contains)
         guard let url = URL(string: "tel://\(cleanNumber)") else { return }
-        
         if UIApplication.shared.canOpenURL(url) {
             UIApplication.shared.open(url)
         } else {
-            // If we can't open the URL (e.g. Simulator), show an alert or log it
-            print("Device cannot make calls (Simulator detected).")
             isShowingCallErrorAlert = true
         }
     }
@@ -226,39 +237,34 @@ struct ContactsView: View {
                     email: s.email,
                     address: s.address
                 )
-            } else {
-                print("Cannot edit online student profile directly")
             }
+        default: break // Online students/instructors cannot be edited here
         }
     }
     
     func deleteItem(_ item: DisplayContact) async {
-        guard let instructorID = authManager.user?.id else { return }
+        guard let currentUserID = authManager.user?.id else { return }
         
         do {
             switch item.type {
             case .custom(let c):
-                if let cid = c.id {
-                    try await contactManager.deleteContact(contactID: cid, instructorID: instructorID)
-                }
+                if let cid = c.id { try await contactManager.deleteContact(contactID: cid, instructorID: currentUserID) }
             case .student(let s):
                 if let sid = s.id {
-                    if s.isOffline {
-                        try await communityManager.deleteOfflineStudent(studentID: sid)
-                    } else {
-                        try await communityManager.removeStudent(studentID: sid, instructorID: instructorID)
-                    }
+                    if s.isOffline { try await communityManager.deleteOfflineStudent(studentID: sid) }
+                    else { try await communityManager.removeStudent(studentID: sid, instructorID: currentUserID) }
+                }
+            case .instructor(let u):
+                if let iid = u.id {
+                    try await communityManager.removeInstructor(instructorID: iid, studentID: currentUserID)
                 }
             }
             await fetchData()
-        } catch {
-            print("Delete failed: \(error)")
-        }
+        } catch { print("Delete failed: \(error)") }
     }
 }
 
-// MARK: - Models & Subviews
-
+// Updated Models
 struct DisplayContact: Identifiable {
     let id: String
     let name: String
@@ -268,63 +274,35 @@ struct DisplayContact: Identifiable {
     
     enum ContactSourceType {
         case student(Student)
+        case instructor(AppUser) // <--- Added Instructor Case
         case custom(CustomContact)
     }
 }
 
+// Reuse ContactListRow from previous code (unchanged visual)
 struct ContactListRow: View {
     let contact: DisplayContact
     let onCall: () -> Void
-    
     var body: some View {
         HStack(spacing: 15) {
-            // Avatar
             if let urlString = contact.photoURL, let url = URL(string: urlString) {
                 AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        Color.gray.opacity(0.3)
-                    }
-                }
-                .frame(width: 50, height: 50)
-                .clipShape(Circle())
+                    if let image = phase.image { image.resizable().scaledToFill() } else { Color.gray.opacity(0.3) }
+                }.frame(width: 50, height: 50).clipShape(Circle())
             } else {
                 ZStack {
                     Circle().fill(Color.primaryBlue.opacity(0.1))
-                    Text(contact.name.prefix(1).uppercased())
-                        .font(.title3).bold()
-                        .foregroundColor(.primaryBlue)
-                }
-                .frame(width: 50, height: 50)
+                    Text(contact.name.prefix(1).uppercased()).font(.title3).bold().foregroundColor(.primaryBlue)
+                }.frame(width: 50, height: 50)
             }
-            
-            // Info
             VStack(alignment: .leading, spacing: 4) {
-                Text(contact.name)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                HStack {
-                    Image(systemName: "phone.fill")
-                        .font(.caption2)
-                    Text(contact.phone)
-                        .font(.subheadline)
-                }
-                .foregroundColor(.secondary)
+                Text(contact.name).font(.headline).foregroundColor(.primary)
+                HStack { Image(systemName: "phone.fill").font(.caption2); Text(contact.phone).font(.subheadline) }.foregroundColor(.secondary)
             }
-            
             Spacer()
-            
-            // Call Button
             Button(action: onCall) {
-                Image(systemName: "phone.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundColor(.accentGreen)
-                    .shadow(color: .accentGreen.opacity(0.3), radius: 5)
-            }
-            .buttonStyle(.plain) // Important for List
-        }
-        .padding(.vertical, 5)
+                Image(systemName: "phone.circle.fill").font(.system(size: 32)).foregroundColor(.accentGreen)
+            }.buttonStyle(.plain)
+        }.padding(.vertical, 5)
     }
 }

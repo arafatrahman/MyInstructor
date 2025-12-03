@@ -1,4 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/InstructorCalendarView.swift
+// --- UPDATED: Fetches and displays student exams ---
+
 import SwiftUI
 
 struct InstructorCalendarView: View {
@@ -19,13 +21,11 @@ struct InstructorCalendarView: View {
     
     @State private var isLoading = false
     
-    // Calculate which dates have events for the "Dot" indicators
     private var eventDates: Set<DateComponents> {
         let components = calendarItems.map { Calendar.current.dateComponents([.year, .month, .day], from: $0.date) }
         return Set(components)
     }
     
-    // Items for the selected day only
     private var selectedDayItems: [CalendarItem] {
         calendarItems.filter { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) }
             .sorted { $0.date < $1.date }
@@ -37,13 +37,11 @@ struct InstructorCalendarView: View {
                 Color(.systemGroupedBackground).ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // MARK: - Custom Full Calendar with Event Dots
                     CustomMonthlyCalendar(selectedDate: $selectedDate, eventDates: eventDates)
                         .padding(.horizontal)
                         .padding(.top, 10)
                         .zIndex(1)
                     
-                    // MARK: - List for Selected Day
                     if isLoading {
                         Spacer(); ProgressView("Loading Schedule..."); Spacer()
                     } else if selectedDayItems.isEmpty {
@@ -86,7 +84,6 @@ struct InstructorCalendarView: View {
                 }
             }
             .onAppear { Task { await fetchCalendarData() } }
-            // Fetch when selected date changes (in case we moved to a new month not yet loaded)
             .onChange(of: selectedDate) { _, _ in Task { await fetchCalendarData() } }
             
             .sheet(isPresented: $isAddLessonSheetPresented) { AddLessonFormView(onLessonAdded: { _ in Task { await fetchCalendarData() } }) }
@@ -103,7 +100,6 @@ struct InstructorCalendarView: View {
         guard let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: selectedDate)),
               let endOfMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth) else { return }
         
-        // Fetch surrounding months too for smooth swiping
         guard let startFetch = calendar.date(byAdding: .month, value: -1, to: startOfMonth),
               let endFetch = calendar.date(byAdding: .month, value: 2, to: startOfMonth) else { return }
         
@@ -113,16 +109,20 @@ struct InstructorCalendarView: View {
             async let lessonsTask = lessonManager.fetchLessons(for: instructorID, start: startFetch, end: endFetch)
             async let servicesTask = vehicleManager.fetchServiceRecords(for: instructorID)
             async let personalTask = personalEventManager.fetchEvents(for: instructorID, start: startFetch, end: endFetch)
+            // --- NEW: Fetch Exams ---
+            async let examsTask = lessonManager.fetchExamsForInstructor(instructorID: instructorID)
             
             let lessons = try await lessonsTask
             let services = try await servicesTask
             let personalEvents = try await personalTask
+            let exams = try await examsTask
             
             let lessonItems = lessons.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.startTime, type: .lesson($0)) }
             let serviceItems = services.filter { $0.date >= startFetch && $0.date < endFetch }.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.date, type: .service($0)) }
             let personalItems = personalEvents.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.date, type: .personal($0)) }
+            let examItems = exams.filter { $0.date >= startFetch && $0.date < endFetch }.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.date, type: .exam($0)) }
             
-            self.calendarItems = (lessonItems + serviceItems + personalItems).sorted(by: { $0.date < $1.date })
+            self.calendarItems = (lessonItems + serviceItems + personalItems + examItems).sorted(by: { $0.date < $1.date })
         } catch { print("Error fetching calendar data: \(error)") }
         isLoading = false
     }

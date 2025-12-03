@@ -1,4 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Student/StudentCalendarView.swift
+// --- UPDATED: Fetches and displays ExamResults ---
+
 import SwiftUI
 
 struct StudentCalendarView: View {
@@ -14,13 +16,11 @@ struct StudentCalendarView: View {
     @State private var isAddPersonalSheetPresented = false
     @State private var personalEventToEdit: PersonalEvent? = nil
     
-    // Calculate which dates have events for the "Dot" indicators
     private var eventDates: Set<DateComponents> {
         let components = calendarItems.map { Calendar.current.dateComponents([.year, .month, .day], from: $0.date) }
         return Set(components)
     }
     
-    // Items for the selected day only
     private var selectedDayItems: [CalendarItem] {
         calendarItems.filter { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) }
             .sorted { $0.date < $1.date }
@@ -32,13 +32,11 @@ struct StudentCalendarView: View {
                 Color(.systemGroupedBackground).ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // MARK: - Custom Full Calendar with Event Dots
                     CustomMonthlyCalendar(selectedDate: $selectedDate, eventDates: eventDates)
                         .padding(.horizontal)
                         .padding(.top, 10)
                         .zIndex(1)
                     
-                    // MARK: - List for Selected Day
                     if isLoading {
                         Spacer(); ProgressView("Loading Your Schedule..."); Spacer()
                     } else if selectedDayItems.isEmpty {
@@ -94,7 +92,6 @@ struct StudentCalendarView: View {
         guard let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: selectedDate)),
               let endOfMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth) else { return }
         
-        // Fetch surrounding
         guard let startFetch = calendar.date(byAdding: .month, value: -1, to: startOfMonth),
               let endFetch = calendar.date(byAdding: .month, value: 2, to: startOfMonth) else { return }
         
@@ -103,14 +100,21 @@ struct StudentCalendarView: View {
         do {
             async let lessonsTask = lessonManager.fetchLessonsForStudent(studentID: studentID, start: startFetch, end: endFetch)
             async let personalTask = personalEventManager.fetchEvents(for: studentID, start: startFetch, end: endFetch)
+            // --- NEW: Fetch Exams ---
+            async let examsTask = lessonManager.fetchExamResults(for: studentID)
             
             let fetchedLessons = try await lessonsTask
             let fetchedPersonal = try await personalTask
+            let fetchedExams = try await examsTask
             
             let lessonItems = fetchedLessons.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.startTime, type: .lesson($0)) }
             let personalItems = fetchedPersonal.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.date, type: .personal($0)) }
+            // Filter exams by date locally as the fetch was broad
+            let examItems = fetchedExams
+                .filter { $0.date >= startFetch && $0.date < endFetch }
+                .map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.date, type: .exam($0)) }
             
-            self.calendarItems = (lessonItems + personalItems).sorted(by: { $0.date < $1.date })
+            self.calendarItems = (lessonItems + personalItems + examItems).sorted(by: { $0.date < $1.date })
         } catch { print("Error fetching student calendar: \(error)") }
         isLoading = false
     }

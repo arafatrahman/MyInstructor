@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/StudentDashboardView.swift
-// --- UPDATED: Uses generic NotesListView ---
+// --- UPDATED: Track Exam now opens ExamListView ---
 
 import SwiftUI
 
@@ -9,6 +9,7 @@ enum StudentDashboardSheet: Identifiable {
     case paymentHistory
     case findInstructor
     case logPractice
+    case trackExam // <---
     case contacts
     case notes
     
@@ -82,13 +83,17 @@ struct StudentDashboardView: View {
                             Text("Quick Actions").font(.headline).padding(.horizontal)
                             
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
+                                StudentQuickActionButton(title: "Find Instructor", icon: "magnifyingglass.circle.fill", color: .teal, action: { activeSheet = .findInstructor })
+                                StudentQuickActionButton(title: "My Instructors", icon: "person.2.fill", color: .purple, action: { activeSheet = .myInstructors })
+                                StudentQuickActionButton(title: "Lesson Stats", icon: "chart.bar.fill", color: .primaryBlue, action: { activeSheet = .lessonStats })
                                 StudentQuickActionButton(title: "Log Practice", icon: "timer", color: .accentGreen, action: { activeSheet = .logPractice })
+                                
+                                // TRACK EXAM
+                                StudentQuickActionButton(title: "Track Exam", icon: "flag.checkered", color: .indigo, action: { activeSheet = .trackExam })
+                                
+                                StudentQuickActionButton(title: "Payment History", icon: "creditcard.fill", color: .orange, action: { activeSheet = .paymentHistory })
                                 StudentQuickActionButton(title: "Notes", icon: "note.text", color: .pink, action: { activeSheet = .notes })
                                 StudentQuickActionButton(title: "Contacts", icon: "phone.circle.fill", color: .blue, action: { activeSheet = .contacts })
-                                StudentQuickActionButton(title: "Lesson Stats", icon: "chart.bar.fill", color: .primaryBlue, action: { activeSheet = .lessonStats })
-                                StudentQuickActionButton(title: "Payment History", icon: "creditcard.fill", color: .orange, action: { activeSheet = .paymentHistory })
-                                StudentQuickActionButton(title: "My Instructors", icon: "person.2.fill", color: .purple, action: { activeSheet = .myInstructors })
-                                StudentQuickActionButton(title: "Find Instructor", icon: "magnifyingglass.circle.fill", color: .teal, action: { activeSheet = .findInstructor })
                             }
                             .padding(.horizontal)
                         }
@@ -112,8 +117,16 @@ struct StudentDashboardView: View {
                 case .paymentHistory: StudentPaymentHistoryView()
                 case .findInstructor: InstructorDirectoryView()
                 case .logPractice: StudentLogPracticeView(onSave: { Task { await fetchData() } })
+                
+                // --- Updated Case ---
+                case .trackExam:
+                    // Using ExamListView instead of direct form
+                    if let id = authManager.user?.id {
+                        ExamListView(studentID: id)
+                    }
+                    
                 case .contacts: ContactsView()
-                case .notes: NotesListView() // <--- USES GENERIC VIEW
+                case .notes: NotesListView()
                 }
             }
         }
@@ -135,15 +148,9 @@ struct StudentDashboardView: View {
     }
 }
 
-// ... (Subviews and components assumed unchanged)
-struct StudentDashboardCard<Content: View>: View {
-    let title: String; let systemIcon: String; var accentColor: Color = .primaryBlue; var fixedHeight: CGFloat? = nil; var backgroundColor: Color? = nil; @ViewBuilder let content: Content
-    var body: some View { VStack(alignment: .leading, spacing: 10) { HStack { Label(title, systemImage: systemIcon).font(.subheadline).bold().foregroundColor(accentColor); Spacer() }; Divider().opacity(0.5); content.frame(maxWidth: .infinity, alignment: .leading); if fixedHeight != nil { Spacer(minLength: 0) } }.padding(15).frame(height: fixedHeight).background(backgroundColor ?? Color(.systemBackground)).cornerRadius(15).shadow(color: Color.textDark.opacity(0.05), radius: 8, x: 0, y: 4) }
-}
-struct StudentQuickActionButton: View {
-    let title: String; let icon: String; let color: Color; let action: () -> Void
-    var body: some View { Button(action: action) { VStack(spacing: 5) { Image(systemName: icon).font(.title2); Text(title).font(.caption).bold().lineLimit(1) }.frame(maxWidth: .infinity).padding(.vertical, 15).background(color.opacity(0.15)).foregroundColor(color).cornerRadius(12) } }
-}
+// ... (Subviews remain unchanged)
+struct StudentDashboardCard<Content: View>: View { let title: String; let systemIcon: String; var accentColor: Color = .primaryBlue; var fixedHeight: CGFloat? = nil; var backgroundColor: Color? = nil; @ViewBuilder let content: Content; var body: some View { VStack(alignment: .leading, spacing: 10) { HStack { Label(title, systemImage: systemIcon).font(.subheadline).bold().foregroundColor(accentColor); Spacer() }; Divider().opacity(0.5); content.frame(maxWidth: .infinity, alignment: .leading); if fixedHeight != nil { Spacer(minLength: 0) } }.padding(15).frame(height: fixedHeight).background(backgroundColor ?? Color(.systemBackground)).cornerRadius(15).shadow(color: Color.textDark.opacity(0.05), radius: 8, x: 0, y: 4) } }
+struct StudentQuickActionButton: View { let title: String; let icon: String; let color: Color; let action: () -> Void; var body: some View { Button(action: action) { VStack(spacing: 5) { Image(systemName: icon).font(.title2); Text(title).font(.caption).bold().lineLimit(1) }.frame(maxWidth: .infinity).padding(.vertical, 15).background(color.opacity(0.15)).foregroundColor(color).cornerRadius(12) } } }
 struct StudentProgressContent: View { let progress: Double; var body: some View { HStack { CircularProgressView(progress: progress, color: .primaryBlue, size: 80).padding(.trailing, 20); VStack(alignment: .leading) { Text("\(Int(progress * 100))%").font(.largeTitle).bold().foregroundColor(.primaryBlue); Text("Overall Mastery").font(.headline); Text("As graded by your instructor").font(.caption).foregroundColor(.textLight) }; Spacer() } } }
 struct StudentFeedbackContent: View { let feedback: String; var body: some View { VStack(alignment: .leading) { if feedback.isEmpty { Text("No feedback notes yet.").font(.body).foregroundColor(.textLight) } else { Text(feedback).font(.body).lineLimit(3).foregroundColor(.primary); HStack { Spacer(); Text("View All History").font(.caption).bold().foregroundColor(.orange) } } } } }
 struct PaymentDueCard: View { var body: some View { HStack { Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.warningRed); VStack(alignment: .leading) { Text("Payment Pending").font(.headline).foregroundColor(.warningRed); Text("Check 'Payment History'").font(.subheadline) }; Spacer() }.padding(15).background(Color.warningRed.opacity(0.1)).cornerRadius(15).overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.warningRed, lineWidth: 1)) } }

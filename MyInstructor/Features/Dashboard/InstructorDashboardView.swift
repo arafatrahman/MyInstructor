@@ -1,15 +1,15 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: Added "Notes" Quick Action ---
+// --- UPDATED: Reordered Quick Actions & Added Track Exam ---
 
 import SwiftUI
 
 enum DashboardSheet: Identifiable {
     case addLesson, addStudent, recordPayment, quickOverview, trackIncome, trackExpense, serviceBook, myVehicles, contacts
-    case notes // <--- NEW CASE
+    case notes
+    case trackExam // <--- NEW CASE
     var id: Int { self.hashValue }
 }
 
-// Flow Item 5: Instructor Dashboard
 struct InstructorDashboardView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var dataService: DataService
@@ -61,17 +61,36 @@ struct InstructorDashboardView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Quick Actions").font(.headline).padding(.horizontal)
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
+                                
+                                // 1. Add Lesson
                                 QuickActionButton(title: "Add Lesson", icon: "plus.circle.fill", color: .primaryBlue, action: { activeSheet = .addLesson })
+                                
+                                // 2. Track Exam (New Position)
+                                QuickActionButton(title: "Track Exam", icon: "flag.checkered", color: .indigo, action: { activeSheet = .trackExam })
+                                
+                                // 3. Add Student
                                 QuickActionButton(title: "Add Student", icon: "person.badge.plus.fill", color: .accentGreen, action: { activeSheet = .addStudent })
-                                QuickActionButton(title: "Contacts", icon: "phone.circle.fill", color: .teal, action: { activeSheet = .contacts })
+                                
+                                // 4. Record Payment
                                 QuickActionButton(title: "Record Payment", icon: "creditcard.fill", color: .purple, action: { activeSheet = .recordPayment })
+                                
+                                // 5. Track Income
                                 QuickActionButton(title: "Track Income", icon: "chart.line.uptrend.xyaxis", color: .orange, action: { activeSheet = .trackIncome })
+                                
+                                // 6. Track Expense
                                 QuickActionButton(title: "Track Expense", icon: "chart.line.downtrend.xyaxis", color: .warningRed, action: { activeSheet = .trackExpense })
+                                
+                                // 7. Service Book
                                 QuickActionButton(title: "Service Book", icon: "wrench.and.screwdriver.fill", color: .gray, action: { activeSheet = .serviceBook })
+                                
+                                // 8. My Vehicles
                                 QuickActionButton(title: "My Vehicles", icon: "car.circle.fill", color: .primaryBlue, action: { activeSheet = .myVehicles })
                                 
-                                // --- NEW: Notes Button ---
+                                // 9. Notes
                                 QuickActionButton(title: "Notes", icon: "note.text", color: .pink, action: { activeSheet = .notes })
+                                
+                                // 10. Contacts (Moved After Notes)
+                                QuickActionButton(title: "Contacts", icon: "phone.circle.fill", color: .teal, action: { activeSheet = .contacts })
                                 
                             }.padding(.horizontal)
                         }.padding(.top, 15)
@@ -98,7 +117,8 @@ struct InstructorDashboardView: View {
                 case .trackExpense: ExpensesView()
                 case .serviceBook: ServiceBookView()
                 case .myVehicles: MyVehiclesView()
-                case .notes: NotesListView() // <--- NEW SHEET
+                case .notes: NotesListView()
+                case .trackExam: ExamListView() // <--- Opens the list view (which handles adding)
                 }
             }
         }

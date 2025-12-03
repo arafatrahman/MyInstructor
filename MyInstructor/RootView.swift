@@ -120,13 +120,13 @@ struct MainTabView: View {
                 StudentCalendarView()
                     .tabItem { Label("Schedule", systemImage: "calendar") }
                 
-                // 3. Live Map
-                LiveLocationView(lesson: Lesson(instructorID: "", studentID: "", topic: "Live", startTime: Date(), pickupLocation: "Map View", fee: 0))
-                    .tabItem { Label("Live Map", systemImage: "map.fill") }
-                
                 // 4. Community
                 CommunityFeedView()
                     .tabItem { Label("Community", systemImage: "person.3.fill") }
+                
+                // 3. Live Map
+                LiveLocationView(lesson: Lesson(instructorID: "", studentID: "", topic: "Live", startTime: Date(), pickupLocation: "Map View", fee: 0))
+                    .tabItem { Label("Live Map", systemImage: "map.fill") }
 
                 // REMOVED: MyInstructorsView tab.
                 // It is now accessed via the "My Instructors" Quick Action on the Dashboard.

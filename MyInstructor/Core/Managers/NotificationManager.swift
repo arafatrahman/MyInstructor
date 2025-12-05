@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/NotificationManager.swift
-// --- UPDATED: Ensures UI updates happen on the Main Thread ---
+// --- UPDATED: Added logic to mark notifications read by relatedID ---
 
 import Foundation
 import UserNotifications
@@ -28,16 +28,36 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
 
     // MARK: - Firestore: Send & Listen
     
-    func sendNotification(to userID: String, title: String, message: String, type: String) {
+    // --- UPDATED: Now accepts optional relatedID ---
+    func sendNotification(to userID: String, title: String, message: String, type: String, relatedID: String? = nil) {
         let newNotification = AppNotification(
             recipientID: userID,
             title: title,
             message: message,
             type: type,
             timestamp: Date(),
-            isRead: false
+            isRead: false,
+            relatedID: relatedID
         )
         try? db.collection("users").document(userID).collection("notifications").addDocument(from: newNotification)
+    }
+    
+    // --- NEW: Mark specific notifications as read based on related ID ---
+    func markNotificationsAsRead(relatedID: String, userID: String) {
+        let ref = db.collection("users").document(userID).collection("notifications")
+        
+        // Find all unread notifications with this related ID (e.g., specific conversation)
+        ref.whereField("relatedID", isEqualTo: relatedID)
+           .whereField("isRead", isEqualTo: false)
+           .getDocuments { [weak self] snapshot, error in
+               guard let self = self, let documents = snapshot?.documents, !documents.isEmpty else { return }
+               
+               let batch = self.db.batch()
+               for doc in documents {
+                   batch.updateData(["isRead": true], forDocument: doc.reference)
+               }
+               batch.commit()
+           }
     }
     
     func listenForNotifications(for userID: String) {
@@ -61,7 +81,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 }
             }
             
-            // --- FIX: Update UI on Main Thread ---
+            // Update UI on Main Thread
             DispatchQueue.main.async {
                 self.notifications = documents.compactMap { try? $0.data(as: AppNotification.self) }
             }

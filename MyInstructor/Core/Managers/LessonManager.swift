@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/LessonManager.swift
-// --- UPDATED: Exam CRUD with Instructor support ---
+// --- UPDATED: Passing relatedID to notifications ---
 
 import Foundation
 import FirebaseFirestore
@@ -67,7 +67,8 @@ class LessonManager: ObservableObject {
             to: newLesson.studentID,
             title: "New Lesson Scheduled",
             message: "A new lesson '\(newLesson.topic)' has been scheduled for \(dateString).",
-            type: "lesson"
+            type: "lesson",
+            relatedID: ref.documentID // Link notification to lesson
         )
     }
     
@@ -83,7 +84,8 @@ class LessonManager: ObservableObject {
             to: lesson.studentID,
             title: "Lesson Updated",
             message: "Your lesson '\(lesson.topic)' has been updated to \(dateString).",
-            type: "lesson"
+            type: "lesson",
+            relatedID: lessonID // Link notification to lesson
         )
     }
 
@@ -92,7 +94,6 @@ class LessonManager: ObservableObject {
         if status == .cancelled || status == .completed {
             NotificationManager.shared.cancelReminders(for: lessonID)
         }
-        // Notifications omitted for brevity, same as previous
     }
     
     // MARK: - Practice Sessions
@@ -145,7 +146,6 @@ class LessonManager: ObservableObject {
         return snapshot.documents.compactMap { try? $0.data(as: ExamResult.self) }
     }
     
-    /// Fetches exams for an instructor's calendar
     func fetchExamsForInstructor(instructorID: String) async throws -> [ExamResult] {
         let snapshot = try await examsCollection
             .whereField("instructorID", isEqualTo: instructorID)

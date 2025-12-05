@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/Model.swift
-// --- UPDATED: Added 'title' field to PracticeSession ---
+// --- UPDATED: Added 'relatedID' to AppNotification ---
 
 import Foundation
 import FirebaseFirestore
@@ -139,6 +139,8 @@ struct AppNotification: Identifiable, Codable {
     let type: String
     let timestamp: Date
     var isRead: Bool
+    // --- NEW: ID to link back to the source (Lesson ID, Conversation ID, etc.) ---
+    var relatedID: String?
 }
 
 // MARK: - Practice Session Model (Student Log)
@@ -149,8 +151,6 @@ struct PracticeSession: Identifiable, Codable {
     var duration: TimeInterval // in seconds
     var practiceType: String // "Private Practice", "Official Lesson", etc.
     var topic: String?
-    
-    // --- NEW: Separate title field for notes ---
     var title: String?
     var notes: String?
     

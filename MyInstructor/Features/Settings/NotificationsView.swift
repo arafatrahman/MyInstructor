@@ -93,6 +93,7 @@ struct AppNotificationRow: View {
         case "reaction": return "heart.fill"
         case "comment": return "bubble.left.fill"
         case "reply": return "arrowshape.turn.up.left.fill"
+        case "message": return "message.fill" // <--- ADDED
         // ----------------
         default: return "bell.fill"
         }
@@ -105,7 +106,7 @@ struct AppNotificationRow: View {
         case "note": return .orange
         // --- NEW COLORS ---
         case "reaction": return .red
-        case "comment", "reply": return .primaryBlue
+        case "comment", "reply", "message": return .primaryBlue // <--- ADDED message
         // ------------------
         default: return .gray
         }

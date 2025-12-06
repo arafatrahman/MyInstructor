@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
-// --- UPDATED: Removed 'Track Exam' button from header ---
+// --- UPDATED: Moved Remove/Block buttons to Toolbar Menu ---
 
 import SwiftUI
 
@@ -40,46 +40,98 @@ struct StudentProfileView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // Header
-                ProfileHeaderView(
+                
+                // 1. Header Card (Photo, Name, Actions)
+                StudentProfileHeaderCard(
                     student: student,
                     studentAsAppUser: studentAsAppUser,
-                    onAddNote: { editingNote = nil; noteText = ""; isShowingNoteSheet = true },
-                    onUpdateProgress: { newProgressValue = currentProgress; isShowingProgressSheet = true }
+                    onEdit: { isShowingEditSheet = true }
                 )
-                .padding(.horizontal).padding(.top, 16)
+                .padding(.horizontal)
+                .padding(.top, 16)
                 
-                ProgressCard(overallProgress: currentProgress).padding(.horizontal)
-                
-                NotesCard(
-                    notes: studentNotes,
-                    onEdit: { note in editingNote = note; noteText = note.content; isShowingNoteSheet = true },
-                    onDelete: { note in Task { await deleteNote(note) } }
+                // 2. Progress Card
+                StudentProgressCard(
+                    progress: currentProgress,
+                    onUpdate: {
+                        newProgressValue = currentProgress
+                        isShowingProgressSheet = true
+                    }
                 )
                 .padding(.horizontal)
                 
-                LessonsCard(lessons: lessonHistory).padding(.horizontal)
-                PaymentsCard(payments: payments).padding(.horizontal)
+                // 3. Contact Card
+                StudentContactCard(student: student)
+                    .padding(.horizontal)
+                
+                // 4. Notes Card
+                StudentNotesCard(
+                    notes: studentNotes,
+                    onAdd: {
+                        editingNote = nil
+                        noteText = ""
+                        isShowingNoteSheet = true
+                    },
+                    onEdit: { note in
+                        editingNote = note
+                        noteText = note.content
+                        isShowingNoteSheet = true
+                    },
+                    onDelete: { note in
+                        Task { await deleteNote(note) }
+                    }
+                )
+                .padding(.horizontal)
+                
+                // 5. Lessons Card
+                StudentLessonsCard(lessons: lessonHistory)
+                    .padding(.horizontal)
+                
+                // 6. Payments Card
+                StudentPaymentsCard(payments: payments)
+                    .padding(.horizontal)
                 
                 Spacer(minLength: 20)
             }
             .padding(.bottom, 20)
         }
-        .navigationTitle(student.name)
+        .navigationTitle("Student Profile")
         .navigationBarTitleDisplayMode(.inline)
+        // --- UPDATED: Toolbar Menu ---
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     if isOffline {
-                        Button { isShowingEditSheet = true } label: { Label("Edit Profile", systemImage: "pencil") }
-                        Button(role: .destructive) { isShowingDeleteAlert = true } label: { Label("Delete Student", systemImage: "trash") }
+                        Button {
+                            isShowingEditSheet = true
+                        } label: {
+                            Label("Edit Profile", systemImage: "pencil")
+                        }
+                        
+                        Button(role: .destructive) {
+                            isShowingDeleteAlert = true
+                        } label: {
+                            Label("Delete Student", systemImage: "trash")
+                        }
                     } else {
-                        Button("Remove Student", role: .destructive) { isShowingRemoveAlert = true }
-                        Button("Block Student", role: .destructive) { isShowingBlockAlert = true }
+                        Button(role: .destructive) {
+                            isShowingRemoveAlert = true
+                        } label: {
+                            Label("Remove Student", systemImage: "person.badge.minus")
+                        }
+                        
+                        Button(role: .destructive) {
+                            isShowingBlockAlert = true
+                        } label: {
+                            Label("Block Student", systemImage: "hand.raised.fill")
+                        }
                     }
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
             }
         }
+        // -----------------------------
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .task { await fetchData() }
         
@@ -116,23 +168,53 @@ struct StudentProfileView: View {
             }.presentationDetents([.medium])
         }
         .sheet(isPresented: $isShowingEditSheet) {
-            OfflineStudentFormView(studentToEdit: OfflineStudent(id: student.id, instructorID: authManager.user?.id ?? "", name: student.name, phone: student.phone, email: student.email, address: student.address), onStudentAdded: { dismiss() })
+            OfflineStudentFormView(studentToEdit: OfflineStudent(id: student.id, instructorID: authManager.user?.id ?? "", name: student.name, phone: student.phone, email: student.email, address: student.address), onStudentAdded: {
+                Task { await fetchData() } // Refresh data after edit
+            })
         }
         
         .alert("Error", isPresented: $isShowingErrorAlert) { Button("OK", role: .cancel) { } } message: { Text(errorMessage) }
-        .alert("Remove?", isPresented: $isShowingRemoveAlert) { Button("Cancel", role: .cancel) { }; Button("Remove", role: .destructive) { Task { await removeStudent() } } }
-        .alert("Block?", isPresented: $isShowingBlockAlert) { Button("Cancel", role: .cancel) { }; Button("Block", role: .destructive) { Task { await blockStudent() } } }
-        .alert("Delete?", isPresented: $isShowingDeleteAlert) { Button("Cancel", role: .cancel) { }; Button("Delete", role: .destructive) { Task { await deleteOfflineStudent() } } }
+        
+        .alert("Remove Student?", isPresented: $isShowingRemoveAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Remove", role: .destructive) { Task { await removeStudent() } }
+        } message: { Text("They will be removed from your list.") }
+        
+        .alert("Block Student?", isPresented: $isShowingBlockAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Block", role: .destructive) { Task { await blockStudent() } }
+        } message: { Text("They won't be able to contact you.") }
+        
+        .alert("Delete Student?", isPresented: $isShowingDeleteAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) { Task { await deleteOfflineStudent() } }
+        } message: { Text("This action cannot be undone.") }
     }
     
-    // ... (Helper Methods)
+    // MARK: - Logic Methods
     func fetchData() async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
-        if !isOffline && studentAsAppUser == nil { self.studentAsAppUser = try? await dataService.fetchUser(withId: studentID) }
+        
+        // 1. Fetch User Object if Online
+        if !isOffline && studentAsAppUser == nil {
+            self.studentAsAppUser = try? await dataService.fetchUser(withId: studentID)
+        }
+        
+        // 2. Fetch Notes & Progress
         if let data = try? await communityManager.fetchInstructorStudentData(instructorID: instructorID, studentID: studentID, isOffline: isOffline) {
-            self.currentProgress = data.progress ?? 0.0; self.studentNotes = data.notes ?? []
-        } else { self.currentProgress = student.averageProgress }
-        self.lessonHistory = (try? await lessonManager.fetchLessonsForStudent(studentID: studentID, start: .distantPast, end: .distantFuture)) ?? []
+            self.currentProgress = data.progress ?? 0.0
+            self.studentNotes = data.notes ?? []
+        } else {
+            self.currentProgress = student.averageProgress
+        }
+        
+        // 3. Fetch Lessons
+        do {
+            let allLessons = try await lessonManager.fetchLessonsForStudent(studentID: studentID, start: .distantPast, end: .distantFuture)
+            self.lessonHistory = allLessons.sorted(by: { $0.startTime > $1.startTime }) // Recent first
+        } catch { print("Error fetching lessons: \(error)") }
+        
+        // 4. Fetch Payments
         self.payments = (try? await paymentManager.fetchStudentPayments(for: studentID)) ?? []
     }
     
@@ -146,19 +228,22 @@ struct StudentProfileView: View {
             } else {
                 try await communityManager.addStudentNote(instructorID: instructorID, studentID: studentID, noteContent: text, isOffline: isOffline)
             }
-            isShowingNoteSheet = false; await fetchData()
+            isShowingNoteSheet = false
+            await fetchData()
         } catch { errorMessage = "Error saving note."; isShowingErrorAlert = true }
     }
     
     func deleteNote(_ note: StudentNote) async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
-        try? await communityManager.deleteStudentNote(instructorID: instructorID, studentID: studentID, note: note, isOffline: isOffline); await fetchData()
+        try? await communityManager.deleteStudentNote(instructorID: instructorID, studentID: studentID, note: note, isOffline: isOffline)
+        await fetchData()
     }
     
     func saveProgress() async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
         try? await communityManager.updateStudentProgress(instructorID: instructorID, studentID: studentID, newProgress: newProgressValue, isOffline: isOffline)
-        currentProgress = newProgressValue; isShowingProgressSheet = false
+        currentProgress = newProgressValue
+        isShowingProgressSheet = false
     }
     
     func removeStudent() async { try? await communityManager.removeStudent(studentID: student.id!, instructorID: authManager.user!.id!); dismiss() }
@@ -166,50 +251,362 @@ struct StudentProfileView: View {
     func deleteOfflineStudent() async { try? await communityManager.deleteOfflineStudent(studentID: student.id!); dismiss() }
 }
 
-struct ProfileHeaderView: View {
+// MARK: - 1. Student Header Card
+private struct StudentProfileHeaderCard: View {
     let student: Student
     let studentAsAppUser: AppUser?
-    let onAddNote: () -> Void
-    let onUpdateProgress: () -> Void
-    // Removed onTrackExam
+    let onEdit: () -> Void
+    
+    private var profileImageURL: URL? {
+        guard let urlString = student.photoURL, !urlString.isEmpty else { return nil }
+        return URL(string: urlString)
+    }
     
     var body: some View {
-        VStack(spacing: 15) {
-            HStack(alignment: .top) {
-                AsyncImage(url: URL(string: student.photoURL ?? "")) { phase in
-                    if let image = phase.image { image.resizable().scaledToFill() }
-                    else { Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(.primaryBlue) }
-                }.frame(width: 70, height: 70).background(Color.secondaryGray).clipShape(Circle())
-                
-                VStack(alignment: .leading) {
-                    Text(student.name).font(.title2).bold()
-                    Text(student.email).font(.subheadline).foregroundColor(.textLight)
+        VStack(spacing: 12) {
+            ZStack(alignment: .bottomTrailing) {
+                AsyncImage(url: profileImageURL) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(.secondary)
+                    }
                 }
-                Spacer()
+                .frame(width: 100, height: 100)
+                .background(Color(.systemGray5))
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
                 
-                HStack(spacing: 15) {
-                    if let phone = student.phone, !phone.isEmpty {
-                        Button { if let url = URL(string: "tel:\(phone.filter("0123456789+".contains))") { UIApplication.shared.open(url) } }
-                        label: { Image(systemName: "phone.circle.fill").foregroundColor(.accentGreen).font(.title) }
-                    } else { Image(systemName: "phone.circle.fill").foregroundColor(.gray).font(.title) }
-                    
-                    if let appUser = studentAsAppUser {
-                        NavigationLink(destination: ChatLoadingView(otherUser: appUser)) { Image(systemName: "message.circle.fill").foregroundColor(.primaryBlue).font(.title) }
-                    } else { Image(systemName: "message.circle.fill").foregroundColor(.gray).font(.title) }
+                // Edit Button (if Offline)
+                if student.isOffline {
+                    Button(action: onEdit) {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.title)
+                            .foregroundColor(.primaryBlue)
+                            .background(Circle().fill(.white))
+                    }
+                    .offset(x: 5, y: 5)
                 }
             }
+            .padding(.top, 20)
             
-            HStack {
-                QuickActionButton(title: "Add Note", icon: "note.text.badge.plus", color: .orange, action: onAddNote)
-                QuickActionButton(title: "Update Progress", icon: "arrow.up.circle.fill", color: .accentGreen, action: onUpdateProgress)
+            Text(student.name)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(.primary)
+            
+            Text(student.isOffline ? "Offline Student" : "Active Student")
+                .font(.system(size: 15))
+                .foregroundColor(.secondary)
+                .padding(.bottom, 4)
+            
+            // Action Buttons
+            HStack(spacing: 20) {
+                // Call
+                if let phone = student.phone, !phone.isEmpty {
+                    Button {
+                        if let url = URL(string: "tel:\(phone.filter("0123456789+".contains))") {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: "phone.fill")
+                                .font(.system(size: 20))
+                                .frame(width: 44, height: 44)
+                                .background(Color.accentGreen.opacity(0.1))
+                                .foregroundColor(.accentGreen)
+                                .clipShape(Circle())
+                            Text("Call").font(.caption)
+                        }
+                    }
+                }
+                
+                // Message
+                if let appUser = studentAsAppUser {
+                    NavigationLink(destination: ChatLoadingView(otherUser: appUser)) {
+                        VStack(spacing: 4) {
+                            Image(systemName: "message.fill")
+                                .font(.system(size: 20))
+                                .frame(width: 44, height: 44)
+                                .background(Color.primaryBlue.opacity(0.1))
+                                .foregroundColor(.primaryBlue)
+                                .clipShape(Circle())
+                            Text("Chat").font(.caption)
+                        }
+                    }
+                }
             }
+            .padding(.bottom, 16)
         }
-        .padding().background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
-// ... (Other cards)
-struct NotesCard: View { let notes: [StudentNote]; let onEdit: (StudentNote)->Void; let onDelete: (StudentNote)->Void; var body: some View { /*...*/ EmptyView() } }
-struct LessonsCard: View { let lessons: [Lesson]; var body: some View { /*...*/ EmptyView() } }
-struct PaymentsCard: View { let payments: [Payment]; var body: some View { /*...*/ EmptyView() } }
-struct ProgressCard: View { let overallProgress: Double; var body: some View { /*...*/ EmptyView() } }
+// MARK: - 2. Progress Card
+private struct StudentProgressCard: View {
+    let progress: Double
+    let onUpdate: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("Mastery Level")
+                .font(.system(size: 15))
+                .foregroundColor(.white.opacity(0.9))
+            
+            Text("\(Int(progress * 100))%")
+                .font(.system(size: 36, weight: .bold))
+                .foregroundColor(.white)
+            
+            Text("Ready for test?")
+                .font(.system(size: 15))
+                .foregroundColor(.white.opacity(0.9))
+            
+            Button(action: onUpdate) {
+                Text("Update Progress")
+                    .font(.caption).bold()
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.2))
+                    .cornerRadius(12)
+                    .foregroundColor(.white)
+            }
+            .padding(.top, 5)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [Color.primaryBlue, Color(red: 0.35, green: 0.34, blue: 0.84)]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .cornerRadius(16)
+        .shadow(color: Color.primaryBlue.opacity(0.4), radius: 8, y: 4)
+    }
+}
+
+// MARK: - 3. Contact Card
+private struct StudentContactCard: View {
+    let student: Student
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("CONTACT")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            
+            Divider().padding(.horizontal, 16)
+            
+            // Uses the globally available ContactRow from UserProfileView.swift
+            ContactRow(icon: "envelope.fill", label: "Email", value: student.email.isEmpty ? "Not provided" : student.email)
+            ContactRow(icon: "phone.fill", label: "Phone", value: student.phone ?? "Not provided")
+            ContactRow(icon: "mappin.and.ellipse", label: "Address", value: student.address ?? "Not provided")
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+    }
+}
+
+// MARK: - 4. Notes Card
+private struct StudentNotesCard: View {
+    let notes: [StudentNote]
+    let onAdd: () -> Void
+    let onEdit: (StudentNote) -> Void
+    let onDelete: (StudentNote) -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("NOTES")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button(action: onAdd) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.primaryBlue)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+            
+            Divider().padding(.horizontal, 16)
+            
+            if !notes.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(notes) { note in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .top) {
+                                Text(note.content)
+                                    .font(.system(size: 15))
+                                    .foregroundColor(.primary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer()
+                                
+                                Menu {
+                                    Button(action: { onEdit(note) }) { Label("Edit", systemImage: "pencil") }
+                                    Button(role: .destructive, action: { onDelete(note) }) { Label("Delete", systemImage: "trash") }
+                                } label: {
+                                    Image(systemName: "ellipsis")
+                                        .foregroundColor(.secondary)
+                                        .padding(4)
+                                }
+                            }
+                            Text(note.timestamp.formatted(date: .abbreviated, time: .shortened))
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        
+                        if note.id != notes.last?.id {
+                            Divider().padding(.horizontal, 16)
+                        }
+                    }
+                }
+            } else {
+                Text("No notes added.")
+                    .font(.system(size: 15))
+                    .foregroundColor(.secondary)
+                    .padding(16)
+            }
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+    }
+}
+
+// MARK: - 5. Lessons Card
+private struct StudentLessonsCard: View {
+    let lessons: [Lesson]
+    
+    var recentLessons: [Lesson] {
+        Array(lessons.prefix(3))
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("RECENT LESSONS")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            
+            Divider().padding(.horizontal, 16)
+            
+            if !recentLessons.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(recentLessons) { lesson in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(lesson.topic)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.primary)
+                                Text(lesson.startTime.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Text(lesson.status.rawValue.capitalized)
+                                .font(.system(size: 12, weight: .bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(statusColor(lesson.status).opacity(0.15))
+                                .foregroundColor(statusColor(lesson.status))
+                                .cornerRadius(8)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        
+                        if lesson.id != recentLessons.last?.id {
+                            Divider().padding(.horizontal, 16)
+                        }
+                    }
+                }
+            } else {
+                Text("No lessons recorded.")
+                    .font(.system(size: 15))
+                    .foregroundColor(.secondary)
+                    .padding(16)
+            }
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+    }
+    
+    func statusColor(_ status: LessonStatus) -> Color {
+        switch status {
+        case .completed: return .accentGreen
+        case .cancelled: return .warningRed
+        case .scheduled: return .primaryBlue
+        }
+    }
+}
+
+// MARK: - 6. Payments Card
+private struct StudentPaymentsCard: View {
+    let payments: [Payment]
+    
+    var recentPayments: [Payment] {
+        Array(payments.sorted(by: { $0.date > $1.date }).prefix(3))
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("RECENT PAYMENTS")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            
+            Divider().padding(.horizontal, 16)
+            
+            if !recentPayments.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(recentPayments) { payment in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(payment.isPaid ? "Paid" : "Pending")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(payment.isPaid ? .primary : .warningRed)
+                                Text(payment.date.formatted(date: .abbreviated, time: .omitted))
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Text(payment.amount, format: .currency(code: "GBP"))
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.primary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        
+                        if payment.id != recentPayments.last?.id {
+                            Divider().padding(.horizontal, 16)
+                        }
+                    }
+                }
+            } else {
+                Text("No payments recorded.")
+                    .font(.system(size: 15))
+                    .foregroundColor(.secondary)
+                    .padding(16)
+            }
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+    }
+}

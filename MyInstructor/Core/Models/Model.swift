@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/Model.swift
-// --- UPDATED: Added social fields (following, followers, blockedUsers) ---
+// --- UPDATED: Added location fields to Lesson for live tracking ---
 
 import Foundation
 import FirebaseFirestore
@@ -33,7 +33,7 @@ struct AppUser: Identifiable, Codable {
     var studentIDs: [String]?
     var instructorIDs: [String]?
     
-    // --- NEW: Social Relationships ---
+    // Social Relationships
     var following: [String]? = []
     var followers: [String]? = []
     var blockedUsers: [String]? = []
@@ -109,6 +109,13 @@ struct Lesson: Identifiable, Codable {
     var fee: Double
     var notes: String?
     var status: LessonStatus = .scheduled
+    
+    // --- NEW: Live Location Fields ---
+    var isLocationActive: Bool?
+    var instructorLat: Double?
+    var instructorLng: Double?
+    var studentLat: Double?
+    var studentLng: Double?
 }
 
 enum LessonStatus: String, Codable {

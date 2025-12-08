@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/NotificationsView.swift
+// --- UPDATED: Added icon for 'location' notifications ---
+
 import SwiftUI
 
 struct NotificationsView: View {
@@ -89,12 +92,13 @@ struct AppNotificationRow: View {
         case "lesson": return "calendar"
         case "progress": return "chart.bar.fill"
         case "note": return "note.text"
-        // --- NEW ICONS ---
         case "reaction": return "heart.fill"
         case "comment": return "bubble.left.fill"
         case "reply": return "arrowshape.turn.up.left.fill"
-        case "message": return "message.fill" // <--- ADDED
-        // ----------------
+        case "message": return "message.fill"
+        case "location": return "location.fill" // <--- ADDED
+        case "follow": return "person.badge.plus.fill" // <--- ADDED
+        case "post": return "doc.text.image.fill" // <--- ADDED
         default: return "bell.fill"
         }
     }
@@ -104,10 +108,10 @@ struct AppNotificationRow: View {
         case "lesson": return .accentGreen
         case "progress": return .primaryBlue
         case "note": return .orange
-        // --- NEW COLORS ---
         case "reaction": return .red
-        case "comment", "reply", "message": return .primaryBlue // <--- ADDED message
-        // ------------------
+        case "comment", "reply", "message": return .primaryBlue
+        case "location": return .purple // <--- ADDED
+        case "follow", "post": return .accentGreen // <--- ADDED
         default: return .gray
         }
     }

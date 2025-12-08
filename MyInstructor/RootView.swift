@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/RootView.swift
-// --- UPDATED: Replaced 'Students' tab with 'Live Map' for Instructors ---
+// --- UPDATED: Swapped Student Tab 4 to 'Instructors' ---
 
 import SwiftUI
 
@@ -107,10 +107,9 @@ struct MainTabView: View {
                 CommunityFeedView()
                     .tabItem { Label("Community", systemImage: "person.3.fill") }
                 
-                // 4. Live Map (Replaces Students)
-                // Using a placeholder lesson for the tab view context
-                LiveLocationView(lesson: Lesson(instructorID: "", studentID: "", topic: "Live Mode", startTime: Date(), pickupLocation: "Current Location", fee: 0))
-                    .tabItem { Label("Live Map", systemImage: "map.fill") }
+                // 4. Students
+                StudentsListView()
+                    .tabItem { Label("Students", systemImage: "person.2.fill") }
                 
                 // 5. Settings
                 SettingsView()
@@ -131,9 +130,9 @@ struct MainTabView: View {
                 CommunityFeedView()
                     .tabItem { Label("Community", systemImage: "person.3.fill") }
                 
-                // 4. Live Map
-                LiveLocationView(lesson: Lesson(instructorID: "", studentID: "", topic: "Live", startTime: Date(), pickupLocation: "Map View", fee: 0))
-                    .tabItem { Label("Live Map", systemImage: "map.fill") }
+                // 4. Instructors (Replaced Live Map)
+                MyInstructorsView()
+                    .tabItem { Label("Instructors", systemImage: "person.2.fill") }
 
                 // 5. Settings
                 SettingsView()

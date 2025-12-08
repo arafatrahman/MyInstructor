@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/StudentDashboardView.swift
-// --- UPDATED: Wrapped InstructorDirectoryView in NavigationView so links work in the sheet ---
+// --- UPDATED: Swapped "My Instructors" button for "Live Map" ---
 
 import SwiftUI
 
@@ -12,6 +12,7 @@ enum StudentDashboardSheet: Identifiable {
     case trackExam
     case contacts
     case notes
+    case liveMap // <--- NEW CASE
     
     var id: Int { self.hashValue }
 }
@@ -84,7 +85,10 @@ struct StudentDashboardView: View {
                             
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
                                 StudentQuickActionButton(title: "Find Instructor", icon: "magnifyingglass.circle.fill", color: .teal, action: { activeSheet = .findInstructor })
-                                StudentQuickActionButton(title: "My Instructors", icon: "person.2.fill", color: .purple, action: { activeSheet = .myInstructors })
+                                
+                                // --- UPDATED: Replaced "My Instructors" with "Live Map" ---
+                                StudentQuickActionButton(title: "Live Map", icon: "map.fill", color: .purple, action: { activeSheet = .liveMap })
+                                
                                 StudentQuickActionButton(title: "Lesson Stats", icon: "chart.bar.fill", color: .primaryBlue, action: { activeSheet = .lessonStats })
                                 StudentQuickActionButton(title: "Log Practice", icon: "timer", color: .accentGreen, action: { activeSheet = .logPractice })
                                 
@@ -119,13 +123,11 @@ struct StudentDashboardView: View {
                 case .paymentHistory:
                     StudentPaymentHistoryView()
                 case .findInstructor:
-                    // --- FIX: Wrapped in NavigationView to allow pushing to Profile ---
                     NavigationView {
                         InstructorDirectoryView()
                             .navigationBarTitleDisplayMode(.inline)
                             .toolbar {
                                 ToolbarItem(placement: .navigationBarLeading) {
-                                    // Helper close button since it's a modal now
                                     CloseSheetButton()
                                 }
                             }
@@ -140,6 +142,10 @@ struct StudentDashboardView: View {
                     ContactsView()
                 case .notes:
                     NotesListView()
+                
+                // --- NEW CASE: Live Map ---
+                case .liveMap:
+                    LiveLocationView(lesson: Lesson(instructorID: "", studentID: "", topic: "Live Tracking", startTime: Date(), pickupLocation: "Map View", fee: 0))
                 }
             }
         }

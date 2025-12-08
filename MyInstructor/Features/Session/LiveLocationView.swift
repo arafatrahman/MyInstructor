@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Session/LiveLocationView.swift
-// --- UPDATED: Added missing LocationPin, PinType, and UI helpers ---
+// --- UPDATED: Injected EnvironmentObjects into DrivingSessionView to fix crash ---
 
 import SwiftUI
 import MapKit
@@ -12,6 +12,7 @@ struct LiveLocationView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var dataService: DataService
+    @EnvironmentObject var locationManager: LocationManager // This must be present
     
     // Map State
     @State private var region = MKCoordinateRegion(
@@ -100,11 +101,20 @@ struct LiveLocationView: View {
                 VStack(spacing: 15) {
                     if let sLoc = studentLocation, let iLoc = instructorLocation {
                         let distance = calculateDistance(from: sLoc, to: iLoc)
-                        Text("Distance: \(distance, specifier: "%.2f") km")
-                            .font(.headline)
-                            .foregroundColor(.gray)
+                        let eta = calculateETA(for: distance)
+                        
+                        VStack(spacing: 5) {
+                            Text("Distance: \(distance, specifier: "%.2f") km")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            
+                            Text("Est. Arrival: \(eta)")
+                                .font(.subheadline)
+                                .bold()
+                                .foregroundColor(.blue)
+                        }
                     } else {
-                        Text("Waiting for location updates...")
+                        Text(validLessonSelected() ? "Waiting for location updates..." : "Please select a lesson")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -130,6 +140,8 @@ struct LiveLocationView: View {
                             Button {
                                 if validLessonSelected() {
                                     showStartLesson = true // Student "joins" the active view
+                                } else {
+                                    showSelectLessonSheet = true
                                 }
                             } label: {
                                 Text("Join Session")
@@ -161,33 +173,48 @@ struct LiveLocationView: View {
                         listenToLesson(item.id ?? "")
                         showSelectLessonSheet = false
                     } label: {
-                        VStack(alignment: .leading) {
-                            Text(item.topic).font(.headline)
-                            Text(item.startTime.formatted(date: .abbreviated, time: .shortened)).font(.caption)
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(item.topic).font(.headline)
+                                Text(item.startTime.formatted(date: .omitted, time: .shortened))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            if abs(item.startTime.timeIntervalSinceNow) < 3600 {
+                                Text("NOW")
+                                    .font(.caption2).bold()
+                                    .padding(4)
+                                    .background(Color.green.opacity(0.2))
+                                    .foregroundColor(.green)
+                                    .cornerRadius(4)
+                            }
                         }
                     }
                 }
-                .navigationTitle("Select Lesson to Share")
+                .navigationTitle("Select Lesson")
                 .toolbar { Button("Cancel") { showSelectLessonSheet = false } }
             }
             .presentationDetents([.medium])
         }
         .fullScreenCover(isPresented: $showStartLesson) {
+            // --- CRITICAL FIX: Injecting environment objects here ---
             DrivingSessionView(lesson: lesson)
+                .environmentObject(locationManager)
+                .environmentObject(authManager)
+                .environmentObject(lessonManager)
         }
     }
     
     // MARK: - Logic
     
     func setupView() {
-        // If passed lesson has no ID (e.g. Tab Bar "Live Map"), fetch today's lessons
         if lesson.id == nil || lesson.id == "" {
             isSelectionMode = true
             Task {
                 await fetchTodaysLessons()
             }
         } else {
-            // Specific lesson passed (e.g. from Profile)
             isSelectionMode = false
             selectedLessonID = lesson.id ?? ""
             listenToLesson(selectedLessonID)
@@ -200,9 +227,33 @@ struct LiveLocationView: View {
     
     func fetchTodaysLessons() async {
         guard let uid = authManager.user?.id else { return }
-        // Fetch upcoming
-        if let upcoming = try? await lessonManager.fetchUpcomingLessons(for: uid) {
-            self.availableLessons = upcoming
+        
+        let now = Date()
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: now)
+        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else { return }
+        
+        var fetchedLessons: [Lesson] = []
+        
+        if authManager.role == .instructor {
+            if let lessons = try? await lessonManager.fetchLessons(for: uid, start: startOfDay, end: endOfDay) {
+                fetchedLessons = lessons
+            }
+        } else {
+            if let lessons = try? await lessonManager.fetchLessonsForStudent(studentID: uid, start: startOfDay, end: endOfDay) {
+                fetchedLessons = lessons
+            }
+        }
+        
+        let relevant = fetchedLessons.filter { $0.status == .scheduled }
+        self.availableLessons = relevant.sorted {
+            abs($0.startTime.timeIntervalSinceNow) < abs($1.startTime.timeIntervalSinceNow)
+        }
+        
+        if let first = self.availableLessons.first, self.selectedLessonID.isEmpty {
+            self.lesson = first
+            self.selectedLessonID = first.id ?? ""
+            listenToLesson(first.id ?? "")
         }
     }
     
@@ -211,22 +262,21 @@ struct LiveLocationView: View {
             .addSnapshotListener { snapshot, error in
                 guard let data = snapshot?.data() else { return }
                 
-                // Update Instructor Pin
                 if let lat = data["instructorLat"] as? Double,
                    let lng = data["instructorLng"] as? Double {
                     self.instructorLocation = CLLocationCoordinate2D(latitude: lat, longitude: lng)
                 }
                 
-                // Update Student Pin
                 if let lat = data["studentLat"] as? Double,
                    let lng = data["studentLng"] as? Double {
                     self.studentLocation = CLLocationCoordinate2D(latitude: lat, longitude: lng)
                 }
                 
-                // Auto-center map if we have points
-                if let iLoc = instructorLocation {
-                    withAnimation {
+                withAnimation {
+                    if let iLoc = instructorLocation {
                         region.center = iLoc
+                    } else if let sLoc = studentLocation {
+                        region.center = sLoc
                     }
                 }
             }
@@ -248,6 +298,20 @@ struct LiveLocationView: View {
         let loc2 = CLLocation(latitude: to.latitude, longitude: to.longitude)
         return loc1.distance(from: loc2) / 1000.0 // km
     }
+    
+    func calculateETA(for distanceKM: Double) -> String {
+        let speedKmH = 30.0
+        let hours = distanceKM / speedKmH
+        let minutes = Int(hours * 60)
+        
+        if minutes < 1 { return "< 1 min" }
+        if minutes > 60 {
+            let h = minutes / 60
+            let m = minutes % 60
+            return "\(h) hr \(m) min"
+        }
+        return "\(minutes) min"
+    }
 }
 
 // MARK: - Models & Helpers
@@ -263,7 +327,6 @@ enum PinType {
     case instructor, student
 }
 
-// Helper for corner radius on specific corners (Requires import UIKit)
 extension View {
     func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
         clipShape(RoundedCorner(radius: radius, corners: corners))

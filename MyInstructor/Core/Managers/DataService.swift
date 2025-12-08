@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/DataService.swift
-// --- UPDATED: Added 'fetchStudents(fromIDs:)' for precise list fetching ---
+// --- UPDATED: fetchStudents(for:) now queries 'student_requests' directly to ensure active students are found ---
 
 import Foundation
 import Combine
@@ -178,16 +178,20 @@ class DataService: ObservableObject {
         return allNotes.sorted(by: { $0.timestamp > $1.timestamp })
     }
     
-    // Original fetch (keeps behavior for other views if needed, though replaced in List)
+    // --- UPDATED: Replaced reliance on 'studentIDs' array with direct query to 'student_requests' ---
     func fetchStudents(for instructorID: String) async throws -> [Student] {
-        let instructorDoc = try await usersCollection.document(instructorID).getDocument()
-        guard let instructor = try? instructorDoc.data(as: AppUser.self) else { return [] }
-        guard let studentIDs = instructor.studentIDs, !studentIDs.isEmpty else { return [] }
+        let snapshot = try await db.collection("student_requests")
+            .whereField("instructorID", isEqualTo: instructorID)
+            .whereField("status", isEqualTo: "approved")
+            .getDocuments()
+            
+        let studentIDs = snapshot.documents.compactMap { $0.data()["studentID"] as? String }
         
+        // Use the existing helper to load full profiles
         return try await fetchStudents(fromIDs: studentIDs, instructorID: instructorID)
     }
     
-    // --- NEW: Fetch Students from a specific list of IDs ---
+    // Fetch Students from a specific list of IDs
     func fetchStudents(fromIDs ids: [String], instructorID: String? = nil) async throws -> [Student] {
         guard !ids.isEmpty else { return [] }
         

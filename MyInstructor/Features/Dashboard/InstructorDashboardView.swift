@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: Replaced "Add Student" Quick Action with "Live Map". ---
+// --- UPDATED: Explicitly injected environmentObjects into sheets to prevent crashes ---
 
 import SwiftUI
 
@@ -7,7 +7,7 @@ enum DashboardSheet: Identifiable {
     case addLesson, addStudent, studentsList, recordPayment, quickOverview, trackIncome, trackExpense, serviceBook, myVehicles, contacts
     case notes
     case trackExam
-    case liveMap // <--- NEW CASE
+    case liveMap
     var id: Int { self.hashValue }
 }
 
@@ -17,6 +17,8 @@ struct InstructorDashboardView: View {
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var chatManager: ChatManager
     @EnvironmentObject var notificationManager: NotificationManager
+    @EnvironmentObject var lessonManager: LessonManager
+    @EnvironmentObject var locationManager: LocationManager // Ensure we have access here
     
     @State private var activeSheet: DashboardSheet?
     @State private var nextLesson: Lesson?
@@ -115,6 +117,11 @@ struct InstructorDashboardView: View {
                 // .liveMap opens the LiveLocationView with a placeholder to trigger selection mode
                 case .liveMap:
                     LiveLocationView(lesson: Lesson(instructorID: "", studentID: "", topic: "Live Tracking", startTime: Date(), pickupLocation: "Map", fee: 0))
+                        // --- FIX: Inject LocationManager explicitly ---
+                        .environmentObject(locationManager)
+                        .environmentObject(lessonManager)
+                        .environmentObject(authManager)
+                        .environmentObject(dataService)
                     
                 case .addStudent: OfflineStudentFormView(studentToEdit: nil, onStudentAdded: { Task { await fetchData() } })
                 case .studentsList: StudentsListView()

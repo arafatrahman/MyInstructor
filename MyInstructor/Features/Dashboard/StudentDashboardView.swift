@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/StudentDashboardView.swift
-// --- UPDATED: Swapped "My Instructors" button for "Live Map" ---
+// --- UPDATED: Explicitly injected environmentObjects into sheets to prevent crashes ---
 
 import SwiftUI
 
@@ -12,7 +12,7 @@ enum StudentDashboardSheet: Identifiable {
     case trackExam
     case contacts
     case notes
-    case liveMap // <--- NEW CASE
+    case liveMap
     
     var id: Int { self.hashValue }
 }
@@ -24,6 +24,7 @@ struct StudentDashboardView: View {
     @EnvironmentObject var chatManager: ChatManager
     @EnvironmentObject var notificationManager: NotificationManager
     @EnvironmentObject var lessonManager: LessonManager
+    @EnvironmentObject var locationManager: LocationManager // Ensure we have access here
 
     @State private var upcomingLesson: Lesson?
     @State private var progress: Double = 0.0
@@ -131,6 +132,9 @@ struct StudentDashboardView: View {
                                     CloseSheetButton()
                                 }
                             }
+                            // --- FIX: Inject LocationManager explicitly ---
+                            .environmentObject(locationManager)
+                            .environmentObject(communityManager)
                     }
                 case .logPractice:
                     StudentLogPracticeView(onSave: { Task { await fetchData() } })
@@ -143,9 +147,13 @@ struct StudentDashboardView: View {
                 case .notes:
                     NotesListView()
                 
-                // --- NEW CASE: Live Map ---
                 case .liveMap:
                     LiveLocationView(lesson: Lesson(instructorID: "", studentID: "", topic: "Live Tracking", startTime: Date(), pickupLocation: "Map View", fee: 0))
+                        // --- FIX: Inject LocationManager explicitly ---
+                        .environmentObject(locationManager)
+                        .environmentObject(lessonManager)
+                        .environmentObject(authManager)
+                        .environmentObject(dataService)
                 }
             }
         }

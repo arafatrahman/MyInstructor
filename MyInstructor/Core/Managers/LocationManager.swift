@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/LocationManager.swift
-// --- UPDATED: Disabled background updates to prevent crash (Enable Background Modes in Xcode to use) ---
+// --- UPDATED: Removed distanceFilter for smoother live updates & added published isSharing state ---
 
 import Foundation
 import CoreLocation
@@ -14,7 +14,7 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var authorizationStatus: CLAuthorizationStatus
     
     // --- Sharing State ---
-    private var isSharing: Bool = false
+    @Published var isSharing: Bool = false // Now Published so UI can react
     private var activeLessonID: String?
     private var activeUserRole: UserRole?
 
@@ -23,11 +23,11 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        // locationManager.distanceFilter = 10 // REMOVED: Get every update for smooth live view
         
-        // --- CRITICAL FIX: ---
-        // This line causes a crash if "Location updates" is not enabled in Xcode -> Signing & Capabilities -> Background Modes.
-        // I have commented it out to stop the crash. Uncomment ONLY after enabling the capability in Xcode.
-        locationManager.allowsBackgroundLocationUpdates = true
+        // --- CRITICAL: If you have enabled Background Modes in Xcode, uncomment this ---
+        // locationManager.allowsBackgroundLocationUpdates = true
+        // locationManager.pausesLocationUpdatesAutomatically = false
     }
 
     func requestLocation() async {
@@ -40,21 +40,31 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     // MARK: - Live Sharing
     
     func startSharing(lessonID: String, role: UserRole) {
-        print("LocationManager: Starting share for lesson \(lessonID) as \(role.rawValue)")
+        print("LocationManager: START sharing for lesson \(lessonID) as \(role.rawValue)")
         self.activeLessonID = lessonID
         self.activeUserRole = role
-        self.isSharing = true
+        
+        DispatchQueue.main.async {
+            self.isSharing = true
+        }
+        
         locationManager.startUpdatingLocation()
         
-        // Mark lesson as active in Firestore
+        // Mark lesson as active in Firestore immediately
         db.collection("lessons").document(lessonID).updateData([
             "isLocationActive": true
-        ])
+        ]) { error in
+            if let error = error { print("LocationManager: Error activating lesson: \(error)") }
+        }
     }
     
     func stopSharing() {
-        print("LocationManager: Stopping share.")
-        self.isSharing = false
+        print("LocationManager: STOP sharing.")
+        
+        DispatchQueue.main.async {
+            self.isSharing = false
+        }
+        
         locationManager.stopUpdatingLocation()
         
         if let lessonID = activeLessonID {
@@ -73,25 +83,35 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         
+        // Update local state
         DispatchQueue.main.async {
             self.location = location
         }
         
         // --- Firestore Update ---
+        // Verify we have all necessary data to write
         if isSharing, let lessonID = activeLessonID, let role = activeUserRole {
             let lat = location.coordinate.latitude
             let lng = location.coordinate.longitude
             
+            // Construct data based on role
             var data: [String: Any] = [:]
+            
             if role == .instructor {
                 data = ["instructorLat": lat, "instructorLng": lng]
             } else if role == .student {
                 data = ["studentLat": lat, "studentLng": lng]
+            } else {
+                print("LocationManager Warning: Unknown role, cannot save location.")
+                return
             }
             
-            // Debounce or throttle could be added here for efficiency,
-            // but for "Live" accuracy we update on change.
-            db.collection("lessons").document(lessonID).updateData(data)
+            // Write to Firestore
+            db.collection("lessons").document(lessonID).updateData(data) { error in
+                if let error = error {
+                    print("LocationManager Write Error: \(error.localizedDescription)")
+                }
+            }
         }
     }
     
@@ -103,5 +123,6 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         DispatchQueue.main.async {
             self.authorizationStatus = manager.authorizationStatus
         }
+        print("LocationManager: Auth status changed to \(manager.authorizationStatus.rawValue)")
     }
 }

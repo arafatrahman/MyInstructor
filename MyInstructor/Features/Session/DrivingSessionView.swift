@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Session/DrivingSessionView.swift
-// --- UPDATED: Robust sharing logic, removed input, added status indicators ---
+// --- UPDATED: Ensures Role is loaded before listening, and adds Lesson ID check ---
 
 import SwiftUI
 import MapKit
@@ -25,24 +25,21 @@ struct DrivingSessionView: View {
     
     // --- Other User Tracking ---
     @State private var otherUserLocation: CLLocationCoordinate2D?
-    @State private var otherUserRole: String = "" // "Instructor" or "Student"
+    @State private var otherUserRole: String = "..." // Placeholder until loaded
     private let db = Firestore.firestore()
     @State private var listener: ListenerRegistration?
     
     // Timer
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
-    // Map State
     @State private var position: MapCameraPosition = .userLocation(fallback: .automatic)
 
     var body: some View {
         ZStack(alignment: .top) {
             // MARK: - Live Map
             Map(position: $position) {
-                // 1. Show ME (Native System Blue Dot)
-                UserAnnotation()
+                UserAnnotation() // Show Me (System Blue Dot)
                 
-                // 2. Show THEM (Custom Pin)
                 if let otherLoc = otherUserLocation {
                     Annotation(otherUserRole, coordinate: otherLoc) {
                         let role = (otherUserRole == "Instructor") ? UserRole.instructor : UserRole.student
@@ -60,14 +57,14 @@ struct DrivingSessionView: View {
             VStack(spacing: 0) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
-                        // Status Badge
+                        // Connection Status
                         HStack {
                             Circle()
                                 .fill(locationManager.isSharing ? Color.green : Color.orange)
                                 .frame(width: 8, height: 8)
                                 .shadow(radius: 2)
                             
-                            Text(locationManager.isSharing ? "SHARING LIVE" : "CONNECTING...")
+                            Text(locationManager.isSharing ? "LIVE" : "CONNECTING...")
                                 .font(.caption).bold().foregroundColor(.white)
                         }
                         .padding(.horizontal, 8)
@@ -79,7 +76,7 @@ struct DrivingSessionView: View {
                             .font(.title3).bold().foregroundColor(.white)
                             .shadow(radius: 2)
                         
-                        // Distance & ETA Display
+                        // Distance & ETA
                         if let myLoc = locationManager.location?.coordinate, let theirLoc = otherUserLocation {
                             let distance = calculateDistance(from: myLoc, to: theirLoc)
                             let eta = calculateETA(for: distance)
@@ -95,7 +92,7 @@ struct DrivingSessionView: View {
                             .cornerRadius(8)
                         } else {
                             // Waiting State
-                            HStack {
+                            HStack(spacing: 6) {
                                 ProgressView().tint(.white).scaleEffect(0.7)
                                 Text("Waiting for \(otherUserRole)...")
                                     .font(.caption)
@@ -109,7 +106,7 @@ struct DrivingSessionView: View {
                     
                     Spacer()
                     
-                    // Timer Display
+                    // Timer
                     Text(timeString(from: timeElapsed))
                         .font(.title2).monospacedDigit().bold()
                         .foregroundColor(.white)
@@ -122,12 +119,40 @@ struct DrivingSessionView: View {
                 .padding(.bottom, 20)
                 
                 Spacer()
-            }
-            .ignoresSafeArea()
-            
-            // MARK: - Bottom Controls
-            VStack {
-                Spacer()
+                
+                // MARK: - Debug Status Bar
+                HStack(spacing: 15) {
+                    // 1. My GPS Status
+                    HStack(spacing: 4) {
+                        Image(systemName: locationManager.location != nil ? "location.fill" : "location.slash.fill")
+                            .foregroundColor(locationManager.location != nil ? .green : .red)
+                        Text(locationManager.location != nil ? "GPS OK" : "No GPS")
+                    }
+                    
+                    Divider().frame(height: 12).background(Color.white)
+                    
+                    // 2. Lesson ID Match Check
+                    // Both users MUST see the same code here (e.g. #A1B2)
+                    HStack(spacing: 4) {
+                        Image(systemName: "number")
+                            .foregroundColor(.white)
+                        Text(lesson.id?.suffix(4) ?? "????")
+                    }
+                    
+                    Divider().frame(height: 12).background(Color.white)
+                    
+                    // 3. Other User Status
+                    HStack(spacing: 4) {
+                        Image(systemName: otherUserLocation != nil ? "person.wave.2.fill" : "person.slash.fill")
+                            .foregroundColor(otherUserLocation != nil ? .green : .orange)
+                        Text(otherUserLocation != nil ? "Linked" : "Waiting")
+                    }
+                }
+                .font(.caption2).bold().foregroundColor(.white)
+                .padding(10)
+                .background(Color.black.opacity(0.75))
+                .cornerRadius(20)
+                .padding(.bottom, 10)
                 
                 // End Button
                 Button {
@@ -146,6 +171,7 @@ struct DrivingSessionView: View {
             }
         }
         .onAppear {
+            // Wait for auth to be fully ready before starting ANYTHING
             startSessionSequence()
         }
         .onDisappear {
@@ -154,15 +180,15 @@ struct DrivingSessionView: View {
         .onReceive(timer) { _ in
             if isActive { timeElapsed += 1 }
         }
-        // Auto-center map when other user moves
+        // Auto-center map logic
         .onChange(of: otherUserLocation) { oldVal, newVal in
             if let newVal = newVal, let myLoc = locationManager.location?.coordinate {
                 withAnimation {
                     // Create region fitting both points
                     let centerLat = (myLoc.latitude + newVal.latitude) / 2
                     let centerLng = (myLoc.longitude + newVal.longitude) / 2
-                    let latDelta = abs(myLoc.latitude - newVal.latitude) * 1.5
-                    let lngDelta = abs(myLoc.longitude - newVal.longitude) * 1.5
+                    let latDelta = abs(myLoc.latitude - newVal.latitude) * 1.4
+                    let lngDelta = abs(myLoc.longitude - newVal.longitude) * 1.4
                     
                     position = .region(MKCoordinateRegion(
                         center: CLLocationCoordinate2D(latitude: centerLat, longitude: centerLng),
@@ -176,68 +202,65 @@ struct DrivingSessionView: View {
     // MARK: - Logic & Actions
     
     func startSessionSequence() {
-        // 1. Determine Roles for Listening
-        let myRole = authManager.role
-        self.otherUserRole = (myRole == .instructor) ? "Student" : "Instructor"
-        
-        // 2. Start Listening for Other
-        startListening(myRole: myRole)
-        
-        // 3. Start Sharing My Location (with retry if user data isn't ready)
-        attemptStartSharing()
+        if let user = authManager.user {
+            // User is loaded, we can start safely
+            let myRole = user.role
+            self.otherUserRole = (myRole == .instructor) ? "Student" : "Instructor"
+            
+            print("DrivingSessionView: Auth Ready. My Role: \(myRole). Listening for: \(self.otherUserRole)")
+            
+            // 1. Listen for other person
+            startListening(myRole: myRole)
+            
+            // 2. Share my location
+            startSharing(user: user)
+        } else {
+            // Not ready, retry in 0.5s
+            print("DrivingSessionView: Waiting for AuthManager...")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.startSessionSequence()
+            }
+        }
     }
     
-    func attemptStartSharing() {
+    func startSharing(user: AppUser) {
         guard let lessonID = lesson.id else { return }
         
-        if let user = authManager.user {
-            // User loaded, start sharing
-            locationManager.startSharing(lessonID: lessonID, role: user.role)
-            
-            // Notify only once
-            let recipientID = (user.role == .instructor) ? lesson.studentID : lesson.instructorID
-            if recipientID != user.id {
-                NotificationManager.shared.sendNotification(
-                    to: recipientID,
-                    title: "Live Tracking Active",
-                    message: "\(user.name ?? "User") is now sharing live location.",
-                    type: "location",
-                    relatedID: lessonID
-                )
-            }
-        } else {
-            // User not loaded yet, retry in 0.5s
-            print("DrivingSessionView: User not ready, retrying startSharing...")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self.attemptStartSharing()
-            }
+        locationManager.startSharing(lessonID: lessonID, role: user.role)
+        
+        let recipientID = (user.role == .instructor) ? lesson.studentID : lesson.instructorID
+        if recipientID != user.id {
+            NotificationManager.shared.sendNotification(
+                to: recipientID,
+                title: "Live Tracking Active",
+                message: "\(user.name ?? "User") is now sharing live location.",
+                type: "location",
+                relatedID: lessonID
+            )
         }
     }
     
     func startListening(myRole: UserRole) {
         guard let lessonID = lesson.id else { return }
         
-        print("DrivingSessionView: Listening for \(otherUserRole) on lesson \(lessonID)")
-        
         listener = db.collection("lessons").document(lessonID)
             .addSnapshotListener { snapshot, error in
+                if let error = error { print("DrivingSessionView Error: \(error)"); return }
                 guard let data = snapshot?.data() else { return }
                 
                 var lat: Double?
                 var lng: Double?
                 
+                // Logic: If I am Instructor, I read Student data.
                 if myRole == .instructor {
-                    // I am Instructor, read Student Lat/Lng
                     lat = data["studentLat"] as? Double
                     lng = data["studentLng"] as? Double
                 } else {
-                    // I am Student, read Instructor Lat/Lng
                     lat = data["instructorLat"] as? Double
                     lng = data["instructorLng"] as? Double
                 }
                 
                 if let lat = lat, let lng = lng {
-                    // Update other user location
                     self.otherUserLocation = CLLocationCoordinate2D(latitude: lat, longitude: lng)
                 }
             }
@@ -288,22 +311,13 @@ struct DrivingSessionView: View {
 struct UserPinView: View {
     let role: UserRole
     let isMe: Bool
-    
-    var iconName: String {
-        role == .instructor ? "car.circle.fill" : "person.circle.fill"
-    }
-    
-    var color: Color {
-        return role == .instructor ? .primaryBlue : .accentGreen
-    }
+    var iconName: String { role == .instructor ? "car.circle.fill" : "person.circle.fill" }
+    var color: Color { role == .instructor ? .primaryBlue : .accentGreen }
     
     var body: some View {
         Image(systemName: iconName)
-            .font(.title)
-            .foregroundColor(color)
-            .padding(6)
-            .background(Color.white)
-            .clipShape(Circle())
+            .font(.title).foregroundColor(color)
+            .padding(6).background(Color.white).clipShape(Circle())
             .shadow(radius: 4)
             .overlay(Circle().stroke(color.opacity(0.8), lineWidth: 2))
             .scaleEffect(isMe ? 1.2 : 1.1)

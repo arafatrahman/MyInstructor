@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/LocationManager.swift
-// --- UPDATED: Removed distanceFilter for smoother live updates & added published isSharing state ---
+// --- UPDATED: Ensures consistent writes with debug logs ---
 
 import Foundation
 import CoreLocation
@@ -13,8 +13,7 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var location: CLLocation? = nil
     @Published var authorizationStatus: CLAuthorizationStatus
     
-    // --- Sharing State ---
-    @Published var isSharing: Bool = false // Now Published so UI can react
+    @Published var isSharing: Bool = false
     private var activeLessonID: String?
     private var activeUserRole: UserRole?
 
@@ -23,106 +22,84 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-        // locationManager.distanceFilter = 10 // REMOVED: Get every update for smooth live view
+        locationManager.distanceFilter = kCLDistanceFilterNone
         
-        // --- CRITICAL: If you have enabled Background Modes in Xcode, uncomment this ---
+        // Ensure this is enabled if Background Modes is on in Xcode
         // locationManager.allowsBackgroundLocationUpdates = true
-        // locationManager.pausesLocationUpdatesAutomatically = false
     }
 
     func requestLocation() async {
         if locationManager.authorizationStatus == .notDetermined {
             locationManager.requestWhenInUseAuthorization()
         }
-        locationManager.requestLocation()
+        locationManager.startUpdatingLocation()
     }
     
-    // MARK: - Live Sharing
-    
     func startSharing(lessonID: String, role: UserRole) {
-        print("LocationManager: START sharing for lesson \(lessonID) as \(role.rawValue)")
+        print("LocationManager: START sharing. ID: \(lessonID) Role: \(role.rawValue)")
         self.activeLessonID = lessonID
         self.activeUserRole = role
         
-        DispatchQueue.main.async {
-            self.isSharing = true
-        }
+        DispatchQueue.main.async { self.isSharing = true }
         
         locationManager.startUpdatingLocation()
         
-        // Mark lesson as active in Firestore immediately
-        db.collection("lessons").document(lessonID).updateData([
-            "isLocationActive": true
-        ]) { error in
-            if let error = error { print("LocationManager: Error activating lesson: \(error)") }
+        // Immediate status update
+        db.collection("lessons").document(lessonID).setData(["isLocationActive": true], merge: true)
+        
+        // Force immediate update if location exists
+        if let loc = locationManager.location {
+            locationManager(locationManager, didUpdateLocations: [loc])
         }
     }
     
     func stopSharing() {
         print("LocationManager: STOP sharing.")
-        
-        DispatchQueue.main.async {
-            self.isSharing = false
-        }
-        
+        DispatchQueue.main.async { self.isSharing = false }
         locationManager.stopUpdatingLocation()
         
         if let lessonID = activeLessonID {
-            // Mark lesson as inactive
-            db.collection("lessons").document(lessonID).updateData([
-                "isLocationActive": false
-            ])
+            db.collection("lessons").document(lessonID).setData(["isLocationActive": false], merge: true)
         }
-        
-        self.activeLessonID = nil
-        self.activeUserRole = nil
+        activeLessonID = nil
+        activeUserRole = nil
     }
-    
-    // MARK: - Delegate Methods
     
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
+        DispatchQueue.main.async { self.location = location }
         
-        // Update local state
-        DispatchQueue.main.async {
-            self.location = location
-        }
-        
-        // --- Firestore Update ---
-        // Verify we have all necessary data to write
         if isSharing, let lessonID = activeLessonID, let role = activeUserRole {
             let lat = location.coordinate.latitude
             let lng = location.coordinate.longitude
             
-            // Construct data based on role
             var data: [String: Any] = [:]
-            
             if role == .instructor {
                 data = ["instructorLat": lat, "instructorLng": lng]
             } else if role == .student {
                 data = ["studentLat": lat, "studentLng": lng]
-            } else {
-                print("LocationManager Warning: Unknown role, cannot save location.")
-                return
             }
             
-            // Write to Firestore
-            db.collection("lessons").document(lessonID).updateData(data) { error in
+            // WRITE
+            db.collection("lessons").document(lessonID).setData(data, merge: true) { error in
                 if let error = error {
-                    print("LocationManager Write Error: \(error.localizedDescription)")
+                    print("LocationManager Write ERROR: \(error.localizedDescription)")
+                } else {
+                    // Success log (optional)
+                    // print("LocationManager: Wrote \(role) loc: \(lat), \(lng)")
                 }
             }
         }
     }
     
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("!!! LocationManager failed: \(error.localizedDescription)")
+        print("LocationManager Error: \(error.localizedDescription)")
     }
     
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        DispatchQueue.main.async {
-            self.authorizationStatus = manager.authorizationStatus
+        DispatchQueue.main.async { self.authorizationStatus = manager.authorizationStatus }
+        if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
+            manager.startUpdatingLocation()
         }
-        print("LocationManager: Auth status changed to \(manager.authorizationStatus.rawValue)")
     }
 }

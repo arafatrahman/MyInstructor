@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
-// --- UPDATED: Unblock option logic added ---
+// --- UPDATED: 'Remove' moves to Completed. 'Reactivate' button added. ---
 
 import SwiftUI
 
@@ -19,13 +19,12 @@ struct StudentProfileView: View {
     @State private var studentNotes: [StudentNote] = []
     @State private var currentProgress: Double = 0.0
     
-    // --- NEW: To track blocked status ---
-    @State private var requestStatus: RequestStatus? = nil
+    @State private var studentStatus: RequestStatus = .approved
     
     // Alert states
     @State private var isShowingRemoveAlert = false
     @State private var isShowingBlockAlert = false
-    @State private var isShowingUnblockAlert = false // New
+    @State private var isShowingUnblockAlert = false
     @State private var isShowingDeleteAlert = false
     @State private var isShowingErrorAlert = false
     @State private var errorMessage = ""
@@ -101,7 +100,7 @@ struct StudentProfileView: View {
         }
         .navigationTitle("Student Profile")
         .navigationBarTitleDisplayMode(.inline)
-        // --- UPDATED: Toolbar Menu Logic ---
+        // --- TOOLBAR ---
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
@@ -109,22 +108,18 @@ struct StudentProfileView: View {
                         Button { isShowingEditSheet = true } label: { Label("Edit Profile", systemImage: "pencil") }
                         Button(role: .destructive) { isShowingDeleteAlert = true } label: { Label("Delete Student", systemImage: "trash") }
                     } else {
-                        // Remove option
-                        Button(role: .destructive) { isShowingRemoveAlert = true } label: { Label("Remove Student", systemImage: "person.badge.minus") }
-                        
-                        // Conditional Block/Unblock
-                        if requestStatus == .blocked {
-                            Button {
-                                isShowingUnblockAlert = true
-                            } label: {
-                                Label("Unblock Student", systemImage: "lock.open.fill")
-                            }
+                        // --- COMPLETED / REMOVED LOGIC ---
+                        if studentStatus == .completed {
+                            Button { Task { await reactivateStudent() } } label: { Label("Reactivate Student", systemImage: "person.badge.plus") }
                         } else {
-                            Button(role: .destructive) {
-                                isShowingBlockAlert = true
-                            } label: {
-                                Label("Block Student", systemImage: "hand.raised.fill")
-                            }
+                            Button(role: .destructive) { isShowingRemoveAlert = true } label: { Label("Remove Student", systemImage: "person.badge.minus") }
+                        }
+                        
+                        // --- BLOCK / UNBLOCK LOGIC ---
+                        if studentStatus == .blocked {
+                            Button { isShowingUnblockAlert = true } label: { Label("Unblock Student", systemImage: "hand.raised.slash.fill") }
+                        } else {
+                            Button(role: .destructive) { isShowingBlockAlert = true } label: { Label("Block Student", systemImage: "hand.raised.fill") }
                         }
                     }
                 } label: {
@@ -132,7 +127,6 @@ struct StudentProfileView: View {
                 }
             }
         }
-        // -----------------------------
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .task { await fetchData() }
         
@@ -170,28 +164,26 @@ struct StudentProfileView: View {
         }
         .sheet(isPresented: $isShowingEditSheet) {
             OfflineStudentFormView(studentToEdit: OfflineStudent(id: student.id, instructorID: authManager.user?.id ?? "", name: student.name, phone: student.phone, email: student.email, address: student.address), onStudentAdded: {
-                Task { await fetchData() } // Refresh data after edit
+                Task { await fetchData() }
             })
         }
         
-        // --- ALERTS ---
         .alert("Error", isPresented: $isShowingErrorAlert) { Button("OK", role: .cancel) { } } message: { Text(errorMessage) }
         
         .alert("Remove Student?", isPresented: $isShowingRemoveAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Remove", role: .destructive) { Task { await removeStudent() } }
-        } message: { Text("They will be removed from your list.") }
+        } message: { Text("This will move the student to the Completed list.") }
         
         .alert("Block Student?", isPresented: $isShowingBlockAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Block", role: .destructive) { Task { await blockStudent() } }
         } message: { Text("They won't be able to contact you.") }
         
-        // --- NEW UNBLOCK ALERT ---
         .alert("Unblock Student?", isPresented: $isShowingUnblockAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Unblock", role: .none) { Task { await unblockStudent() } }
-        } message: { Text("This will restore them to your active student list.") }
+        } message: { Text("They will be added back to your list.") }
         
         .alert("Delete Student?", isPresented: $isShowingDeleteAlert) {
             Button("Cancel", role: .cancel) { }
@@ -203,19 +195,17 @@ struct StudentProfileView: View {
     func fetchData() async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
         
-        // 1. Fetch Request Status (To check if blocked)
-        if !isOffline {
-            if let req = try? await communityManager.fetchRequest(studentID: studentID, instructorID: instructorID) {
-                self.requestStatus = req.status
+        // 1. Fetch User Object if Online
+        if !isOffline && studentAsAppUser == nil {
+            self.studentAsAppUser = try? await dataService.fetchUser(withId: studentID)
+            
+            // --- NEW: Fetch Status ---
+            if let status = try? await communityManager.fetchRelationshipStatus(instructorID: instructorID, studentID: studentID) {
+                self.studentStatus = status
             }
         }
         
-        // 2. Fetch User Object if Online
-        if !isOffline && studentAsAppUser == nil {
-            self.studentAsAppUser = try? await dataService.fetchUser(withId: studentID)
-        }
-        
-        // 3. Fetch Notes & Progress
+        // 2. Fetch Notes & Progress
         if let data = try? await communityManager.fetchInstructorStudentData(instructorID: instructorID, studentID: studentID, isOffline: isOffline) {
             self.currentProgress = data.progress ?? 0.0
             self.studentNotes = data.notes ?? []
@@ -223,13 +213,13 @@ struct StudentProfileView: View {
             self.currentProgress = student.averageProgress
         }
         
-        // 4. Fetch Lessons
+        // 3. Fetch Lessons
         do {
             let allLessons = try await lessonManager.fetchLessonsForStudent(studentID: studentID, start: .distantPast, end: .distantFuture)
             self.lessonHistory = allLessons.sorted(by: { $0.startTime > $1.startTime })
         } catch { print("Error fetching lessons: \(error)") }
         
-        // 5. Fetch Payments
+        // 4. Fetch Payments
         self.payments = (try? await paymentManager.fetchStudentPayments(for: studentID)) ?? []
     }
     
@@ -261,61 +251,94 @@ struct StudentProfileView: View {
         isShowingProgressSheet = false
     }
     
-    func removeStudent() async { try? await communityManager.removeStudent(studentID: student.id!, instructorID: authManager.user!.id!); dismiss() }
+    func removeStudent() async {
+        // Optimistic update
+        self.studentStatus = .completed
+        try? await communityManager.removeStudent(studentID: student.id!, instructorID: authManager.user!.id!)
+        dismiss()
+    }
     
-    // --- UPDATED: Block now updates local state to reflect UI change ---
+    func reactivateStudent() async {
+        // Optimistic update
+        self.studentStatus = .approved
+        try? await communityManager.reactivateStudent(studentID: student.id!, instructorID: authManager.user!.id!)
+    }
+    
     func blockStudent() async {
-        guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
-        do {
-            try await communityManager.blockStudent(studentID: studentID, instructorID: instructorID)
-            self.requestStatus = .blocked
-            dismiss() // Usually we dismiss because they leave the 'Active' list, but logic is flexible.
-        } catch {
-            print("Block failed: \(error)")
-        }
+        self.studentStatus = .blocked
+        try? await communityManager.blockStudent(studentID: student.id!, instructorID: authManager.user!.id!)
+        dismiss()
     }
     
-    // --- NEW: Unblock Action ---
     func unblockStudent() async {
-        guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
-        do {
-            try await communityManager.unblockStudent(studentID: studentID, instructorID: instructorID)
-            self.requestStatus = .approved // Update local status so UI reflects 'Active'
-            // We do NOT dismiss here, because they are now active and we want to see the profile.
-        } catch {
-            print("Unblock failed: \(error)")
-        }
+        self.studentStatus = .approved
+        try? await communityManager.unblockStudent(studentID: student.id!, instructorID: authManager.user!.id!)
+        await fetchData()
     }
     
-    func deleteOfflineStudent() async { try? await communityManager.deleteOfflineStudent(studentID: student.id!); dismiss() }
+    func deleteOfflineStudent() async {
+        try? await communityManager.deleteOfflineStudent(studentID: student.id!)
+        dismiss()
+    }
 }
 
-// ... (Subviews: StudentProfileHeaderCard, StudentProgressCard, etc. remain unchanged) ...
 // MARK: - 1. Student Header Card
 private struct StudentProfileHeaderCard: View {
     let student: Student
     let studentAsAppUser: AppUser?
     let onEdit: () -> Void
-    private var profileImageURL: URL? { guard let urlString = student.photoURL, !urlString.isEmpty else { return nil }; return URL(string: urlString) }
+    
+    private var profileImageURL: URL? {
+        guard let urlString = student.photoURL, !urlString.isEmpty else { return nil }
+        return URL(string: urlString)
+    }
+    
     var body: some View {
         VStack(spacing: 12) {
             ZStack(alignment: .bottomTrailing) {
                 AsyncImage(url: profileImageURL) { phase in
-                    if let image = phase.image { image.resizable().scaledToFill() } else { Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(.secondary) }
-                }.frame(width: 100, height: 100).background(Color(.systemGray5)).clipShape(Circle()).overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
-                if student.isOffline { Button(action: onEdit) { Image(systemName: "pencil.circle.fill").font(.title).foregroundColor(.primaryBlue).background(Circle().fill(.white)) }.offset(x: 5, y: 5) }
-            }.padding(.top, 20)
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(.secondary)
+                    }
+                }
+                .frame(width: 100, height: 100)
+                .background(Color(.systemGray5))
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
+                
+                if student.isOffline {
+                    Button(action: onEdit) {
+                        Image(systemName: "pencil.circle.fill").font(.title).foregroundColor(.primaryBlue).background(Circle().fill(.white))
+                    }.offset(x: 5, y: 5)
+                }
+            }
+            .padding(.top, 20)
+            
             Text(student.name).font(.system(size: 22, weight: .semibold)).foregroundColor(.primary)
             Text(student.isOffline ? "Offline Student" : "Active Student").font(.system(size: 15)).foregroundColor(.secondary).padding(.bottom, 4)
+            
             HStack(spacing: 20) {
                 if let phone = student.phone, !phone.isEmpty {
-                    Button { if let url = URL(string: "tel:\(phone.filter("0123456789+".contains))") { UIApplication.shared.open(url) } } label: { VStack(spacing: 4) { Image(systemName: "phone.fill").font(.system(size: 20)).frame(width: 44, height: 44).background(Color.accentGreen.opacity(0.1)).foregroundColor(.accentGreen).clipShape(Circle()); Text("Call").font(.caption) } }
+                    Button { if let url = URL(string: "tel:\(phone.filter("0123456789+".contains))") { UIApplication.shared.open(url) } } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: "phone.fill").font(.system(size: 20)).frame(width: 44, height: 44).background(Color.accentGreen.opacity(0.1)).foregroundColor(.accentGreen).clipShape(Circle())
+                            Text("Call").font(.caption)
+                        }
+                    }
                 }
                 if let appUser = studentAsAppUser {
-                    NavigationLink(destination: ChatLoadingView(otherUser: appUser)) { VStack(spacing: 4) { Image(systemName: "message.fill").font(.system(size: 20)).frame(width: 44, height: 44).background(Color.primaryBlue.opacity(0.1)).foregroundColor(.primaryBlue).clipShape(Circle()); Text("Chat").font(.caption) } }
+                    NavigationLink(destination: ChatLoadingView(otherUser: appUser)) {
+                        VStack(spacing: 4) {
+                            Image(systemName: "message.fill").font(.system(size: 20)).frame(width: 44, height: 44).background(Color.primaryBlue.opacity(0.1)).foregroundColor(.primaryBlue).clipShape(Circle())
+                            Text("Chat").font(.caption)
+                        }
+                    }
                 }
             }.padding(.bottom, 16)
-        }.frame(maxWidth: .infinity).background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+        }
+        .frame(maxWidth: .infinity).background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
@@ -328,7 +351,8 @@ private struct StudentProgressCard: View {
             Text("\(Int(progress * 100))%").font(.system(size: 36, weight: .bold)).foregroundColor(.white)
             Text("Ready for test?").font(.system(size: 15)).foregroundColor(.white.opacity(0.9))
             Button(action: onUpdate) { Text("Update Progress").font(.caption).bold().padding(.horizontal, 12).padding(.vertical, 6).background(Color.white.opacity(0.2)).cornerRadius(12).foregroundColor(.white) }.padding(.top, 5)
-        }.padding(20).frame(maxWidth: .infinity).background(LinearGradient(gradient: Gradient(colors: [Color.primaryBlue, Color(red: 0.35, green: 0.34, blue: 0.84)]), startPoint: .topLeading, endPoint: .bottomTrailing)).cornerRadius(16).shadow(color: Color.primaryBlue.opacity(0.4), radius: 8, y: 4)
+        }
+        .padding(20).frame(maxWidth: .infinity).background(LinearGradient(gradient: Gradient(colors: [Color.primaryBlue, Color(red: 0.35, green: 0.34, blue: 0.84)]), startPoint: .topLeading, endPoint: .bottomTrailing)).cornerRadius(16).shadow(color: Color.primaryBlue.opacity(0.4), radius: 8, y: 4)
     }
 }
 
@@ -357,7 +381,10 @@ private struct StudentNotesCard: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(notes) { note in
                         VStack(alignment: .leading, spacing: 6) {
-                            HStack(alignment: .top) { Text(note.content).font(.system(size: 15)).foregroundColor(.primary).fixedSize(horizontal: false, vertical: true); Spacer(); Menu { Button(action: { onEdit(note) }) { Label("Edit", systemImage: "pencil") }; Button(role: .destructive, action: { onDelete(note) }) { Label("Delete", systemImage: "trash") } } label: { Image(systemName: "ellipsis").foregroundColor(.secondary).padding(4) } }
+                            HStack(alignment: .top) {
+                                Text(note.content).font(.system(size: 15)).foregroundColor(.primary).fixedSize(horizontal: false, vertical: true); Spacer()
+                                Menu { Button(action: { onEdit(note) }) { Label("Edit", systemImage: "pencil") }; Button(role: .destructive, action: { onDelete(note) }) { Label("Delete", systemImage: "trash") } } label: { Image(systemName: "ellipsis").foregroundColor(.secondary).padding(4) }
+                            }
                             Text(note.timestamp.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 12)).foregroundColor(.secondary)
                         }.padding(.horizontal, 16).padding(.vertical, 12)
                         if note.id != notes.last?.id { Divider().padding(.horizontal, 16) }

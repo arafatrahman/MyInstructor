@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
-// --- UPDATED: Fixed offline student conversion to show correct progress ---
+// --- UPDATED: Uses single-source-of-truth from requests for robust list management ---
 
 import SwiftUI
 
@@ -10,7 +10,9 @@ struct StudentsListView: View {
     @EnvironmentObject var chatManager: ChatManager
     
     // --- STATE ---
-    @State private var approvedStudents: [Student] = []
+    @State private var approvedStudents: [Student] = []   // Stores Active
+    @State private var completedStudentsList: [Student] = [] // Stores Completed (explicitly)
+    
     @State private var pendingRequests: [StudentRequest] = []
     @State private var deniedRequests: [StudentRequest] = []
     @State private var blockedRequests: [StudentRequest] = []
@@ -29,14 +31,15 @@ struct StudentsListView: View {
     @State private var deleteErrorMessage: String? = nil
 
     // --- COMPUTED PROPERTIES ---
+    
     var activeStudents: [Student] {
-        let list = approvedStudents.filter { $0.averageProgress < 1.0 }
+        let list = approvedStudents
         if searchText.isEmpty { return list }
         return list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
     
     var completedStudents: [Student] {
-        let list = approvedStudents.filter { $0.averageProgress >= 1.0 }
+        let list = completedStudentsList
         if searchText.isEmpty { return list }
         return list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
@@ -61,7 +64,6 @@ struct StudentsListView: View {
         return offlineStudents.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
     
-    // --- Helper to convert OfflineStudent to Student for display ---
     func convertToStudent(_ offline: OfflineStudent) -> Student {
         return Student(
             id: offline.id,
@@ -75,7 +77,7 @@ struct StudentsListView: View {
             distance: nil,
             coordinate: nil,
             isOffline: true,
-            averageProgress: offline.progress ?? 0.0, // --- UPDATED: Use actual progress ---
+            averageProgress: offline.progress ?? 0.0,
             nextLessonTime: nil,
             nextLessonTopic: nil
         )
@@ -119,7 +121,7 @@ struct StudentsListView: View {
                 
                 if isLoading {
                     ProgressView("Loading Students...").padding(.top, 50)
-                } else if pendingRequests.isEmpty && approvedStudents.isEmpty && deniedRequests.isEmpty && blockedRequests.isEmpty && offlineStudents.isEmpty {
+                } else if pendingRequests.isEmpty && approvedStudents.isEmpty && completedStudentsList.isEmpty && deniedRequests.isEmpty && blockedRequests.isEmpty && offlineStudents.isEmpty {
                     EmptyStateView(icon: "person.3.fill", message: "No students yet. Tap '+' to add an offline student.")
                 } else {
                     List {
@@ -144,7 +146,8 @@ struct StudentsListView: View {
                                         Button { Task { await startChat(with: student) } } label: { Label("Message", systemImage: "message.fill") }.tint(.primaryBlue)
                                     }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                        Button(role: .destructive) { Task { await removeStudent(student) } } label: { Label("Remove", systemImage: "trash.fill") }
+                                        // --- REMOVE ACTION -> MOVES TO COMPLETED ---
+                                        Button(role: .destructive) { Task { await removeStudent(student) } } label: { Label("Complete", systemImage: "checkmark.circle") }
                                     }
                                     .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                                     .background(NavigationLink { StudentProfileView(student: student) } label: { EmptyView() }.opacity(0))
@@ -152,21 +155,23 @@ struct StudentsListView: View {
                             }
                         }
                         
-                        // Completed
+                        // Completed (Past Students)
                         if filterMode == .allCategories || filterMode == .completed {
                             Section(header: Text("Completed Students (\(completedStudents.count))").font(.headline).foregroundColor(.textLight)) {
                                 if completedStudents.isEmpty { Text("No completed students.").foregroundColor(.textLight) }
                                 ForEach(completedStudents) { student in
                                     StudentListCard(student: student)
-                                    .swipeActions(edge: .leading, allowsFullSwipe: true) { Button { Task { await startChat(with: student) } } label: { Label("Message", systemImage: "message.fill") }.tint(.primaryBlue) }
-                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) { Button(role: .destructive) { Task { await removeStudent(student) } } label: { Label("Remove", systemImage: "trash.fill") } }
+                                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                        // --- REACTIVATE ACTION -> MOVES TO ACTIVE ---
+                                        Button { Task { await reactivateStudent(student) } } label: { Label("Add Again", systemImage: "person.badge.plus") }.tint(.accentGreen)
+                                    }
                                     .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                                     .background(NavigationLink { StudentProfileView(student: student) } label: { EmptyView() }.opacity(0))
                                 }
                             }
                         }
 
-                        // Denied & Blocked (Simplified for brevity, same structure)
+                        // Denied & Blocked
                         if filterMode == .allCategories || filterMode == .denied {
                             Section(header: Text("Denied (\(filteredDeniedRequests.count))").font(.headline).foregroundColor(.warningRed)) {
                                 ForEach(filteredDeniedRequests) { request in CompactRequestRow(request: request, filterMode: .denied, onApprove: { Task { await handleRequest(request, approve: true) } }, onDeny: {}, onUnblock: {}) }
@@ -206,6 +211,7 @@ struct StudentsListView: View {
             .navigationBarHidden(true)
             .task { await fetchData() }
             .refreshable { await fetchData() }
+            .onAppear { Task { await fetchData() } }
             .sheet(isPresented: $isAddingOfflineStudent) { OfflineStudentFormView(studentToEdit: nil, onStudentAdded: { Task { await fetchData() } }) }
             .alert("Cannot Start Chat", isPresented: $chatErrorAlert.isPresented, actions: { Button("OK") { } }, message: { Text(chatErrorAlert.message) })
             .alert("Delete Student?", isPresented: $isShowingDeleteAlert, presenting: studentToDelete) { student in
@@ -218,24 +224,43 @@ struct StudentsListView: View {
         }
     }
     
+    // MARK: - Data Fetching
     func fetchData() async {
         guard let instructorID = authManager.user?.id else { return }
-        isLoading = true
+        
+        // Show loading only if we have NO data yet to prevent flickering on refresh
+        if approvedStudents.isEmpty && completedStudentsList.isEmpty && pendingRequests.isEmpty {
+            isLoading = true
+        }
         deleteErrorMessage = nil
         
-        async let studentsTask = dataService.fetchStudents(for: instructorID)
-        async let requestsTask = communityManager.fetchRequests(for: instructorID)
-        async let deniedTask = communityManager.fetchDeniedRequests(for: instructorID)
-        async let blockedTask = communityManager.fetchBlockedRequests(for: instructorID)
-        async let offlineStudentsTask = dataService.fetchOfflineStudents(for: instructorID)
-        
         do {
-            self.approvedStudents = try await studentsTask
-            self.pendingRequests = try await requestsTask
-            self.deniedRequests = try await deniedTask
-            self.blockedRequests = try await blockedTask
-            self.offlineStudents = try await offlineStudentsTask
-        } catch { print("Failed to fetch data: \(error)") }
+            // 1. Fetch ALL Requests (Single Source of Truth)
+            let allRequests = try await communityManager.fetchAllRelationships(for: instructorID)
+            
+            // 2. Sort requests into buckets
+            self.pendingRequests = allRequests.filter { $0.status == .pending }
+            self.deniedRequests = allRequests.filter { $0.status == .denied }
+            self.blockedRequests = allRequests.filter { $0.status == .blocked }
+            
+            // 3. Extract IDs for Active & Completed
+            let activeIDs = allRequests.filter { $0.status == .approved }.map { $0.studentID }
+            let completedIDs = allRequests.filter { $0.status == .completed }.map { $0.studentID }
+            
+            // 4. Fetch User Profiles for these IDs
+            let allProfileIDs = activeIDs + completedIDs
+            let profiles = try await dataService.fetchStudents(fromIDs: allProfileIDs, instructorID: instructorID)
+            
+            // 5. Assign to State
+            self.approvedStudents = profiles.filter { activeIDs.contains($0.id ?? "") }
+            self.completedStudentsList = profiles.filter { completedIDs.contains($0.id ?? "") }
+            
+            // 6. Offline Students
+            self.offlineStudents = try await dataService.fetchOfflineStudents(for: instructorID)
+            
+        } catch {
+            print("Failed to fetch data: \(error)")
+        }
         isLoading = false
     }
     
@@ -254,9 +279,17 @@ struct StudentsListView: View {
         } catch { print("Failed to handle request: \(error)") }
     }
     
+    // --- UPDATED: 'removeStudent' updates status to .completed ---
     func removeStudent(_ student: Student) async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
         try? await communityManager.removeStudent(studentID: studentID, instructorID: instructorID)
+        await fetchData()
+    }
+    
+    // --- NEW: 'reactivateStudent' updates status to .approved ---
+    func reactivateStudent(_ student: Student) async {
+        guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
+        try? await communityManager.reactivateStudent(studentID: studentID, instructorID: instructorID)
         await fetchData()
     }
     

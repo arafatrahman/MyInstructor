@@ -1,4 +1,5 @@
-// File: MyInstructor/Core/Managers/CommunityManager.swift
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
+// --- UPDATED: Added 'fetchAllRelationships' for robust list handling ---
 
 import Combine
 import Foundation
@@ -65,7 +66,10 @@ class CommunityManager: ObservableObject {
     }
 
     func updatePostDetails(postID: String, content: String?, location: String?, visibility: PostVisibility, newMediaURLs: [String]?) async throws {
-        var data: [String: Any] = ["visibility": visibility.rawValue, "isEdited": true]
+        var data: [String: Any] = [
+            "visibility": visibility.rawValue,
+            "isEdited": true
+        ]
         if let content = content { data["content"] = content }
         if let location = location { data["location"] = location }
         if let urls = newMediaURLs { data["mediaURLs"] = urls }
@@ -91,7 +95,7 @@ class CommunityManager: ObservableObject {
     }
     
     // MARK: - Comments
-
+    
     func listenToComments(for postID: String) {
         commentsListener?.remove()
         let query = postsCollection.document(postID).collection("comments").order(by: "timestamp", descending: false)
@@ -121,7 +125,6 @@ class CommunityManager: ObservableObject {
         
         let postDoc = try await postsCollection.document(postID).getDocument()
         guard let post = try? postDoc.data(as: Post.self) else { return }
-        
         if let parentID = parentCommentID {
             let parentDoc = try await postsCollection.document(postID).collection("comments").document(parentID).getDocument()
             if let parentComment = try? parentDoc.data(as: Comment.self), parentComment.authorID != authorID {
@@ -143,13 +146,32 @@ class CommunityManager: ObservableObject {
         try await postsCollection.document(postID).collection("comments").document(commentID).updateData(["content": newContent, "isEdited": true])
     }
     
-    // MARK: - Student Requests
+    // MARK: - Student Requests & Relationships
     
-    // --- NEW: Helper to fetch a specific request ---
-    func fetchRequest(studentID: String, instructorID: String) async throws -> StudentRequest? {
+    func fetchRelationshipStatus(instructorID: String, studentID: String) async throws -> RequestStatus? {
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
-        return try? snapshot.documents.first?.data(as: StudentRequest.self)
+        return try? snapshot.documents.first?.data(as: StudentRequest.self).status
+    }
+    
+    // Helper to get statuses map
+    func fetchStudentStatuses(instructorID: String) async throws -> [String: RequestStatus] {
+        let query = requestsCollection.whereField("instructorID", isEqualTo: instructorID)
+        let snapshot = try await query.getDocuments()
+        var map = [String: RequestStatus]()
+        for doc in snapshot.documents {
+            if let req = try? doc.data(as: StudentRequest.self) {
+                map[req.studentID] = req.status
+            }
+        }
+        return map
+    }
+    
+    // --- NEW: Fetch ALL relationships (Single Source of Truth) ---
+    func fetchAllRelationships(for instructorID: String) async throws -> [StudentRequest] {
+        let query = requestsCollection.whereField("instructorID", isEqualTo: instructorID)
+        let snapshot = try await query.getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: StudentRequest.self) }
     }
     
     func sendRequest(from student: AppUser, to instructorID: String) async throws {
@@ -193,11 +215,19 @@ class CommunityManager: ObservableObject {
     }
     
     func removeStudent(studentID: String, instructorID: String) async throws {
-        try await usersCollection.document(instructorID).updateData(["studentIDs": FieldValue.arrayRemove([studentID])])
-        try await usersCollection.document(studentID).updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])])
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
-        for doc in snapshot.documents { try await doc.reference.delete() }
+        for doc in snapshot.documents {
+            try await doc.reference.updateData(["status": RequestStatus.completed.rawValue])
+        }
+    }
+    
+    func reactivateStudent(studentID: String, instructorID: String) async throws {
+        let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
+        let snapshot = try await query.getDocuments()
+        for doc in snapshot.documents {
+            try await doc.reference.updateData(["status": RequestStatus.approved.rawValue])
+        }
     }
     
     func blockStudent(studentID: String, instructorID: String) async throws {
@@ -213,20 +243,15 @@ class CommunityManager: ObservableObject {
         try await usersCollection.document(studentID).updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])])
     }
     
-    // --- UPDATED: Unblock now RESTORES active status instead of just deleting ---
     func unblockStudent(studentID: String, instructorID: String) async throws {
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
-        
-        // 1. Update Request Status to Approved
         for doc in snapshot.documents {
             try await doc.reference.updateData([
                 "status": RequestStatus.approved.rawValue,
                 "blockedBy": FieldValue.delete()
             ])
         }
-        
-        // 2. Restore Connection in Users Collection
         try await usersCollection.document(instructorID).updateData(["studentIDs": FieldValue.arrayUnion([studentID])])
         try await usersCollection.document(studentID).updateData(["instructorIDs": FieldValue.arrayUnion([instructorID])])
     }
@@ -241,14 +266,17 @@ class CommunityManager: ObservableObject {
              let newRequest = StudentRequest(studentID: studentID, studentName: student.name ?? "", studentPhotoURL: student.photoURL, instructorID: instructorID, status: .blocked, timestamp: Date(), blockedBy: "student")
              try requestsCollection.addDocument(from: newRequest)
         }
-        try await usersCollection.document(instructorID).updateData(["studentIDs": FieldValue.arrayRemove([studentID])])
-        try await usersCollection.document(studentID).updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])])
     }
     
     func unblockInstructor(instructorID: String, studentID: String) async throws {
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
-        for doc in snapshot.documents { try await doc.reference.delete() }
+        for doc in snapshot.documents {
+            try await doc.reference.updateData([
+                "status": RequestStatus.approved.rawValue,
+                "blockedBy": FieldValue.delete()
+            ])
+        }
     }
     
     func removeInstructor(instructorID: String, studentID: String) async throws {
@@ -272,9 +300,7 @@ class CommunityManager: ObservableObject {
     
     func updateOfflineStudent(_ student: OfflineStudent) async throws {
         guard let id = student.id else { return }
-        var studentToSave = student
-        studentToSave.id = nil
-        try offlineStudentsCollection.document(id).setData(from: studentToSave)
+        try offlineStudentsCollection.document(id).setData(from: student)
     }
 
     func deleteOfflineStudent(studentID: String) async throws {
@@ -296,6 +322,7 @@ class CommunityManager: ObservableObject {
     func addStudentNote(instructorID: String, studentID: String, noteContent: String, isOffline: Bool) async throws {
         let newNote = StudentNote(content: noteContent, timestamp: Date())
         guard let noteData = try? Firestore.Encoder().encode(newNote) else { return }
+
         if isOffline {
             try await offlineStudentsCollection.document(studentID).updateData(["notes": FieldValue.arrayUnion([noteData])])
         } else {
@@ -307,13 +334,15 @@ class CommunityManager: ObservableObject {
     
     func deleteStudentNote(instructorID: String, studentID: String, note: StudentNote, isOffline: Bool) async throws {
         let ref: DocumentReference
-        if isOffline { ref = offlineStudentsCollection.document(studentID) }
-        else { ref = usersCollection.document(instructorID).collection("student_records").document(studentID) }
+        ref = isOffline ? offlineStudentsCollection.document(studentID) : usersCollection.document(instructorID).collection("student_records").document(studentID)
         let doc = try await ref.getDocument()
         if doc.exists {
             var notesToUpdate: [StudentNote] = []
-            if isOffline { if let student = try? doc.data(as: OfflineStudent.self), let notes = student.notes { notesToUpdate = notes } }
-            else { if let record = try? doc.data(as: StudentRecord.self), let notes = record.notes { notesToUpdate = notes } }
+            if isOffline {
+                if let student = try? doc.data(as: OfflineStudent.self), let notes = student.notes { notesToUpdate = notes }
+            } else {
+                if let record = try? doc.data(as: StudentRecord.self), let notes = record.notes { notesToUpdate = notes }
+            }
             let filteredNotes = notesToUpdate.filter { $0.id != note.id }
             let encodedNotes = try filteredNotes.map { try Firestore.Encoder().encode($0) }
             try await ref.updateData(["notes": encodedNotes])
@@ -322,13 +351,15 @@ class CommunityManager: ObservableObject {
     
     func updateStudentNote(instructorID: String, studentID: String, oldNote: StudentNote, newContent: String, isOffline: Bool) async throws {
         let ref: DocumentReference
-        if isOffline { ref = offlineStudentsCollection.document(studentID) }
-        else { ref = usersCollection.document(instructorID).collection("student_records").document(studentID) }
+        ref = isOffline ? offlineStudentsCollection.document(studentID) : usersCollection.document(instructorID).collection("student_records").document(studentID)
         let doc = try await ref.getDocument()
         if doc.exists {
             var notesToUpdate: [StudentNote] = []
-            if isOffline { if let student = try? doc.data(as: OfflineStudent.self), let notes = student.notes { notesToUpdate = notes } }
-            else { if let record = try? doc.data(as: StudentRecord.self), let notes = record.notes { notesToUpdate = notes } }
+            if isOffline {
+                if let student = try? doc.data(as: OfflineStudent.self), let notes = student.notes { notesToUpdate = notes }
+            } else {
+                if let record = try? doc.data(as: StudentRecord.self), let notes = record.notes { notesToUpdate = notes }
+            }
             if let index = notesToUpdate.firstIndex(where: { $0.id == oldNote.id }) {
                 let updatedNote = StudentNote(id: oldNote.id, content: newContent, timestamp: oldNote.timestamp)
                 notesToUpdate[index] = updatedNote

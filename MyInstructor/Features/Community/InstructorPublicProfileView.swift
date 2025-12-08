@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: Moved Action Button to Main View Body ---
+// --- UPDATED: Fixed 'Switch must be exhaustive' by handling .completed status ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -11,6 +11,7 @@ enum RequestButtonState {
     case denied
     case blocked // Blocked by INSTRUCTOR
     case blockedByStudent // Blocked by STUDENT
+    case completed // <--- NEW: Former student
 }
 
 struct InstructorPublicProfileView: View {
@@ -35,7 +36,6 @@ struct InstructorPublicProfileView: View {
         ScrollView {
             VStack(spacing: 16) {
                 if let user = instructor {
-                    // --- UPDATED: Passing logic to Header ---
                     ProfileHeaderCard(
                         user: user,
                         isStudent: authManager.role == .student,
@@ -84,7 +84,7 @@ struct InstructorPublicProfileView: View {
             if authManager.role == .student {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 16) {
-                        // 1. Conditional Message Button (Only if approved)
+                        // 1. Conditional Message Button
                         if requestState == .approved, let instructorAppUser = instructor {
                             NavigationLink(destination: ChatLoadingView(otherUser: instructorAppUser)) {
                                 Image(systemName: "message.circle.fill")
@@ -93,7 +93,7 @@ struct InstructorPublicProfileView: View {
                             }
                         }
                         
-                        // 2. Block/Unblock Menu (Moved here, main action is now in body)
+                        // 2. Block/Unblock Menu
                         if requestState != .blocked {
                             Menu {
                                 if requestState == .blockedByStudent {
@@ -134,7 +134,7 @@ struct InstructorPublicProfileView: View {
             alertMessage = nil
             
             switch requestState {
-            case .idle, .denied:
+            case .idle, .denied, .completed: // Allow re-application if completed
                 await sendRequest()
             case .pending:
                 await cancelRequest()
@@ -170,6 +170,8 @@ struct InstructorPublicProfileView: View {
                     self.requestState = .approved
                 case .denied:
                     self.requestState = .denied
+                case .completed: // <--- ADDED CASE
+                    self.requestState = .completed
                 case .blocked:
                     if existingRequest.blockedBy == "student" {
                         self.requestState = .blockedByStudent
@@ -226,15 +228,17 @@ struct InstructorPublicProfileView: View {
     func blockInstructor() async {
         guard let student = authManager.user else { return }
         
+        self.requestState = .blockedByStudent
         isLoading = true
         alertMessage = nil
         do {
             try await communityManager.blockInstructor(instructorID: instructorID, student: student)
-            self.alertMessage = "You have blocked this instructor. They cannot be messaged and will be removed from your lists."
+            self.alertMessage = "You have blocked this instructor."
             self.showSuccessAlert = true
             await loadData()
         } catch {
             self.alertMessage = error.localizedDescription
+            await loadData()
         }
         isLoading = false
     }
@@ -242,15 +246,17 @@ struct InstructorPublicProfileView: View {
     func unblockInstructor() async {
         guard let studentID = authManager.user?.id else { return }
         
+        self.requestState = .approved
         isLoading = true
         alertMessage = nil
         do {
             try await communityManager.unblockInstructor(instructorID: instructorID, studentID: studentID)
-            self.alertMessage = "You have unblocked this instructor. You can now send them a new request."
+            self.alertMessage = "You have unblocked this instructor."
             self.showSuccessAlert = true
             await loadData()
         } catch {
             self.alertMessage = error.localizedDescription
+            await loadData()
         }
         isLoading = false
     }
@@ -279,11 +285,12 @@ private struct ProfileHeaderCard: View {
     var buttonConfig: (text: String, color: Color, isDisabled: Bool) {
         switch requestState {
         case .idle: return ("Become a Student", .primaryBlue, false)
-        case .pending: return ("Request Pending", .gray, false) // Can tap to cancel
+        case .pending: return ("Request Pending", .gray, false)
         case .approved: return ("Approved Student", .accentGreen, true)
         case .denied: return ("Request Denied (Re-apply)", .orange, false)
         case .blocked: return ("Blocked by Instructor", .red, true)
         case .blockedByStudent: return ("You Blocked This User", .gray, true)
+        case .completed: return ("Reconnect", .primaryBlue, false) // <--- ADDED CASE
         }
     }
     
@@ -317,7 +324,6 @@ private struct ProfileHeaderCard: View {
             .font(.system(size: 14))
             .foregroundColor(Color.primaryBlue)
             
-            // --- ACTION BUTTON IN HEADER ---
             if isStudent {
                 Button(action: onActionTap) {
                     Text(buttonConfig.text)
@@ -332,7 +338,6 @@ private struct ProfileHeaderCard: View {
                 .disabled(buttonConfig.isDisabled)
                 .padding(.top, 8)
             }
-            // -----------------------------
             
             Spacer().frame(height: 12)
         }

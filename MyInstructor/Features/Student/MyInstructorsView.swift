@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Student/MyInstructorsView.swift
-// --- UPDATED: Redesigned UI with Inset Grouped List, badges, and modern typography ---
+// --- UPDATED: Fixed 'Switch must be exhaustive' error by handling .completed case ---
 
 import SwiftUI
 
@@ -19,6 +19,11 @@ struct MyInstructorsView: View {
     // "My Instructors" now includes active AND student-blocked instructors
     private var myInstructorsList: [StudentRequest] {
         sentRequests.filter { $0.status == .approved || ($0.status == .blocked && $0.blockedBy == "student") }
+    }
+    
+    // --- NEW: Completed (Past) Instructors ---
+    private var completedList: [StudentRequest] {
+        sentRequests.filter { $0.status == .completed }
     }
     
     private var pendingRequests: [StudentRequest] {
@@ -65,7 +70,7 @@ struct MyInstructorsView: View {
                     } else {
                         if selectedStatus == .approved {
                             // --- APPROVED TAB ---
-                            if myInstructorsList.isEmpty {
+                            if myInstructorsList.isEmpty && completedList.isEmpty {
                                 EmptyStateView(
                                     icon: "person.badge.plus",
                                     message: "You haven't connected with any instructors yet.",
@@ -76,37 +81,57 @@ struct MyInstructorsView: View {
                                 )
                             } else {
                                 List {
-                                    Section {
-                                        ForEach(myInstructorsList) { request in
-                                            ZStack {
-                                                // Navigation Link
-                                                NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
-                                                    EmptyView()
+                                    // 1. Active Connections
+                                    if !myInstructorsList.isEmpty {
+                                        Section(header: Text("Active Connections")) {
+                                            ForEach(myInstructorsList) { request in
+                                                ZStack {
+                                                    // Navigation Link
+                                                    NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
+                                                        EmptyView()
+                                                    }
+                                                    .opacity(0)
+                                                    
+                                                    // Custom Row Content
+                                                    MyInstructorRow(request: request)
                                                 }
-                                                .opacity(0)
-                                                
-                                                // Custom Row Content
-                                                MyInstructorRow(request: request)
-                                            }
-                                            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
-                                            // Swipe Actions
-                                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                                if request.status == .approved {
-                                                    Button(role: .destructive) {
-                                                        Task { await removeInstructor(request) }
-                                                    } label: {
-                                                        Label("Remove", systemImage: "trash.fill")
+                                                .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                                                // Swipe Actions
+                                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                                    if request.status == .approved {
+                                                        Button(role: .destructive) {
+                                                            Task { await removeInstructor(request) }
+                                                        } label: {
+                                                            Label("Remove", systemImage: "trash.fill")
+                                                        }
+                                                    } else if request.status == .blocked && request.blockedBy == "student" {
+                                                        Button("Unblock") {
+                                                            Task { await unblockInstructor(request) }
+                                                        }
+                                                        .tint(.accentGreen)
                                                     }
-                                                } else if request.status == .blocked && request.blockedBy == "student" {
-                                                    Button("Unblock") {
-                                                        Task { await unblockInstructor(request) }
-                                                    }
-                                                    .tint(.accentGreen)
                                                 }
                                             }
                                         }
-                                    } header: {
-                                        Text("Active Connections")
+                                    }
+                                    
+                                    // 2. Past Instructors (Completed)
+                                    if !completedList.isEmpty {
+                                        Section(header: Text("Past Instructors")) {
+                                            ForEach(completedList) { request in
+                                                ZStack {
+                                                    NavigationLink(destination: InstructorPublicProfileView(instructorID: request.instructorID)) {
+                                                        EmptyView()
+                                                    }
+                                                    .opacity(0)
+                                                    
+                                                    MyInstructorRow(request: request)
+                                                        .grayscale(1.0) // Grey out visually
+                                                        .opacity(0.8)
+                                                }
+                                                .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                                            }
+                                        }
                                     }
                                 }
                                 .listStyle(.insetGrouped) // Modern iOS card style
@@ -305,6 +330,7 @@ struct StatusBadge: View {
         case .pending: return ("Pending", .orange)
         case .approved: return ("Approved", .accentGreen)
         case .denied: return ("Denied", .warningRed)
+        case .completed: return ("Past", .gray) // <--- ADDED CASE
         case .blocked:
             return (blockedBy == "student" ? "Blocked" : "Unavailable", .gray)
         }

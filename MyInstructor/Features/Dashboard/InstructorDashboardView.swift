@@ -1,12 +1,12 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: Reordered Quick Actions & Added Track Exam ---
+// --- UPDATED: Replaced "Students" Quick Action with "Live Map" ---
 
 import SwiftUI
 
 enum DashboardSheet: Identifiable {
-    case addLesson, addStudent, recordPayment, quickOverview, trackIncome, trackExpense, serviceBook, myVehicles, contacts
+    case addLesson, liveMap, recordPayment, quickOverview, trackIncome, trackExpense, serviceBook, myVehicles, contacts
     case notes
-    case trackExam // <--- NEW CASE
+    case trackExam
     var id: Int { self.hashValue }
 }
 
@@ -65,17 +65,17 @@ struct InstructorDashboardView: View {
                                 // 1. Add Lesson
                                 QuickActionButton(title: "Add Lesson", icon: "plus.circle.fill", color: .primaryBlue, action: { activeSheet = .addLesson })
                                 
-                                // 2. Track Exam (New Position)
+                                // 2. Track Exam
                                 QuickActionButton(title: "Track Exam", icon: "flag.checkered", color: .indigo, action: { activeSheet = .trackExam })
                                 
-                                // 3. Add Student
-                                QuickActionButton(title: "Add Student", icon: "person.badge.plus.fill", color: .accentGreen, action: { activeSheet = .addStudent })
+                                // 3. Live Map (Replaces "Students" which is already a main Tab)
+                                QuickActionButton(title: "Live Map", icon: "location.fill", color: .orange, action: { activeSheet = .liveMap })
                                 
                                 // 4. Record Payment
                                 QuickActionButton(title: "Record Payment", icon: "creditcard.fill", color: .purple, action: { activeSheet = .recordPayment })
                                 
                                 // 5. Track Income
-                                QuickActionButton(title: "Track Income", icon: "chart.line.uptrend.xyaxis", color: .orange, action: { activeSheet = .trackIncome })
+                                QuickActionButton(title: "Track Income", icon: "chart.line.uptrend.xyaxis", color: .accentGreen, action: { activeSheet = .trackIncome })
                                 
                                 // 6. Track Expense
                                 QuickActionButton(title: "Track Expense", icon: "chart.line.downtrend.xyaxis", color: .warningRed, action: { activeSheet = .trackExpense })
@@ -89,7 +89,7 @@ struct InstructorDashboardView: View {
                                 // 9. Notes
                                 QuickActionButton(title: "Notes", icon: "note.text", color: .pink, action: { activeSheet = .notes })
                                 
-                                // 10. Contacts (Moved After Notes)
+                                // 10. Contacts
                                 QuickActionButton(title: "Contacts", icon: "phone.circle.fill", color: .teal, action: { activeSheet = .contacts })
                                 
                             }.padding(.horizontal)
@@ -109,7 +109,20 @@ struct InstructorDashboardView: View {
             .sheet(item: $activeSheet) { item in
                 switch item {
                 case .addLesson: AddLessonFormView(onLessonAdded: { _ in Task { await fetchData() } })
-                case .addStudent: OfflineStudentFormView(studentToEdit: nil, onStudentAdded: { Task { await fetchData() } })
+                
+                // --- UPDATED: Opens Live Map ---
+                case .liveMap:
+                    // Create a placeholder lesson context for general location sharing
+                    let placeholderLesson = Lesson(
+                        instructorID: authManager.user?.id ?? "",
+                        studentID: "General",
+                        topic: "My Live Location",
+                        startTime: Date(),
+                        pickupLocation: "Current Location",
+                        fee: 0
+                    )
+                    LiveLocationView(lesson: placeholderLesson)
+                    
                 case .contacts: ContactsView()
                 case .recordPayment: AddPaymentFormView(onPaymentAdded: { Task { await fetchData() } })
                 case .quickOverview: StudentQuickOverviewSheet()
@@ -118,7 +131,7 @@ struct InstructorDashboardView: View {
                 case .serviceBook: ServiceBookView()
                 case .myVehicles: MyVehiclesView()
                 case .notes: NotesListView()
-                case .trackExam: ExamListView() // <--- Opens the list view (which handles adding)
+                case .trackExam: ExamListView()
                 }
             }
         }

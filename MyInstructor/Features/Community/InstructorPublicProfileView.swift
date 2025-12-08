@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: Fixed 'Switch must be exhaustive' by handling .completed status ---
+// --- UPDATED: Added Follow/Unfollow, generic Block, and dynamic buttons ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -11,7 +11,7 @@ enum RequestButtonState {
     case denied
     case blocked // Blocked by INSTRUCTOR
     case blockedByStudent // Blocked by STUDENT
-    case completed // <--- NEW: Former student
+    case completed
 }
 
 struct InstructorPublicProfileView: View {
@@ -28,9 +28,11 @@ struct InstructorPublicProfileView: View {
     @State private var showSuccessAlert = false
     @State private var alertMessage: String? = nil
     
-    private var appBlue: Color {
-        return Color.primaryBlue
-    }
+    // Social State
+    @State private var isFollowing = false
+    
+    private var appBlue: Color { return Color.primaryBlue }
+    private var isMe: Bool { authManager.user?.id == instructorID }
     
     var body: some View {
         ScrollView {
@@ -39,41 +41,29 @@ struct InstructorPublicProfileView: View {
                     ProfileHeaderCard(
                         user: user,
                         isStudent: authManager.role == .student,
+                        isInstructor: user.role == .instructor,
                         requestState: requestState,
-                        onActionTap: handleRequestButtonTap
+                        isFollowing: isFollowing,
+                        isMe: isMe,
+                        onActionTap: handleRequestButtonTap,
+                        onFollowTap: handleFollowTap
                     )
                     .padding(.horizontal)
                     .padding(.top, 16)
                     
-                    ContactCard(user: user)
-                        .padding(.horizontal)
-                    if user.role == .instructor {
-                        RateHighlightCard(user: user)
-                            .padding(.horizontal)
-                    }
-                    EducationCard(education: user.education)
-                        .padding(.horizontal)
-                    AboutCard(aboutText: user.aboutMe)
-                        .padding(.horizontal)
-                    if user.role == .instructor {
-                        ExpertiseCard(skills: user.expertise)
-                            .padding(.horizontal)
-                    }
+                    ContactCard(user: user).padding(.horizontal)
+                    if user.role == .instructor { RateHighlightCard(user: user).padding(.horizontal) }
+                    EducationCard(education: user.education).padding(.horizontal)
+                    AboutCard(aboutText: user.aboutMe).padding(.horizontal)
+                    if user.role == .instructor { ExpertiseCard(skills: user.expertise).padding(.horizontal) }
                     
                     if let alertMessage, !showSuccessAlert {
-                        Text(alertMessage)
-                            .font(.caption)
-                            .foregroundColor(.warningRed)
-                            .multilineTextAlignment(.center)
-                            .padding()
+                        Text(alertMessage).font(.caption).foregroundColor(.warningRed).multilineTextAlignment(.center).padding()
                     }
-                    
                 } else if isLoading {
-                    ProgressView()
-                        .padding(.top, 50)
+                    ProgressView().padding(.top, 50)
                 } else {
-                    Text("Could not load instructor profile.")
-                        .padding()
+                    Text("Could not load profile.").padding()
                 }
             }
             .padding(.bottom, 20)
@@ -81,113 +71,118 @@ struct InstructorPublicProfileView: View {
         .navigationTitle(instructor?.name ?? "Profile")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if authManager.role == .student {
+            if !isMe {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 16) {
-                        // 1. Conditional Message Button
+                        // Chat Button (only if approved student)
                         if requestState == .approved, let instructorAppUser = instructor {
                             NavigationLink(destination: ChatLoadingView(otherUser: instructorAppUser)) {
-                                Image(systemName: "message.circle.fill")
-                                    .font(.title3)
-                                    .foregroundColor(appBlue)
+                                Image(systemName: "message.circle.fill").font(.title3).foregroundColor(appBlue)
                             }
                         }
                         
-                        // 2. Block/Unblock Menu
-                        if requestState != .blocked {
-                            Menu {
-                                if requestState == .blockedByStudent {
-                                    Button("Unblock Instructor", role: .destructive) {
-                                        Task { await unblockInstructor() }
-                                    }
-                                } else {
-                                    Button("Block Instructor", role: .destructive) {
-                                        Task { await blockInstructor() }
-                                    }
-                                }
+                        // Menu
+                        Menu {
+                            Button(role: .destructive) {
+                                Task { await blockUser() }
                             } label: {
-                                Image(systemName: "ellipsis.circle")
-                                    .font(.title3)
-                                    .foregroundColor(.textLight)
+                                Label("Block User", systemImage: "hand.raised.fill")
                             }
+                        } label: {
+                            Image(systemName: "ellipsis.circle").font(.title3).foregroundColor(.textLight)
                         }
                     }
                 }
             }
         }
         .background(Color(.systemBackground))
-        .task {
-            await loadData()
-        }
+        .task { await loadData() }
         .alert("Success", isPresented: $showSuccessAlert, presenting: alertMessage) { message in
             Button("OK") { }
-        } message: { message in
-            Text(message)
-        }
+        } message: { message in Text(message) }
     }
     
-    // MARK: - Button Logic
+    // MARK: - Logic
     
     func handleRequestButtonTap() {
         Task {
             isLoading = true
             alertMessage = nil
-            
             switch requestState {
-            case .idle, .denied, .completed: // Allow re-application if completed
-                await sendRequest()
-            case .pending:
-                await cancelRequest()
-            case .approved, .blocked, .blockedByStudent:
-                break
+            case .idle, .denied, .completed: await sendRequest()
+            case .pending: await cancelRequest()
+            default: break
             }
             isLoading = false
         }
     }
     
-    // MARK: - Data Functions
+    func handleFollowTap() {
+        Task {
+            guard let currentID = authManager.user?.id, let name = authManager.user?.name else { return }
+            do {
+                if isFollowing {
+                    try await communityManager.unfollowUser(currentUserID: currentID, targetUserID: instructorID)
+                    isFollowing = false
+                } else {
+                    try await communityManager.followUser(currentUserID: currentID, targetUserID: instructorID, currentUserName: name)
+                    isFollowing = true
+                }
+            } catch { print("Follow error: \(error)") }
+        }
+    }
+    
+    func blockUser() async {
+        guard let currentID = authManager.user?.id else { return }
+        do {
+            try await communityManager.blockUserGeneric(blockerID: currentID, targetID: instructorID)
+            alertMessage = "User blocked."
+            showSuccessAlert = true
+            // If they were student/instructor connected, also block that relationship logic
+            if authManager.role == .student {
+               // Also call the specific one to update request status
+               // Note: 'instructorID' here is the profile being viewed
+                if let user = authManager.user {
+                    try await communityManager.blockInstructor(instructorID: instructorID, student: user)
+                }
+            }
+            await loadData()
+        } catch { alertMessage = "Error blocking: \(error.localizedDescription)" }
+    }
+    
+    // MARK: - Load Data
     
     func loadData() async {
         isLoading = true
-        guard let studentID = authManager.user?.id else { return }
+        guard let myID = authManager.user?.id else { return }
         
         do {
-            // Fetch the instructor's user object
-            let doc = try await Firestore.firestore().collection("users")
-                                    .document(instructorID).getDocument()
+            let doc = try await Firestore.firestore().collection("users").document(instructorID).getDocument()
             self.instructor = try doc.data(as: AppUser.self)
             
-            // Check the status of any requests between the student and this instructor
-            let requests = try await communityManager.fetchSentRequests(for: studentID)
-            
-            if let existingRequest = requests.first(where: { $0.instructorID == instructorID }) {
-                self.currentRequestID = existingRequest.id
-                
-                switch existingRequest.status {
-                case .pending:
-                    self.requestState = .pending
-                case .approved:
-                    self.requestState = .approved
-                case .denied:
-                    self.requestState = .denied
-                case .completed: // <--- ADDED CASE
-                    self.requestState = .completed
-                case .blocked:
-                    if existingRequest.blockedBy == "student" {
-                        self.requestState = .blockedByStudent
-                    } else {
-                        self.requestState = .blocked
-                    }
-                }
-            } else {
-                self.requestState = .idle
-                self.currentRequestID = nil
+            // Check following status
+            if let followers = self.instructor?.followers {
+                self.isFollowing = followers.contains(myID)
             }
             
-        } catch {
-            print("Error loading data: \(error)")
-            self.alertMessage = error.localizedDescription
-        }
+            // Check student/instructor relationship
+            if authManager.role == .student {
+                let requests = try await communityManager.fetchSentRequests(for: myID)
+                if let existing = requests.first(where: { $0.instructorID == instructorID }) {
+                    self.currentRequestID = existing.id
+                    switch existing.status {
+                    case .pending: self.requestState = .pending
+                    case .approved: self.requestState = .approved
+                    case .denied: self.requestState = .denied
+                    case .completed: self.requestState = .completed
+                    case .blocked: self.requestState = (existing.blockedBy == "student") ? .blockedByStudent : .blocked
+                    }
+                } else {
+                    self.requestState = .idle
+                    self.currentRequestID = nil
+                }
+            }
+        } catch { print("Error: \(error)") }
         isLoading = false
     }
     
@@ -195,70 +190,14 @@ struct InstructorPublicProfileView: View {
         guard let currentUser = authManager.user else { return }
         do {
             try await communityManager.sendRequest(from: currentUser, to: instructorID)
-            self.alertMessage = "Your request has been successfully sent!"
-            self.showSuccessAlert = true
-            await loadData()
-        } catch let error as CommunityManager.RequestError {
-            self.alertMessage = error.localizedDescription
-            if error == .alreadyPending { self.requestState = .pending }
-            if error == .alreadyApproved { self.requestState = .approved }
-            if error == .blocked { self.requestState = .blocked }
-        } catch {
-            self.alertMessage = error.localizedDescription
-        }
+            alertMessage = "Request sent!"; showSuccessAlert = true; await loadData()
+        } catch { alertMessage = error.localizedDescription }
     }
     
     func cancelRequest() async {
-        guard let requestID = currentRequestID else {
-            self.requestState = .idle
-            return
-        }
-        
-        do {
-            try await communityManager.cancelRequest(requestID: requestID)
-            self.alertMessage = "Your request has been cancelled."
-            self.showSuccessAlert = true
-            self.requestState = .idle
-            self.currentRequestID = nil
-        } catch {
-            self.alertMessage = error.localizedDescription
-        }
-    }
-    
-    func blockInstructor() async {
-        guard let student = authManager.user else { return }
-        
-        self.requestState = .blockedByStudent
-        isLoading = true
-        alertMessage = nil
-        do {
-            try await communityManager.blockInstructor(instructorID: instructorID, student: student)
-            self.alertMessage = "You have blocked this instructor."
-            self.showSuccessAlert = true
-            await loadData()
-        } catch {
-            self.alertMessage = error.localizedDescription
-            await loadData()
-        }
-        isLoading = false
-    }
-    
-    func unblockInstructor() async {
-        guard let studentID = authManager.user?.id else { return }
-        
-        self.requestState = .approved
-        isLoading = true
-        alertMessage = nil
-        do {
-            try await communityManager.unblockInstructor(instructorID: instructorID, studentID: studentID)
-            self.alertMessage = "You have unblocked this instructor."
-            self.showSuccessAlert = true
-            await loadData()
-        } catch {
-            self.alertMessage = error.localizedDescription
-            await loadData()
-        }
-        isLoading = false
+        guard let id = currentRequestID else { return }
+        try? await communityManager.cancelRequest(requestID: id)
+        alertMessage = "Request cancelled."; showSuccessAlert = true; await loadData()
     }
 }
 
@@ -266,9 +205,13 @@ struct InstructorPublicProfileView: View {
 
 private struct ProfileHeaderCard: View {
     let user: AppUser
-    let isStudent: Bool
+    let isStudent: Bool // Current user is student
+    let isInstructor: Bool // Profile owner is instructor
     let requestState: RequestButtonState
+    let isFollowing: Bool
+    let isMe: Bool
     let onActionTap: () -> Void
+    let onFollowTap: () -> Void
     
     private var profileImageURL: URL? {
         guard let urlString = user.photoURL, !urlString.isEmpty else { return nil }
@@ -281,70 +224,69 @@ private struct ProfileHeaderCard: View {
         return "Location N/A"
     }
     
-    // Logic for Button Appearance
     var buttonConfig: (text: String, color: Color, isDisabled: Bool) {
         switch requestState {
         case .idle: return ("Become a Student", .primaryBlue, false)
         case .pending: return ("Request Pending", .gray, false)
         case .approved: return ("Approved Student", .accentGreen, true)
-        case .denied: return ("Request Denied (Re-apply)", .orange, false)
+        case .denied: return ("Request Denied", .orange, false)
         case .blocked: return ("Blocked by Instructor", .red, true)
-        case .blockedByStudent: return ("You Blocked This User", .gray, true)
-        case .completed: return ("Reconnect", .primaryBlue, false) // <--- ADDED CASE
+        case .blockedByStudent: return ("Blocked", .gray, true)
+        case .completed: return ("Reconnect", .primaryBlue, false)
         }
     }
     
     var body: some View {
         VStack(spacing: 12) {
             AsyncImage(url: profileImageURL) { phase in
-                if let image = phase.image {
-                    image.resizable().scaledToFill()
-                } else {
-                    Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(.secondary)
-                }
+                if let image = phase.image { image.resizable().scaledToFill() }
+                else { Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(.secondary) }
             }
             .frame(width: 100, height: 100)
-            .background(Color(.systemGray5))
-            .clipShape(Circle())
+            .background(Color(.systemGray5)).clipShape(Circle())
             .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
             .padding(.top, 20)
             
-            Text(user.name ?? "User Name")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundColor(.primary)
-            
-            Text(user.role.rawValue.capitalized)
-                .font(.system(size: 15))
-                .foregroundColor(.secondary)
-            
+            Text(user.name ?? "User Name").font(.system(size: 22, weight: .semibold)).foregroundColor(.primary)
+            Text(user.role.rawValue.capitalized).font(.system(size: 15)).foregroundColor(.secondary)
             HStack(spacing: 4) {
                 Image(systemName: "mappin.and.ellipse")
                 Text(locationString)
-            }
-            .font(.system(size: 14))
-            .foregroundColor(Color.primaryBlue)
+            }.font(.system(size: 14)).foregroundColor(Color.primaryBlue)
             
-            if isStudent {
-                Button(action: onActionTap) {
-                    Text(buttonConfig.text)
-                        .font(.headline).bold()
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 30)
-                        .background(buttonConfig.color)
-                        .foregroundColor(.white)
-                        .cornerRadius(20)
-                        .shadow(color: buttonConfig.color.opacity(0.3), radius: 5, x: 0, y: 3)
+            if !isMe {
+                HStack(spacing: 12) {
+                    // 1. Follow Button
+                    Button(action: onFollowTap) {
+                        Text(isFollowing ? "Unfollow" : "Follow")
+                            .font(.headline).bold()
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 24)
+                            .background(isFollowing ? Color.gray.opacity(0.2) : Color.primaryBlue)
+                            .foregroundColor(isFollowing ? .primary : .white)
+                            .cornerRadius(20)
+                    }
+                    
+                    // 2. "Become a Student" Button (Only if Viewer=Student AND Profile=Instructor)
+                    if isStudent && isInstructor {
+                        Button(action: onActionTap) {
+                            Text(buttonConfig.text)
+                                .font(.headline).bold()
+                                .padding(.vertical, 10)
+                                .padding(.horizontal, 24)
+                                .background(buttonConfig.color)
+                                .foregroundColor(.white)
+                                .cornerRadius(20)
+                        }
+                        .disabled(buttonConfig.isDisabled)
+                    }
                 }
-                .disabled(buttonConfig.isDisabled)
                 .padding(.top, 8)
             }
             
             Spacer().frame(height: 12)
         }
-        .frame(maxWidth: .infinity)
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+        .frame(maxWidth: .infinity).background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
@@ -352,20 +294,12 @@ private struct ContactCard: View {
     let user: AppUser
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("CONTACT")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
+            Text("CONTACT").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
             ContactRow(icon: "envelope.fill", label: "Email", value: user.email)
             ContactRow(icon: "phone.fill", label: "Phone", value: user.phone ?? "Not provided")
             ContactRow(icon: "mappin.and.ellipse", label: "Address", value: user.address ?? "Not provided")
-        }
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+        }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
@@ -373,27 +307,10 @@ private struct RateHighlightCard: View {
     let user: AppUser
     var body: some View {
         VStack(spacing: 4) {
-            Text("Hourly Rate")
-                .font(.system(size: 15))
-                .foregroundColor(.white.opacity(0.9))
-            Text(user.hourlyRate ?? 0.0, format: .currency(code: "GBP"))
-                .font(.system(size: 36, weight: .bold))
-                .foregroundColor(.white)
-            Text("per hour")
-                .font(.system(size: 15))
-                .foregroundColor(.white.opacity(0.9))
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity)
-        .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.primaryBlue, Color(red: 0.35, green: 0.34, blue: 0.84)]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .cornerRadius(16)
-        .shadow(color: Color.primaryBlue.opacity(0.4), radius: 8, y: 4)
+            Text("Hourly Rate").font(.system(size: 15)).foregroundColor(.white.opacity(0.9))
+            Text(user.hourlyRate ?? 0.0, format: .currency(code: "GBP")).font(.system(size: 36, weight: .bold)).foregroundColor(.white)
+            Text("per hour").font(.system(size: 15)).foregroundColor(.white.opacity(0.9))
+        }.padding(20).frame(maxWidth: .infinity).background(LinearGradient(gradient: Gradient(colors: [Color.primaryBlue, Color(red: 0.35, green: 0.34, blue: 0.84)]), startPoint: .topLeading, endPoint: .bottomTrailing)).cornerRadius(16).shadow(color: Color.primaryBlue.opacity(0.4), radius: 8, y: 4)
     }
 }
 
@@ -401,53 +318,28 @@ private struct EducationCard: View {
     let education: [EducationEntry]?
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("EDUCATION OR CERTIFICATION")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
+            Text("EDUCATION OR CERTIFICATION").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
             if let education = education, !education.isEmpty {
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(education) { entry in
                         EduRow(title: entry.title, subtitle: entry.subtitle, years: entry.years)
-                        if entry.id != education.last?.id {
-                            Divider().padding(.horizontal, 16)
-                        }
+                        if entry.id != education.last?.id { Divider().padding(.horizontal, 16) }
                     }
-                }
-                .padding(.vertical, 14)
-            } else {
-                Text("No education or certifications added.")
-                    .font(.system(size: 15))
-                    .foregroundColor(.secondary)
-                    .padding(16)
-            }
-        }
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+                }.padding(.vertical, 14)
+            } else { Text("No education or certifications added.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) }
+        }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
 private struct EduRow: View {
-    let title: String
-    let subtitle: String
-    let years: String
+    let title: String; let subtitle: String; let years: String
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundColor(.primary)
-            Text(subtitle)
-                .font(.system(size: 15))
-                .foregroundColor(Color.primaryBlue)
-            Text(years)
-                .font(.system(size: 13))
-                .foregroundColor(.secondary)
-        }
-        .padding(.horizontal, 16)
+            Text(title).font(.system(size: 17, weight: .semibold)).foregroundColor(.primary)
+            Text(subtitle).font(.system(size: 15)).foregroundColor(Color.primaryBlue)
+            Text(years).font(.system(size: 13)).foregroundColor(.secondary)
+        }.padding(.horizontal, 16)
     }
 }
 
@@ -455,30 +347,12 @@ private struct AboutCard: View {
     let aboutText: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("ABOUT")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
+            Text("ABOUT").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
             if let text = aboutText, !text.isEmpty {
-                Text(text)
-                    .font(.system(size: 16))
-                    .foregroundColor(.primary)
-                    .lineSpacing(4)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 16)
-            } else {
-                Text("No bio added.")
-                    .font(.system(size: 15))
-                    .foregroundColor(.secondary)
-                    .padding(16)
-            }
-        }
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+                Text(text).font(.system(size: 16)).foregroundColor(.primary).lineSpacing(4).padding(.horizontal, 16).padding(.vertical, 16)
+            } else { Text("No bio added.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) }
+        }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
@@ -486,36 +360,15 @@ private struct ExpertiseCard: View {
     let skills: [String]?
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("EXPERTISE")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
+            Text("EXPERTISE").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
             if let skills = skills, !skills.isEmpty {
                 FlowLayout(alignment: .leading, spacing: 8) {
                     ForEach(skills, id: \.self) { skill in
-                        Text(skill)
-                            .font(.system(size: 14, weight: .medium))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color(.systemGray5))
-                            .cornerRadius(12)
-                            .foregroundColor(.primary)
+                        Text(skill).font(.system(size: 14, weight: .medium)).padding(.horizontal, 12).padding(.vertical, 6).background(Color(.systemGray5)).cornerRadius(12).foregroundColor(.primary)
                     }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 16)
-            } else {
-                Text("No skills added.")
-                    .font(.system(size: 15))
-                    .foregroundColor(.secondary)
-                    .padding(16)
-            }
-        }
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+                }.padding(.horizontal, 16).padding(.vertical, 16)
+            } else { Text("No skills added.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) }
+        }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }

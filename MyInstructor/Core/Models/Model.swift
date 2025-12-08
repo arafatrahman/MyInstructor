@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/Model.swift
-// --- UPDATED: Added 'relatedID' to AppNotification ---
+// --- UPDATED: Added social fields (following, followers, blockedUsers) ---
 
 import Foundation
 import FirebaseFirestore
@@ -28,8 +28,15 @@ struct AppUser: Identifiable, Codable {
     var aboutMe: String?
     var education: [EducationEntry]?
     var expertise: [String]?
+    
+    // Request/Lesson relationships
     var studentIDs: [String]?
     var instructorIDs: [String]?
+    
+    // --- NEW: Social Relationships ---
+    var following: [String]? = []
+    var followers: [String]? = []
+    var blockedUsers: [String]? = []
 
     init(id: String, email: String, name: String? = nil, role: UserRole = .unselected) {
         self.id = id; self.email = email; self.name = name; self.role = role
@@ -139,7 +146,6 @@ struct AppNotification: Identifiable, Codable {
     let type: String
     let timestamp: Date
     var isRead: Bool
-    // --- NEW: ID to link back to the source (Lesson ID, Conversation ID, etc.) ---
     var relatedID: String?
 }
 
@@ -154,7 +160,6 @@ struct PracticeSession: Identifiable, Codable {
     var title: String?
     var notes: String?
     
-    // Helper to convert to hours for display
     var durationHours: Double {
         return duration / 3600.0
     }

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
-// --- UPDATED: Added 'fetchAllRelationships' for robust list handling ---
+// --- UPDATED: Added Follow/Unfollow/Block logic & Notify Followers on Post ---
 
 import Combine
 import Foundation
@@ -38,7 +38,9 @@ class CommunityManager: ObservableObject {
     
     func listenToFeed(filter: String) {
         postsListener?.remove()
+        // Basic query: ordered by timestamp
         let query = postsCollection.order(by: "timestamp", descending: true).limit(to: 50)
+        
         postsListener = query.addSnapshotListener { [weak self] snapshot, error in
             guard let self = self else { return }
             if let error = error { print("Error listening to feed: \(error.localizedDescription)"); return }
@@ -57,8 +59,27 @@ class CommunityManager: ObservableObject {
         return snapshot.documents.compactMap { try? $0.data(as: Post.self) }
     }
     
+    // --- UPDATED: Notify Followers ---
     func createPost(post: Post) async throws {
+        // 1. Create Post
         try postsCollection.addDocument(from: post)
+        
+        // 2. Fetch Author to get followers
+        let authorDoc = try await usersCollection.document(post.authorID).getDocument()
+        guard let author = try? authorDoc.data(as: AppUser.self) else { return }
+        
+        // 3. Notify all followers
+        if let followers = author.followers, !followers.isEmpty {
+            for followerID in followers {
+                NotificationManager.shared.sendNotification(
+                    to: followerID,
+                    title: "New Post",
+                    message: "\(author.name ?? "A user") you follow just posted.",
+                    type: "post",
+                    relatedID: nil // Or link to post ID if available
+                )
+            }
+        }
     }
     
     func deletePost(postID: String) async throws {
@@ -92,6 +113,55 @@ class CommunityManager: ObservableObject {
             let reactionName = reactionType == "thumbsup" ? "liked" : (reactionType == "heart" ? "loved" : "reacted to")
             NotificationManager.shared.sendNotification(to: post.authorID, title: "New Reaction", message: "\(user.name ?? "Someone") \(reactionName) your post.", type: "reaction")
         }
+    }
+    
+    // MARK: - Follow / Unfollow / Block (Generic)
+    
+    func followUser(currentUserID: String, targetUserID: String, currentUserName: String) async throws {
+        // 1. Add target to current user's 'following'
+        try await usersCollection.document(currentUserID).updateData([
+            "following": FieldValue.arrayUnion([targetUserID])
+        ])
+        
+        // 2. Add current user to target's 'followers'
+        try await usersCollection.document(targetUserID).updateData([
+            "followers": FieldValue.arrayUnion([currentUserID])
+        ])
+        
+        // 3. Notify Target
+        NotificationManager.shared.sendNotification(
+            to: targetUserID,
+            title: "New Follower",
+            message: "\(currentUserName) started following you.",
+            type: "follow",
+            relatedID: currentUserID
+        )
+    }
+    
+    func unfollowUser(currentUserID: String, targetUserID: String) async throws {
+        try await usersCollection.document(currentUserID).updateData([
+            "following": FieldValue.arrayRemove([targetUserID])
+        ])
+        try await usersCollection.document(targetUserID).updateData([
+            "followers": FieldValue.arrayRemove([currentUserID])
+        ])
+    }
+    
+    func blockUserGeneric(blockerID: String, targetID: String) async throws {
+        // 1. Add to blocked list
+        try await usersCollection.document(blockerID).updateData([
+            "blockedUsers": FieldValue.arrayUnion([targetID])
+        ])
+        
+        // 2. Force unfollow both ways
+        try await unfollowUser(currentUserID: blockerID, targetUserID: targetID)
+        try await unfollowUser(currentUserID: targetID, targetUserID: blockerID)
+    }
+    
+    func unblockUserGeneric(blockerID: String, targetID: String) async throws {
+        try await usersCollection.document(blockerID).updateData([
+            "blockedUsers": FieldValue.arrayRemove([targetID])
+        ])
     }
     
     // MARK: - Comments
@@ -154,7 +224,6 @@ class CommunityManager: ObservableObject {
         return try? snapshot.documents.first?.data(as: StudentRequest.self).status
     }
     
-    // Helper to get statuses map
     func fetchStudentStatuses(instructorID: String) async throws -> [String: RequestStatus] {
         let query = requestsCollection.whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
@@ -167,7 +236,6 @@ class CommunityManager: ObservableObject {
         return map
     }
     
-    // --- NEW: Fetch ALL relationships (Single Source of Truth) ---
     func fetchAllRelationships(for instructorID: String) async throws -> [StudentRequest] {
         let query = requestsCollection.whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
@@ -233,12 +301,14 @@ class CommunityManager: ObservableObject {
     func blockStudent(studentID: String, instructorID: String) async throws {
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
+        
         if let doc = snapshot.documents.first {
             try await doc.reference.updateData(["status": RequestStatus.blocked.rawValue, "blockedBy": "instructor"])
         } else {
             let newRequest = StudentRequest(studentID: studentID, studentName: "Blocked User", studentPhotoURL: nil, instructorID: instructorID, status: .blocked, timestamp: Date(), blockedBy: "instructor")
             try requestsCollection.addDocument(from: newRequest)
         }
+        
         try await usersCollection.document(instructorID).updateData(["studentIDs": FieldValue.arrayRemove([studentID])])
         try await usersCollection.document(studentID).updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])])
     }
@@ -246,12 +316,14 @@ class CommunityManager: ObservableObject {
     func unblockStudent(studentID: String, instructorID: String) async throws {
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
+        
         for doc in snapshot.documents {
             try await doc.reference.updateData([
                 "status": RequestStatus.approved.rawValue,
                 "blockedBy": FieldValue.delete()
             ])
         }
+        
         try await usersCollection.document(instructorID).updateData(["studentIDs": FieldValue.arrayUnion([studentID])])
         try await usersCollection.document(studentID).updateData(["instructorIDs": FieldValue.arrayUnion([instructorID])])
     }
@@ -260,6 +332,7 @@ class CommunityManager: ObservableObject {
         guard let studentID = student.id else { return }
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
+        
         if let doc = snapshot.documents.first {
             try await doc.reference.updateData(["status": RequestStatus.blocked.rawValue, "blockedBy": "student"])
         } else {
@@ -315,7 +388,13 @@ class CommunityManager: ObservableObject {
         } else {
             let recordRef = usersCollection.document(instructorID).collection("student_records").document(studentID)
             try await recordRef.setData(["progress": newProgress], merge: true)
-            NotificationManager.shared.sendNotification(to: studentID, title: "Progress Updated", message: "Your mastery level has been updated to \(Int(newProgress * 100))%.", type: "progress")
+            
+            NotificationManager.shared.sendNotification(
+                to: studentID,
+                title: "Progress Updated",
+                message: "Your mastery level has been updated to \(Int(newProgress * 100))%.",
+                type: "progress"
+            )
         }
     }
 
@@ -328,7 +407,13 @@ class CommunityManager: ObservableObject {
         } else {
             let recordRef = usersCollection.document(instructorID).collection("student_records").document(studentID)
             try await recordRef.setData(["notes": FieldValue.arrayUnion([noteData])], merge: true)
-            NotificationManager.shared.sendNotification(to: studentID, title: "New Note from Instructor", message: "You received a new note: \"\(noteContent)\"", type: "note")
+            
+            NotificationManager.shared.sendNotification(
+                to: studentID,
+                title: "New Note from Instructor",
+                message: "You received a new note: \"\(noteContent)\"",
+                type: "note"
+            )
         }
     }
     

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: Removed the private FlowLayout struct at the end ---
+// --- UPDATED: Moved Action Button to Main View Body ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -35,9 +35,16 @@ struct InstructorPublicProfileView: View {
         ScrollView {
             VStack(spacing: 16) {
                 if let user = instructor {
-                    ProfileHeaderCard(user: user)
-                        .padding(.horizontal)
-                        .padding(.top, 16)
+                    // --- UPDATED: Passing logic to Header ---
+                    ProfileHeaderCard(
+                        user: user,
+                        isStudent: authManager.role == .student,
+                        requestState: requestState,
+                        onActionTap: handleRequestButtonTap
+                    )
+                    .padding(.horizontal)
+                    .padding(.top, 16)
+                    
                     ContactCard(user: user)
                         .padding(.horizontal)
                     if user.role == .instructor {
@@ -77,7 +84,7 @@ struct InstructorPublicProfileView: View {
             if authManager.role == .student {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 16) {
-                        // 1. Conditional Message Button
+                        // 1. Conditional Message Button (Only if approved)
                         if requestState == .approved, let instructorAppUser = instructor {
                             NavigationLink(destination: ChatLoadingView(otherUser: instructorAppUser)) {
                                 Image(systemName: "message.circle.fill")
@@ -86,17 +93,7 @@ struct InstructorPublicProfileView: View {
                             }
                         }
                         
-                        // 2. Existing Request Button
-                        if requestState == .idle || requestState == .pending || requestState == .denied || requestState == .blockedByStudent {
-                            Button(action: handleRequestButtonTap) {
-                                Text(buttonText)
-                                    .bold()
-                            }
-                            .disabled(buttonIsDisabled)
-                            .tint(requestState == .pending ? .red : (requestState == .blocked || requestState == .blockedByStudent ? .gray : appBlue))
-                        }
-                        
-                        // 3. Block/Unblock Menu
+                        // 2. Block/Unblock Menu (Moved here, main action is now in body)
                         if requestState != .blocked {
                             Menu {
                                 if requestState == .blockedByStudent {
@@ -130,21 +127,6 @@ struct InstructorPublicProfileView: View {
     }
     
     // MARK: - Button Logic
-    
-    var buttonText: String {
-        switch requestState {
-        case .idle: return "Become a Student"
-        case .pending: return "Cancel Request"
-        case .approved: return "Approved"
-        case .denied: return "Re-apply"
-        case .blocked: return "Blocked by Instructor"
-        case .blockedByStudent: return "Blocked"
-        }
-    }
-    
-    var buttonIsDisabled: Bool {
-        return requestState == .approved || requestState == .blocked || requestState == .blockedByStudent || isLoading
-    }
     
     func handleRequestButtonTap() {
         Task {
@@ -214,7 +196,7 @@ struct InstructorPublicProfileView: View {
             self.alertMessage = "Your request has been successfully sent!"
             self.showSuccessAlert = true
             await loadData()
-        } catch let error as CommunityManager.RequestError { // <-- Use nested type
+        } catch let error as CommunityManager.RequestError {
             self.alertMessage = error.localizedDescription
             if error == .alreadyPending { self.requestState = .pending }
             if error == .alreadyApproved { self.requestState = .approved }
@@ -250,7 +232,7 @@ struct InstructorPublicProfileView: View {
             try await communityManager.blockInstructor(instructorID: instructorID, student: student)
             self.alertMessage = "You have blocked this instructor. They cannot be messaged and will be removed from your lists."
             self.showSuccessAlert = true
-            await loadData() // Refresh the state
+            await loadData()
         } catch {
             self.alertMessage = error.localizedDescription
         }
@@ -266,7 +248,7 @@ struct InstructorPublicProfileView: View {
             try await communityManager.unblockInstructor(instructorID: instructorID, studentID: studentID)
             self.alertMessage = "You have unblocked this instructor. You can now send them a new request."
             self.showSuccessAlert = true
-            await loadData() // Refresh the state
+            await loadData()
         } catch {
             self.alertMessage = error.localizedDescription
         }
@@ -274,8 +256,14 @@ struct InstructorPublicProfileView: View {
     }
 }
 
+// MARK: - Subviews
+
 private struct ProfileHeaderCard: View {
     let user: AppUser
+    let isStudent: Bool
+    let requestState: RequestButtonState
+    let onActionTap: () -> Void
+    
     private var profileImageURL: URL? {
         guard let urlString = user.photoURL, !urlString.isEmpty else { return nil }
         return URL(string: urlString)
@@ -286,6 +274,19 @@ private struct ProfileHeaderCard: View {
         }
         return "Location N/A"
     }
+    
+    // Logic for Button Appearance
+    var buttonConfig: (text: String, color: Color, isDisabled: Bool) {
+        switch requestState {
+        case .idle: return ("Become a Student", .primaryBlue, false)
+        case .pending: return ("Request Pending", .gray, false) // Can tap to cancel
+        case .approved: return ("Approved Student", .accentGreen, true)
+        case .denied: return ("Request Denied (Re-apply)", .orange, false)
+        case .blocked: return ("Blocked by Instructor", .red, true)
+        case .blockedByStudent: return ("You Blocked This User", .gray, true)
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 12) {
             AsyncImage(url: profileImageURL) { phase in
@@ -300,19 +301,40 @@ private struct ProfileHeaderCard: View {
             .clipShape(Circle())
             .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
             .padding(.top, 20)
+            
             Text(user.name ?? "User Name")
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundColor(.primary)
+            
             Text(user.role.rawValue.capitalized)
                 .font(.system(size: 15))
                 .foregroundColor(.secondary)
+            
             HStack(spacing: 4) {
                 Image(systemName: "mappin.and.ellipse")
                 Text(locationString)
             }
             .font(.system(size: 14))
             .foregroundColor(Color.primaryBlue)
-            .padding(.bottom, 12)
+            
+            // --- ACTION BUTTON IN HEADER ---
+            if isStudent {
+                Button(action: onActionTap) {
+                    Text(buttonConfig.text)
+                        .font(.headline).bold()
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 30)
+                        .background(buttonConfig.color)
+                        .foregroundColor(.white)
+                        .cornerRadius(20)
+                        .shadow(color: buttonConfig.color.opacity(0.3), radius: 5, x: 0, y: 3)
+                }
+                .disabled(buttonConfig.isDisabled)
+                .padding(.top, 8)
+            }
+            // -----------------------------
+            
+            Spacer().frame(height: 12)
         }
         .frame(maxWidth: .infinity)
         .background(Color(.systemBackground))
@@ -467,7 +489,6 @@ private struct ExpertiseCard: View {
                 .padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
             if let skills = skills, !skills.isEmpty {
-                // This will now use the central FlowLayout
                 FlowLayout(alignment: .leading, spacing: 8) {
                     ForEach(skills, id: \.self) { skill in
                         Text(skill)
@@ -493,5 +514,3 @@ private struct ExpertiseCard: View {
         .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
-
-// --- *** DELETED THE private struct FlowLayout FROM HERE *** ---

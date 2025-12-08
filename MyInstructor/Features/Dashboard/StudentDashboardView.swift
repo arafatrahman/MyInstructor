@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/StudentDashboardView.swift
-// --- UPDATED: Track Exam now opens ExamListView ---
+// --- UPDATED: Wrapped InstructorDirectoryView in NavigationView so links work in the sheet ---
 
 import SwiftUI
 
@@ -9,7 +9,7 @@ enum StudentDashboardSheet: Identifiable {
     case paymentHistory
     case findInstructor
     case logPractice
-    case trackExam // <---
+    case trackExam
     case contacts
     case notes
     
@@ -112,21 +112,34 @@ struct StudentDashboardView: View {
             .refreshable { await fetchData() }
             .sheet(item: $activeSheet) { item in
                 switch item {
-                case .lessonStats: if let studentID = authManager.user?.id { StudentLessonStatsView(studentID: studentID) }
-                case .myInstructors: MyInstructorsView()
-                case .paymentHistory: StudentPaymentHistoryView()
-                case .findInstructor: InstructorDirectoryView()
-                case .logPractice: StudentLogPracticeView(onSave: { Task { await fetchData() } })
-                
-                // --- Updated Case ---
+                case .lessonStats:
+                    if let studentID = authManager.user?.id { StudentLessonStatsView(studentID: studentID) }
+                case .myInstructors:
+                    MyInstructorsView()
+                case .paymentHistory:
+                    StudentPaymentHistoryView()
+                case .findInstructor:
+                    // --- FIX: Wrapped in NavigationView to allow pushing to Profile ---
+                    NavigationView {
+                        InstructorDirectoryView()
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbar {
+                                ToolbarItem(placement: .navigationBarLeading) {
+                                    // Helper close button since it's a modal now
+                                    CloseSheetButton()
+                                }
+                            }
+                    }
+                case .logPractice:
+                    StudentLogPracticeView(onSave: { Task { await fetchData() } })
                 case .trackExam:
-                    // Using ExamListView instead of direct form
                     if let id = authManager.user?.id {
                         ExamListView(studentID: id)
                     }
-                    
-                case .contacts: ContactsView()
-                case .notes: NotesListView()
+                case .contacts:
+                    ContactsView()
+                case .notes:
+                    NotesListView()
                 }
             }
         }
@@ -145,6 +158,14 @@ struct StudentDashboardView: View {
             if let lesson = self.upcomingLesson { notificationManager.scheduleLessonReminders(lesson: lesson) }
         } catch { print("Failed: \(error)") }
         isLoading = false
+    }
+}
+
+// Helper Button to close sheets
+struct CloseSheetButton: View {
+    @Environment(\.dismiss) var dismiss
+    var body: some View {
+        Button("Close") { dismiss() }
     }
 }
 

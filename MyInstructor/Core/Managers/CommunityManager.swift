@@ -1,3 +1,5 @@
+// File: MyInstructor/Core/Managers/CommunityManager.swift
+
 import Combine
 import Foundation
 import FirebaseFirestore
@@ -33,22 +35,13 @@ class CommunityManager: ObservableObject {
 
     // MARK: - Community Posts (Real-time)
     
-    /// Starts a real-time listener for community posts.
     func listenToFeed(filter: String) {
-        postsListener?.remove() // Clean up old listener
-        
-        // Basic query: ordered by timestamp
-        // (Filter logic can be expanded here if needed)
+        postsListener?.remove()
         let query = postsCollection.order(by: "timestamp", descending: true).limit(to: 50)
-        
         postsListener = query.addSnapshotListener { [weak self] snapshot, error in
             guard let self = self else { return }
-            if let error = error {
-                print("Error listening to feed: \(error.localizedDescription)")
-                return
-            }
+            if let error = error { print("Error listening to feed: \(error.localizedDescription)"); return }
             guard let documents = snapshot?.documents else { return }
-            
             self.posts = documents.compactMap { try? $0.data(as: Post.self) }
         }
     }
@@ -58,7 +51,6 @@ class CommunityManager: ObservableObject {
         postsListener = nil
     }
     
-    // Kept for compatibility if needed, but UI should prefer listenToFeed
     func fetchPosts(filter: String) async throws -> [Post] {
         let snapshot = try await postsCollection.order(by: "timestamp", descending: true).limit(to: 20).getDocuments()
         return snapshot.documents.compactMap { try? $0.data(as: Post.self) }
@@ -73,14 +65,10 @@ class CommunityManager: ObservableObject {
     }
 
     func updatePostDetails(postID: String, content: String?, location: String?, visibility: PostVisibility, newMediaURLs: [String]?) async throws {
-        var data: [String: Any] = [
-            "visibility": visibility.rawValue,
-            "isEdited": true
-        ]
+        var data: [String: Any] = ["visibility": visibility.rawValue, "isEdited": true]
         if let content = content { data["content"] = content }
         if let location = location { data["location"] = location }
         if let urls = newMediaURLs { data["mediaURLs"] = urls }
-        
         try await postsCollection.document(postID).updateData(data)
     }
     
@@ -94,41 +82,23 @@ class CommunityManager: ObservableObject {
     }
     
     func addReaction(postID: String, user: AppUser, reactionType: String) async throws {
-        // 1. Increment Counter
         try await postsCollection.document(postID).updateData(["reactionsCount.\(reactionType)": FieldValue.increment(1.0)])
-        
-        // 2. Notify Author
         let doc = try await postsCollection.document(postID).getDocument()
         if let post = try? doc.data(as: Post.self), post.authorID != user.id {
             let reactionName = reactionType == "thumbsup" ? "liked" : (reactionType == "heart" ? "loved" : "reacted to")
-            
-            NotificationManager.shared.sendNotification(
-                to: post.authorID,
-                title: "New Reaction",
-                message: "\(user.name ?? "Someone") \(reactionName) your post.",
-                type: "reaction"
-            )
+            NotificationManager.shared.sendNotification(to: post.authorID, title: "New Reaction", message: "\(user.name ?? "Someone") \(reactionName) your post.", type: "reaction")
         }
     }
     
-    // MARK: - Comments (Real-time)
-    
-    /// Starts a real-time listener for comments on a specific post.
+    // MARK: - Comments
+
     func listenToComments(for postID: String) {
         commentsListener?.remove()
-        
-        let query = postsCollection.document(postID)
-            .collection("comments")
-            .order(by: "timestamp", descending: false)
-        
+        let query = postsCollection.document(postID).collection("comments").order(by: "timestamp", descending: false)
         commentsListener = query.addSnapshotListener { [weak self] snapshot, error in
             guard let self = self else { return }
-            if let error = error {
-                print("Error listening to comments: \(error.localizedDescription)")
-                return
-            }
+            if let error = error { print("Error listening to comments: \(error.localizedDescription)"); return }
             guard let documents = snapshot?.documents else { return }
-            
             self.comments = documents.compactMap { try? $0.data(as: Comment.self) }
         }
     }
@@ -136,7 +106,7 @@ class CommunityManager: ObservableObject {
     func stopListeningToComments() {
         commentsListener?.remove()
         commentsListener = nil
-        comments = [] // Clear data
+        comments = []
     }
     
     func fetchComments(for postID: String) async throws -> [Comment] {
@@ -145,35 +115,21 @@ class CommunityManager: ObservableObject {
     }
     
     func addComment(postID: String, authorID: String, authorName: String, authorRole: UserRole, authorPhotoURL: String?, content: String, parentCommentID: String?) async throws {
-        // 1. Add Comment
         let newComment = Comment(postID: postID, authorID: authorID, authorName: authorName, authorPhotoURL: authorPhotoURL, authorRole: authorRole, timestamp: Date(), content: content, parentCommentID: parentCommentID)
         try postsCollection.document(postID).collection("comments").addDocument(from: newComment)
         try await postsCollection.document(postID).updateData(["commentsCount": FieldValue.increment(1.0)])
         
-        // 2. Notify Relevant Users
         let postDoc = try await postsCollection.document(postID).getDocument()
         guard let post = try? postDoc.data(as: Post.self) else { return }
         
         if let parentID = parentCommentID {
-            // Reply -> Notify parent author
             let parentDoc = try await postsCollection.document(postID).collection("comments").document(parentID).getDocument()
             if let parentComment = try? parentDoc.data(as: Comment.self), parentComment.authorID != authorID {
-                NotificationManager.shared.sendNotification(
-                    to: parentComment.authorID,
-                    title: "New Reply",
-                    message: "\(authorName) replied to your comment.",
-                    type: "reply"
-                )
+                NotificationManager.shared.sendNotification(to: parentComment.authorID, title: "New Reply", message: "\(authorName) replied to your comment.", type: "reply")
             }
         } else {
-            // Comment -> Notify post author
             if post.authorID != authorID {
-                NotificationManager.shared.sendNotification(
-                    to: post.authorID,
-                    title: "New Comment",
-                    message: "\(authorName) commented on your post.",
-                    type: "comment"
-                )
+                NotificationManager.shared.sendNotification(to: post.authorID, title: "New Comment", message: "\(authorName) commented on your post.", type: "comment")
             }
         }
     }
@@ -189,11 +145,15 @@ class CommunityManager: ObservableObject {
     
     // MARK: - Student Requests
     
+    // --- NEW: Helper to fetch a specific request ---
+    func fetchRequest(studentID: String, instructorID: String) async throws -> StudentRequest? {
+        let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
+        let snapshot = try await query.getDocuments()
+        return try? snapshot.documents.first?.data(as: StudentRequest.self)
+    }
+    
     func sendRequest(from student: AppUser, to instructorID: String) async throws {
-        let query = requestsCollection
-            .whereField("studentID", isEqualTo: student.id!)
-            .whereField("instructorID", isEqualTo: instructorID)
-        
+        let query = requestsCollection.whereField("studentID", isEqualTo: student.id!).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
         if let existing = snapshot.documents.first {
             let status = try? existing.data(as: StudentRequest.self).status
@@ -201,7 +161,6 @@ class CommunityManager: ObservableObject {
             if status == .approved { throw RequestError.alreadyApproved }
             if status == .blocked { throw RequestError.blocked }
         }
-
         let newRequest = StudentRequest(studentID: student.id!, studentName: student.name ?? "", studentPhotoURL: student.photoURL, instructorID: instructorID, status: .pending, timestamp: Date(), blockedBy: nil)
         try requestsCollection.addDocument(from: newRequest)
     }
@@ -236,49 +195,52 @@ class CommunityManager: ObservableObject {
     func removeStudent(studentID: String, instructorID: String) async throws {
         try await usersCollection.document(instructorID).updateData(["studentIDs": FieldValue.arrayRemove([studentID])])
         try await usersCollection.document(studentID).updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])])
-        
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
-        for doc in snapshot.documents {
-            try await doc.reference.delete()
-        }
+        for doc in snapshot.documents { try await doc.reference.delete() }
     }
     
     func blockStudent(studentID: String, instructorID: String) async throws {
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
-        
         if let doc = snapshot.documents.first {
             try await doc.reference.updateData(["status": RequestStatus.blocked.rawValue, "blockedBy": "instructor"])
         } else {
             let newRequest = StudentRequest(studentID: studentID, studentName: "Blocked User", studentPhotoURL: nil, instructorID: instructorID, status: .blocked, timestamp: Date(), blockedBy: "instructor")
             try requestsCollection.addDocument(from: newRequest)
         }
-        
         try await usersCollection.document(instructorID).updateData(["studentIDs": FieldValue.arrayRemove([studentID])])
         try await usersCollection.document(studentID).updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])])
     }
     
+    // --- UPDATED: Unblock now RESTORES active status instead of just deleting ---
     func unblockStudent(studentID: String, instructorID: String) async throws {
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
+        
+        // 1. Update Request Status to Approved
         for doc in snapshot.documents {
-            try await doc.reference.delete()
+            try await doc.reference.updateData([
+                "status": RequestStatus.approved.rawValue,
+                "blockedBy": FieldValue.delete()
+            ])
         }
+        
+        // 2. Restore Connection in Users Collection
+        try await usersCollection.document(instructorID).updateData(["studentIDs": FieldValue.arrayUnion([studentID])])
+        try await usersCollection.document(studentID).updateData(["instructorIDs": FieldValue.arrayUnion([instructorID])])
     }
     
     func blockInstructor(instructorID: String, student: AppUser) async throws {
         guard let studentID = student.id else { return }
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
-        
         if let doc = snapshot.documents.first {
             try await doc.reference.updateData(["status": RequestStatus.blocked.rawValue, "blockedBy": "student"])
         } else {
              let newRequest = StudentRequest(studentID: studentID, studentName: student.name ?? "", studentPhotoURL: student.photoURL, instructorID: instructorID, status: .blocked, timestamp: Date(), blockedBy: "student")
              try requestsCollection.addDocument(from: newRequest)
         }
-        
         try await usersCollection.document(instructorID).updateData(["studentIDs": FieldValue.arrayRemove([studentID])])
         try await usersCollection.document(studentID).updateData(["instructorIDs": FieldValue.arrayRemove([instructorID])])
     }
@@ -286,9 +248,7 @@ class CommunityManager: ObservableObject {
     func unblockInstructor(instructorID: String, studentID: String) async throws {
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
         let snapshot = try await query.getDocuments()
-        for doc in snapshot.documents {
-            try await doc.reference.delete()
-        }
+        for doc in snapshot.documents { try await doc.reference.delete() }
     }
     
     func removeInstructor(instructorID: String, studentID: String) async throws {
@@ -312,7 +272,9 @@ class CommunityManager: ObservableObject {
     
     func updateOfflineStudent(_ student: OfflineStudent) async throws {
         guard let id = student.id else { return }
-        try offlineStudentsCollection.document(id).setData(from: student)
+        var studentToSave = student
+        studentToSave.id = nil
+        try offlineStudentsCollection.document(id).setData(from: studentToSave)
     }
 
     func deleteOfflineStudent(studentID: String) async throws {
@@ -327,57 +289,31 @@ class CommunityManager: ObservableObject {
         } else {
             let recordRef = usersCollection.document(instructorID).collection("student_records").document(studentID)
             try await recordRef.setData(["progress": newProgress], merge: true)
-            
-            NotificationManager.shared.sendNotification(
-                to: studentID,
-                title: "Progress Updated",
-                message: "Your mastery level has been updated to \(Int(newProgress * 100))%.",
-                type: "progress"
-            )
+            NotificationManager.shared.sendNotification(to: studentID, title: "Progress Updated", message: "Your mastery level has been updated to \(Int(newProgress * 100))%.", type: "progress")
         }
     }
 
     func addStudentNote(instructorID: String, studentID: String, noteContent: String, isOffline: Bool) async throws {
         let newNote = StudentNote(content: noteContent, timestamp: Date())
         guard let noteData = try? Firestore.Encoder().encode(newNote) else { return }
-
         if isOffline {
             try await offlineStudentsCollection.document(studentID).updateData(["notes": FieldValue.arrayUnion([noteData])])
         } else {
             let recordRef = usersCollection.document(instructorID).collection("student_records").document(studentID)
             try await recordRef.setData(["notes": FieldValue.arrayUnion([noteData])], merge: true)
-            
-            NotificationManager.shared.sendNotification(
-                to: studentID,
-                title: "New Note from Instructor",
-                message: "You received a new note: \"\(noteContent)\"",
-                type: "note"
-            )
+            NotificationManager.shared.sendNotification(to: studentID, title: "New Note from Instructor", message: "You received a new note: \"\(noteContent)\"", type: "note")
         }
     }
     
     func deleteStudentNote(instructorID: String, studentID: String, note: StudentNote, isOffline: Bool) async throws {
         let ref: DocumentReference
-        if isOffline {
-            ref = offlineStudentsCollection.document(studentID)
-        } else {
-            ref = usersCollection.document(instructorID).collection("student_records").document(studentID)
-        }
-        
+        if isOffline { ref = offlineStudentsCollection.document(studentID) }
+        else { ref = usersCollection.document(instructorID).collection("student_records").document(studentID) }
         let doc = try await ref.getDocument()
         if doc.exists {
             var notesToUpdate: [StudentNote] = []
-            
-            if isOffline {
-                if let student = try? doc.data(as: OfflineStudent.self), let notes = student.notes {
-                    notesToUpdate = notes
-                }
-            } else {
-                if let record = try? doc.data(as: StudentRecord.self), let notes = record.notes {
-                    notesToUpdate = notes
-                }
-            }
-            
+            if isOffline { if let student = try? doc.data(as: OfflineStudent.self), let notes = student.notes { notesToUpdate = notes } }
+            else { if let record = try? doc.data(as: StudentRecord.self), let notes = record.notes { notesToUpdate = notes } }
             let filteredNotes = notesToUpdate.filter { $0.id != note.id }
             let encodedNotes = try filteredNotes.map { try Firestore.Encoder().encode($0) }
             try await ref.updateData(["notes": encodedNotes])
@@ -386,30 +322,16 @@ class CommunityManager: ObservableObject {
     
     func updateStudentNote(instructorID: String, studentID: String, oldNote: StudentNote, newContent: String, isOffline: Bool) async throws {
         let ref: DocumentReference
-        if isOffline {
-            ref = offlineStudentsCollection.document(studentID)
-        } else {
-            ref = usersCollection.document(instructorID).collection("student_records").document(studentID)
-        }
-        
+        if isOffline { ref = offlineStudentsCollection.document(studentID) }
+        else { ref = usersCollection.document(instructorID).collection("student_records").document(studentID) }
         let doc = try await ref.getDocument()
         if doc.exists {
             var notesToUpdate: [StudentNote] = []
-            
-            if isOffline {
-                if let student = try? doc.data(as: OfflineStudent.self), let notes = student.notes {
-                    notesToUpdate = notes
-                }
-            } else {
-                if let record = try? doc.data(as: StudentRecord.self), let notes = record.notes {
-                    notesToUpdate = notes
-                }
-            }
-            
+            if isOffline { if let student = try? doc.data(as: OfflineStudent.self), let notes = student.notes { notesToUpdate = notes } }
+            else { if let record = try? doc.data(as: StudentRecord.self), let notes = record.notes { notesToUpdate = notes } }
             if let index = notesToUpdate.firstIndex(where: { $0.id == oldNote.id }) {
                 let updatedNote = StudentNote(id: oldNote.id, content: newContent, timestamp: oldNote.timestamp)
                 notesToUpdate[index] = updatedNote
-                
                 let encodedNotes = try notesToUpdate.map { try Firestore.Encoder().encode($0) }
                 try await ref.updateData(["notes": encodedNotes])
             }

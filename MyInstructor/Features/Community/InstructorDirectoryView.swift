@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorDirectoryView.swift
-// --- UPDATED: Separated Search Bar and Filter Button to fix layout issues ---
+// --- UPDATED: Robust Navigation handling for List and Map ---
 
 import SwiftUI
 import Combine
@@ -14,6 +14,10 @@ struct InstructorDirectoryView: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var isShowingMapView = false
+    
+    // --- Programmatic Navigation ---
+    @State private var selectedInstructorID: String? = nil
+    @State private var navigateToProfile = false
     
     // Computed property for filtering
     var filteredInstructors: [Student] {
@@ -41,7 +45,6 @@ struct InstructorDirectoryView: View {
         VStack(spacing: 0) {
             
             // MARK: - Safe Area Spacer
-            // Ensures content doesn't sit under the notch/dynamic island
             Color.clear
                 .frame(height: 0)
                 .background(Color(.systemBackground))
@@ -63,14 +66,14 @@ struct InstructorDirectoryView: View {
                     .background(Color(.secondarySystemBackground))
                     .cornerRadius(12)
                     
-                    // 2. Filter Button (Separated)
+                    // 2. Filter Button
                     Button {
                         // TODO: Open filter options
                     } label: {
                         Image(systemName: "slider.horizontal.3")
                             .font(.headline)
                             .foregroundColor(.primaryBlue)
-                            .frame(width: 48, height: 48) // Fixed touch target
+                            .frame(width: 48, height: 48)
                             .background(Color(.secondarySystemBackground))
                             .cornerRadius(12)
                     }
@@ -100,26 +103,29 @@ struct InstructorDirectoryView: View {
                 // Map View
                 Map(coordinateRegion: $mapRegion, annotationItems: allInstructors.filter { $0.coordinate != nil }) { instructor in
                     MapAnnotation(coordinate: instructor.coordinate!) {
-                        NavigationLink(destination: InstructorPublicProfileView(instructorID: instructor.id ?? "")) {
-                            VStack(spacing: 0) {
-                                AsyncImage(url: URL(string: instructor.photoURL ?? "")) { phase in
-                                    if let image = phase.image {
-                                        image.resizable().scaledToFill()
-                                    } else {
-                                        Image(systemName: "car.circle.fill").resizable().foregroundColor(.primaryBlue)
-                                    }
+                        // Map Pin
+                        VStack(spacing: 0) {
+                            AsyncImage(url: URL(string: instructor.photoURL ?? "")) { phase in
+                                if let image = phase.image {
+                                    image.resizable().scaledToFill()
+                                } else {
+                                    Image(systemName: "car.circle.fill").resizable().foregroundColor(.primaryBlue)
                                 }
-                                .frame(width: 40, height: 40)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                                .shadow(radius: 3)
-                                
-                                Image(systemName: "arrowtriangle.down.fill")
-                                    .font(.caption2)
-                                    .foregroundColor(.white)
-                                    .offset(y: -4)
-                                    .shadow(radius: 2)
                             }
+                            .frame(width: 40, height: 40)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                            .shadow(radius: 3)
+                            
+                            Image(systemName: "arrowtriangle.down.fill")
+                                .font(.caption2)
+                                .foregroundColor(.white)
+                                .offset(y: -4)
+                                .shadow(radius: 2)
+                        }
+                        .onTapGesture {
+                            self.selectedInstructorID = instructor.id
+                            self.navigateToProfile = true
                         }
                     }
                 }
@@ -135,8 +141,10 @@ struct InstructorDirectoryView: View {
                     ScrollView {
                         LazyVStack(spacing: 16) {
                             ForEach(filteredInstructors) { instructor in
-                                NavigationLink {
-                                    InstructorPublicProfileView(instructorID: instructor.id ?? "")
+                                // List Item
+                                Button {
+                                    self.selectedInstructorID = instructor.id
+                                    self.navigateToProfile = true
                                 } label: {
                                     InstructorDirectoryCard(instructor: instructor)
                                 }
@@ -152,6 +160,18 @@ struct InstructorDirectoryView: View {
         }
         .navigationTitle("Find Instructors")
         .navigationBarTitleDisplayMode(.inline)
+        // Attach the navigation link to the background so it works from anywhere in the view
+        .background(
+            NavigationLink(
+                isActive: $navigateToProfile,
+                destination: {
+                    if let id = selectedInstructorID {
+                        InstructorPublicProfileView(instructorID: id)
+                    }
+                },
+                label: { EmptyView() }
+            )
+        )
         .task { await loadData() }
     }
     

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- FIXED: Solved Identifiable error using a wrapper struct and ensured PostCard is in scope ---
+// --- UPDATED: Added Search Button in Header & Top Padding to Algorithm Tags ---
 
 import SwiftUI
 import PhotosUI
@@ -15,15 +15,14 @@ struct CommunityFeedView: View {
     @EnvironmentObject var authManager: AuthManager
     
     @State private var searchText = ""
+    @State private var isSearchVisible = false // Controls visibility of the search bar
     @State private var selectedAlgorithm: FeedAlgorithm = .latest
     
     @State private var isCreatePostPresented = false
     @State private var feedPhotoItems: [PhotosPickerItem] = []
     @State private var isProcessingPhotos = false
     
-    // Updated state to use the wrapper struct
     @State private var loadedDataForSheet: PhotoSelection? = nil
-    
     @State private var isInitialLoading = true
     
     var filteredPosts: [Post] {
@@ -31,7 +30,10 @@ struct CommunityFeedView: View {
         if searchText.isEmpty {
             return sourcePosts
         } else {
-            return sourcePosts.filter { $0.content?.localizedCaseInsensitiveContains(searchText) ?? false || $0.authorName.localizedCaseInsensitiveContains(searchText) }
+            return sourcePosts.filter {
+                ($0.content?.localizedCaseInsensitiveContains(searchText) ?? false) ||
+                $0.authorName.localizedCaseInsensitiveContains(searchText)
+            }
         }
     }
     
@@ -46,10 +48,44 @@ struct CommunityFeedView: View {
                         .foregroundColor(.primary)
                     
                     Spacer()
+                    
+                    // --- SEARCH BUTTON (Same Row) ---
+                    Button {
+                        withAnimation {
+                            isSearchVisible.toggle()
+                            if !isSearchVisible { searchText = "" } // Clear search when closing
+                        }
+                    } label: {
+                        Image(systemName: isSearchVisible ? "xmark.circle.fill" : "magnifyingglass")
+                            .font(.title2)
+                            .foregroundColor(.primaryBlue)
+                            .padding(8)
+                            .background(Color.gray.opacity(0.1))
+                            .clipShape(Circle())
+                    }
                 }
                 .padding(.horizontal)
                 .padding(.top, 10)
                 .padding(.bottom, 10)
+                
+                // --- SEARCH BAR (Conditional) ---
+                if isSearchVisible {
+                    HStack {
+                        Image(systemName: "magnifyingglass").foregroundColor(.gray)
+                        TextField("Search posts or users...", text: $searchText)
+                            .textFieldStyle(PlainTextFieldStyle())
+                        if !searchText.isEmpty {
+                            Button(action: { searchText = "" }) {
+                                Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
+                            }
+                        }
+                    }
+                    .padding(10)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 
                 // MARK: - Algorithm Filter Bar
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -71,6 +107,7 @@ struct CommunityFeedView: View {
                     .padding(.horizontal)
                     .padding(.bottom, 10)
                 }
+                .padding(.top, 20) // --- ADDED: 20px Top Padding ---
                 
                 ScrollView {
                     VStack(spacing: 15) {
@@ -78,47 +115,21 @@ struct CommunityFeedView: View {
                         // MARK: - 2. Create Post Bar
                         HStack(spacing: 12) {
                             AsyncImage(url: URL(string: authManager.user?.photoURL ?? "")) { phase in
-                                if let image = phase.image {
-                                    image.resizable().scaledToFill()
-                                } else {
-                                    Image(systemName: "person.circle.fill")
-                                        .resizable()
-                                        .foregroundColor(Color(.systemGray4))
-                                }
+                                if let image = phase.image { image.resizable().scaledToFill() }
+                                else { Image(systemName: "person.circle.fill").resizable().foregroundColor(Color(.systemGray4)) }
                             }
-                            .frame(width: 45, height: 45)
-                            .clipShape(Circle())
+                            .frame(width: 45, height: 45).clipShape(Circle())
                             
-                            Button {
-                                isCreatePostPresented = true
-                            } label: {
-                                Text("What's on your mind?")
-                                    .font(.body)
-                                    .foregroundColor(.gray)
-                                Spacer()
-                            }
-                            .buttonStyle(.plain)
+                            Button { isCreatePostPresented = true } label: {
+                                Text("What's on your mind?").font(.body).foregroundColor(.gray); Spacer()
+                            }.buttonStyle(.plain)
                             
-                            PhotosPicker(
-                                selection: $feedPhotoItems,
-                                maxSelectionCount: 5,
-                                matching: .images
-                            ) {
+                            PhotosPicker(selection: $feedPhotoItems, maxSelectionCount: 5, matching: .images) {
                                 HStack(spacing: 6) {
-                                    if isProcessingPhotos {
-                                        ProgressView().tint(.white)
-                                    } else {
-                                        Image(systemName: "photo.fill")
-                                            .font(.subheadline)
-                                        Text("Photo")
-                                            .font(.subheadline).bold()
-                                    }
+                                    if isProcessingPhotos { ProgressView().tint(.white) }
+                                    else { Image(systemName: "photo.fill").font(.subheadline); Text("Photo").font(.subheadline).bold() }
                                 }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.green)
-                                .foregroundColor(.white)
-                                .clipShape(Capsule())
+                                .padding(.horizontal, 16).padding(.vertical, 8).background(Color.green).foregroundColor(.white).clipShape(Capsule())
                             }
                             .disabled(isProcessingPhotos)
                             .onChange(of: feedPhotoItems) { newItems in
@@ -127,30 +138,23 @@ struct CommunityFeedView: View {
                                     isProcessingPhotos = true
                                     var loadedData: [Data] = []
                                     for item in newItems {
-                                        if let data = try? await item.loadTransferable(type: Data.self) {
-                                            loadedData.append(data)
-                                        }
+                                        if let data = try? await item.loadTransferable(type: Data.self) { loadedData.append(data) }
                                     }
-                                    // Wrap data in struct to satisfy Identifiable
                                     self.loadedDataForSheet = PhotoSelection(images: loadedData)
                                     self.feedPhotoItems = []
                                     isProcessingPhotos = false
                                 }
                             }
                         }
-                        .padding(12)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(35)
-                        .padding(.horizontal)
+                        .padding(12).background(Color(.systemGray6)).cornerRadius(35).padding(.horizontal)
                         
                         // MARK: - 3. Feed List
                         if isInitialLoading && communityManager.posts.isEmpty {
-                            ProgressView("Loading Community...")
-                                .padding(.top, 50)
+                            ProgressView("Loading Community...").padding(.top, 50)
                         } else if communityManager.posts.isEmpty {
                             EmptyStateView(icon: "message.circle", message: "No posts yet. Start a conversation now!")
                         } else if filteredPosts.isEmpty {
-                            EmptyStateView(icon: "magnifyingglass", message: "No posts match your filters.")
+                            EmptyStateView(icon: "magnifyingglass", message: "No posts match your search.")
                         } else {
                             LazyVStack(spacing: 15) {
                                 ForEach(filteredPosts) { post in
@@ -162,8 +166,7 @@ struct CommunityFeedView: View {
                                     }
                                 }
                             }
-                            .padding(.horizontal)
-                            .padding(.bottom, 20)
+                            .padding(.horizontal).padding(.bottom, 20)
                         }
                     }
                 }
@@ -178,18 +181,10 @@ struct CommunityFeedView: View {
                 communityManager.listenToFeed(algorithm: newAlgo)
             }
             .sheet(isPresented: $isCreatePostPresented) {
-                CreatePostView(
-                    postToEdit: nil,
-                    onPostCreated: {
-                        isCreatePostPresented = false
-                    }
-                )
+                CreatePostView(postToEdit: nil, onPostCreated: { isCreatePostPresented = false })
             }
-            // Fix: Use the wrapper struct here
             .sheet(item: $loadedDataForSheet) { selection in
-                CreatePostView(initialPhotoData: selection.images, onPostCreated: {
-                    loadedDataForSheet = nil
-                })
+                CreatePostView(initialPhotoData: selection.images, onPostCreated: { loadedDataForSheet = nil })
             }
         }
         .navigationViewStyle(.stack)

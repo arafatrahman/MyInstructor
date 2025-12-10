@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: Added Follow/Unfollow, generic Block, and dynamic buttons ---
+// --- UPDATED: Added Followers/Following counts and updated ProfileHeaderCard ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -124,9 +124,17 @@ struct InstructorPublicProfileView: View {
                 if isFollowing {
                     try await communityManager.unfollowUser(currentUserID: currentID, targetUserID: instructorID)
                     isFollowing = false
+                    // Update local count for UI responsiveness
+                    if var followers = instructor?.followers {
+                        if let index = followers.firstIndex(of: currentID) { followers.remove(at: index) }
+                        instructor?.followers = followers
+                    }
                 } else {
                     try await communityManager.followUser(currentUserID: currentID, targetUserID: instructorID, currentUserName: name)
                     isFollowing = true
+                    // Update local count for UI responsiveness
+                    if instructor?.followers == nil { instructor?.followers = [] }
+                    instructor?.followers?.append(currentID)
                 }
             } catch { print("Follow error: \(error)") }
         }
@@ -224,6 +232,10 @@ private struct ProfileHeaderCard: View {
         return "Location N/A"
     }
     
+    // --- SOCIAL COUNTS ---
+    private var followersCount: Int { user.followers?.count ?? 0 }
+    private var followingCount: Int { user.following?.count ?? 0 }
+    
     var buttonConfig: (text: String, color: Color, isDisabled: Bool) {
         switch requestState {
         case .idle: return ("Become a Student", .primaryBlue, false)
@@ -253,6 +265,29 @@ private struct ProfileHeaderCard: View {
                 Image(systemName: "mappin.and.ellipse")
                 Text(locationString)
             }.font(.system(size: 14)).foregroundColor(Color.primaryBlue)
+            
+            // --- FOLLOWERS / FOLLOWING DISPLAY ---
+            HStack(spacing: 40) {
+                VStack(spacing: 2) {
+                    Text("\(followersCount)")
+                        .font(.headline).bold()
+                        .foregroundColor(.primary)
+                    Text("Followers")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                VStack(spacing: 2) {
+                    Text("\(followingCount)")
+                        .font(.headline).bold()
+                        .foregroundColor(.primary)
+                    Text("Following")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.vertical, 8)
+            // -------------------------------------
             
             if !isMe {
                 HStack(spacing: 12) {

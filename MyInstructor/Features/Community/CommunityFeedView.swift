@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: Follow button moved to top-right with background. Arrow removed from name. ---
+// --- UPDATED: Added Algorithm Picker & Active User Stats ---
 
 import SwiftUI
 import PhotosUI
@@ -10,7 +10,9 @@ struct CommunityFeedView: View {
     @EnvironmentObject var authManager: AuthManager
     
     @State private var searchText = ""
-    @State private var filterMode: CommunityFilter = .all
+    
+    // --- UPDATED: Algorithm Selection ---
+    @State private var selectedAlgorithm: FeedAlgorithm = .latest
     
     @State private var isCreatePostPresented = false
     @State private var feedPhotoItems: [PhotosPickerItem] = []
@@ -33,9 +35,21 @@ struct CommunityFeedView: View {
                 
                 // MARK: - 1. Main Header
                 HStack {
-                    Text("Community Hub")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(.primary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Community Hub")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(.primary)
+                        
+                        // --- STAT: Active Users ---
+                        if communityManager.activeUserCount > 0 {
+                            HStack(spacing: 4) {
+                                Circle().fill(Color.green).frame(width: 6, height: 6)
+                                Text("\(communityManager.activeUserCount) active now")
+                                    .font(.caption2).bold()
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
                     
                     Spacer()
                     
@@ -51,6 +65,27 @@ struct CommunityFeedView: View {
                 .padding(.horizontal)
                 .padding(.top, 10)
                 .padding(.bottom, 10)
+                
+                // MARK: - Algorithm Filter Bar
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(FeedAlgorithm.allCases) { algo in
+                            Button {
+                                selectedAlgorithm = algo
+                            } label: {
+                                Text(algo.rawValue)
+                                    .font(.subheadline).bold()
+                                    .padding(.vertical, 6)
+                                    .padding(.horizontal, 16)
+                                    .background(selectedAlgorithm == algo ? Color.primaryBlue : Color(.systemGray6))
+                                    .foregroundColor(selectedAlgorithm == algo ? .white : .primary)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 10)
+                }
                 
                 ScrollView {
                     VStack(spacing: 15) {
@@ -132,10 +167,11 @@ struct CommunityFeedView: View {
                         } else if communityManager.posts.isEmpty {
                             EmptyStateView(icon: "message.circle", message: "No posts yet. Start a conversation now!")
                         } else if filteredPosts.isEmpty {
-                            EmptyStateView(icon: "magnifyingglass", message: "No posts match your filters.")
+                            EmptyStateView(icon: "magnifyingglass", message: "No posts match your search.")
                         } else {
                             LazyVStack(spacing: 15) {
                                 ForEach(filteredPosts) { post in
+                                    // Use binding to ensure updates (likes/comments) reflect immediately
                                     if let mainIndex = communityManager.posts.firstIndex(where: { $0.id == post.id }) {
                                         PostCard(
                                             post: $communityManager.posts[mainIndex],
@@ -152,9 +188,13 @@ struct CommunityFeedView: View {
             }
             .navigationBarHidden(true)
             .task {
-                communityManager.listenToFeed(filter: filterMode.rawValue)
+                communityManager.listenToFeed(algorithm: selectedAlgorithm)
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 isInitialLoading = false
+            }
+            // --- UPDATED: Reload when algorithm changes ---
+            .onChange(of: selectedAlgorithm) { newAlgo in
+                communityManager.listenToFeed(algorithm: newAlgo)
             }
             .sheet(isPresented: $isCreatePostPresented) {
                 CreatePostView(
@@ -178,10 +218,6 @@ extension Array: Identifiable where Element == Data {
     public var id: String {
         self.map { String($0.count) }.joined(separator: "-")
     }
-}
-
-enum CommunityFilter: String {
-    case all, instructors, local, trending
 }
 
 // MARK: - PostCard

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
-// --- UPDATED: 'Remove' moves to Completed. 'Reactivate' button added. ---
+// --- UPDATED: Added Followers/Following stats and Follow button to Header ---
 
 import SwiftUI
 
@@ -44,7 +44,7 @@ struct StudentProfileView: View {
         ScrollView {
             VStack(spacing: 16) {
                 
-                // 1. Header Card (Photo, Name, Actions)
+                // 1. Header Card (Photo, Name, Actions, Social Stats)
                 StudentProfileHeaderCard(
                     student: student,
                     studentAsAppUser: studentAsAppUser,
@@ -284,9 +284,20 @@ struct StudentProfileView: View {
 
 // MARK: - 1. Student Header Card
 private struct StudentProfileHeaderCard: View {
+    @EnvironmentObject var communityManager: CommunityManager
+    @EnvironmentObject var authManager: AuthManager
+    
     let student: Student
-    let studentAsAppUser: AppUser?
+    // studentAsAppUser might be updated later, so we use Binding or State if needed, but passing it is fine
+    // We make it mutable in the view via State if we want to toggle follow locally
+    var studentAsAppUser: AppUser?
     let onEdit: () -> Void
+    
+    @State private var isFollowing = false
+    
+    // --- SOCIAL COUNTS ---
+    private var followersCount: Int { studentAsAppUser?.followers?.count ?? 0 }
+    private var followingCount: Int { studentAsAppUser?.following?.count ?? 0 }
     
     private var profileImageURL: URL? {
         guard let urlString = student.photoURL, !urlString.isEmpty else { return nil }
@@ -319,6 +330,45 @@ private struct StudentProfileHeaderCard: View {
             Text(student.name).font(.system(size: 22, weight: .semibold)).foregroundColor(.primary)
             Text(student.isOffline ? "Offline Student" : "Active Student").font(.system(size: 15)).foregroundColor(.secondary).padding(.bottom, 4)
             
+            // --- FOLLOWERS / FOLLOWING DISPLAY (New) ---
+            if !student.isOffline {
+                HStack(spacing: 40) {
+                    VStack(spacing: 2) {
+                        Text("\(followersCount)")
+                            .font(.headline).bold()
+                            .foregroundColor(.primary)
+                        Text("Followers")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    VStack(spacing: 2) {
+                        Text("\(followingCount)")
+                            .font(.headline).bold()
+                            .foregroundColor(.primary)
+                        Text("Following")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.vertical, 8)
+                
+                // --- FOLLOW BUTTON (New) ---
+                if let myID = authManager.user?.id, let studentID = student.id, myID != studentID {
+                    Button(action: handleFollowToggle) {
+                        Text(isFollowing ? "Unfollow" : "Follow")
+                            .font(.subheadline).bold()
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 24)
+                            .background(isFollowing ? Color.gray.opacity(0.2) : Color.primaryBlue)
+                            .foregroundColor(isFollowing ? .primary : .white)
+                            .cornerRadius(20)
+                    }
+                    .padding(.bottom, 8)
+                }
+            }
+            // -------------------------------------------
+            
             HStack(spacing: 20) {
                 if let phone = student.phone, !phone.isEmpty {
                     Button { if let url = URL(string: "tel:\(phone.filter("0123456789+".contains))") { UIApplication.shared.open(url) } } label: {
@@ -339,6 +389,37 @@ private struct StudentProfileHeaderCard: View {
             }.padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity).background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+        .onAppear {
+            checkIfFollowing()
+        }
+        .onChange(of: studentAsAppUser?.followers) { _, _ in
+            checkIfFollowing()
+        }
+    }
+    
+    private func checkIfFollowing() {
+        guard let myID = authManager.user?.id, let followers = studentAsAppUser?.followers else {
+            isFollowing = false
+            return
+        }
+        isFollowing = followers.contains(myID)
+    }
+    
+    private func handleFollowToggle() {
+        Task {
+            guard let myID = authManager.user?.id, let name = authManager.user?.name, let studentID = student.id else { return }
+            do {
+                if isFollowing {
+                    try await communityManager.unfollowUser(currentUserID: myID, targetUserID: studentID)
+                    isFollowing = false
+                } else {
+                    try await communityManager.followUser(currentUserID: myID, targetUserID: studentID, currentUserName: name)
+                    isFollowing = true
+                }
+            } catch {
+                print("Follow toggle error: \(error)")
+            }
+        }
     }
 }
 

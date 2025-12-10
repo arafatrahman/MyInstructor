@@ -1,10 +1,20 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
-// --- UPDATED: Added Follow/Unfollow/Block logic & Notify Followers on Post ---
+// --- FIXED: Restored missing 'offlineStudentsCollection' and 'conversationsCollection' ---
 
 import Combine
 import Foundation
 import FirebaseFirestore
 import FirebaseStorage
+
+enum FeedAlgorithm: String, CaseIterable, Identifiable {
+    case latest = "Latest"
+    case trending = "Trending"       // Gravity based (Hacker News style)
+    case viral = "Viral"             // High engagement per hour (Hour Success)
+    case influential = "Influential" // According to Followers
+    case regularity = "Regularity"   // Frequent posters
+    
+    var id: String { self.rawValue }
+}
 
 class CommunityManager: ObservableObject {
     private let db = Firestore.firestore()
@@ -12,12 +22,17 @@ class CommunityManager: ObservableObject {
     private var postsCollection: CollectionReference { db.collection("community_posts") }
     private var usersCollection: CollectionReference { db.collection("users") }
     private var requestsCollection: CollectionReference { db.collection("student_requests") }
+    // --- RESTORED PROPERTIES ---
     private var conversationsCollection: CollectionReference { db.collection("conversations") }
     private var offlineStudentsCollection: CollectionReference { db.collection("offline_students") }
     
     // --- LIVE DATA PUBLISHERS ---
     @Published var posts: [Post] = []
     @Published var comments: [Comment] = []
+    @Published var activeUserCount: Int = 0 // "How many active users"
+    
+    // Cache for author data to support "Influential" sort without excessive reads
+    private var authorCache: [String: AppUser] = [:]
     
     // --- LISTENERS ---
     private var postsListener: ListenerRegistration?
@@ -34,20 +49,121 @@ class CommunityManager: ObservableObject {
         }
     }
 
-    // MARK: - Community Posts (Real-time)
+    // MARK: - Community Posts (Real-time & Algorithmic)
     
-    func listenToFeed(filter: String) {
+    func listenToFeed(algorithm: FeedAlgorithm) {
         postsListener?.remove()
-        // Basic query: ordered by timestamp
+        
+        // Base query: Always fetch recent posts first (last 50) as the pool for algorithms
         let query = postsCollection.order(by: "timestamp", descending: true).limit(to: 50)
         
         postsListener = query.addSnapshotListener { [weak self] snapshot, error in
             guard let self = self else { return }
             if let error = error { print("Error listening to feed: \(error.localizedDescription)"); return }
             guard let documents = snapshot?.documents else { return }
-            self.posts = documents.compactMap { try? $0.data(as: Post.self) }
+            
+            let fetchedPosts = documents.compactMap { try? $0.data(as: Post.self) }
+            
+            Task {
+                // 1. Calculate Active Users (Authors in this batch)
+                let uniqueAuthors = Set(fetchedPosts.map { $0.authorID })
+                await MainActor.run { self.activeUserCount = uniqueAuthors.count }
+                
+                // 2. Apply Algorithm
+                let sortedPosts = await self.applyAlgorithm(fetchedPosts, algorithm: algorithm)
+                
+                await MainActor.run {
+                    self.posts = sortedPosts
+                }
+            }
         }
     }
+    
+    // --- ALGORITHM LOGIC ---
+    private func applyAlgorithm(_ posts: [Post], algorithm: FeedAlgorithm) async -> [Post] {
+        switch algorithm {
+        case .latest:
+            return posts.sorted(by: { $0.timestamp > $1.timestamp })
+            
+        case .trending:
+            // Formula: Score = (Likes + Comments*2) / (AgeInHours + 2)^1.5
+            return posts.sorted { p1, p2 in
+                calculateTrendingScore(p1) > calculateTrendingScore(p2)
+            }
+            
+        case .viral:
+            // "Hour Success": Engagement per hour. Favor recent high spikes.
+            return posts.sorted { p1, p2 in
+                calculateViralVelocity(p1) > calculateViralVelocity(p2)
+            }
+            
+        case .influential:
+            // "According to Follower": Sort by author's follower count.
+            // Requires fetching author data if not cached.
+            await fetchMissingAuthors(for: posts)
+            return posts.sorted { p1, p2 in
+                let followers1 = authorCache[p1.authorID]?.followers?.count ?? 0
+                let followers2 = authorCache[p2.authorID]?.followers?.count ?? 0
+                return followers1 > followers2
+            }
+            
+        case .regularity:
+            // "Post Regularity": Sort by authors who appear most frequently in this batch
+            let counts = posts.reduce(into: [String: Int]()) { dict, post in
+                dict[post.authorID, default: 0] += 1
+            }
+            return posts.sorted { p1, p2 in
+                let count1 = counts[p1.authorID] ?? 0
+                let count2 = counts[p2.authorID] ?? 0
+                if count1 == count2 { return p1.timestamp > p2.timestamp } // Tie-break with time
+                return count1 > count2
+            }
+        }
+    }
+    
+    // --- Helper Math for Algorithms ---
+    
+    private func calculateTrendingScore(_ post: Post) -> Double {
+        let likes = Double(post.reactionsCount.values.reduce(0, +))
+        let comments = Double(post.commentsCount)
+        let engagement = likes + (comments * 2.0)
+        
+        let hoursSincePost = abs(Date().timeIntervalSince(post.timestamp)) / 3600.0
+        let gravity = 1.5
+        // Add 2 hours to denominator to prevent division by zero and normalize very new posts
+        return engagement / pow((hoursSincePost + 2.0), gravity)
+    }
+    
+    private func calculateViralVelocity(_ post: Post) -> Double {
+        let engagement = Double(post.reactionsCount.values.reduce(0, +) + post.commentsCount)
+        let hours = max(0.1, abs(Date().timeIntervalSince(post.timestamp)) / 3600.0) // Avoid 0
+        return engagement / hours
+    }
+    
+    private func fetchMissingAuthors(for posts: [Post]) async {
+        let missingIDs = Set(posts.map { $0.authorID }).subtracting(authorCache.keys)
+        guard !missingIDs.isEmpty else { return }
+        
+        // Batch fetch (chunked by 10 for Firestore 'in' query limit)
+        let chunks = stride(from: 0, to: missingIDs.count, by: 10).map {
+            Array(Array(missingIDs)[$0..<min($0 + 10, missingIDs.count)])
+        }
+        
+        for chunk in chunks {
+            do {
+                let snapshot = try await usersCollection.whereField(FieldPath.documentID(), in: chunk).getDocuments()
+                for doc in snapshot.documents {
+                    if let user = try? doc.data(as: AppUser.self) {
+                        authorCache[user.id ?? ""] = user
+                    }
+                }
+            } catch {
+                print("Error fetching authors for algorithm: \(error)")
+            }
+        }
+    }
+    
+    // ----------------------------
     
     func stopListeningToFeed() {
         postsListener?.remove()
@@ -59,16 +175,13 @@ class CommunityManager: ObservableObject {
         return snapshot.documents.compactMap { try? $0.data(as: Post.self) }
     }
     
-    // --- UPDATED: Notify Followers ---
     func createPost(post: Post) async throws {
-        // 1. Create Post
         try postsCollection.addDocument(from: post)
         
-        // 2. Fetch Author to get followers
+        // Notify followers
         let authorDoc = try await usersCollection.document(post.authorID).getDocument()
         guard let author = try? authorDoc.data(as: AppUser.self) else { return }
         
-        // 3. Notify all followers
         if let followers = author.followers, !followers.isEmpty {
             for followerID in followers {
                 NotificationManager.shared.sendNotification(
@@ -76,7 +189,7 @@ class CommunityManager: ObservableObject {
                     title: "New Post",
                     message: "\(author.name ?? "A user") you follow just posted.",
                     type: "post",
-                    relatedID: nil // Or link to post ID if available
+                    relatedID: nil
                 )
             }
         }
@@ -118,17 +231,13 @@ class CommunityManager: ObservableObject {
     // MARK: - Follow / Unfollow / Block (Generic)
     
     func followUser(currentUserID: String, targetUserID: String, currentUserName: String) async throws {
-        // 1. Add target to current user's 'following'
         try await usersCollection.document(currentUserID).updateData([
             "following": FieldValue.arrayUnion([targetUserID])
         ])
-        
-        // 2. Add current user to target's 'followers'
         try await usersCollection.document(targetUserID).updateData([
             "followers": FieldValue.arrayUnion([currentUserID])
         ])
         
-        // 3. Notify Target
         NotificationManager.shared.sendNotification(
             to: targetUserID,
             title: "New Follower",
@@ -148,12 +257,9 @@ class CommunityManager: ObservableObject {
     }
     
     func blockUserGeneric(blockerID: String, targetID: String) async throws {
-        // 1. Add to blocked list
         try await usersCollection.document(blockerID).updateData([
             "blockedUsers": FieldValue.arrayUnion([targetID])
         ])
-        
-        // 2. Force unfollow both ways
         try await unfollowUser(currentUserID: blockerID, targetUserID: targetID)
         try await unfollowUser(currentUserID: targetID, targetUserID: blockerID)
     }

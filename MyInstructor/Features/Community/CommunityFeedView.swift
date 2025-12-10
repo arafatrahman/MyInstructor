@@ -1,23 +1,29 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: Added Algorithm Picker & Active User Stats ---
+// --- FIXED: Solved Identifiable error using a wrapper struct and ensured PostCard is in scope ---
 
 import SwiftUI
 import PhotosUI
 
-// Flow Item 18: Community Feed
+// --- Wrapper to make [Data] Identifiable for the sheet ---
+struct PhotoSelection: Identifiable {
+    let id = UUID()
+    let images: [Data]
+}
+
 struct CommunityFeedView: View {
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var authManager: AuthManager
     
     @State private var searchText = ""
-    
-    // --- UPDATED: Algorithm Selection ---
     @State private var selectedAlgorithm: FeedAlgorithm = .latest
     
     @State private var isCreatePostPresented = false
     @State private var feedPhotoItems: [PhotosPickerItem] = []
     @State private var isProcessingPhotos = false
-    @State private var loadedDataForSheet: [Data]? = nil
+    
+    // Updated state to use the wrapper struct
+    @State private var loadedDataForSheet: PhotoSelection? = nil
+    
     @State private var isInitialLoading = true
     
     var filteredPosts: [Post] {
@@ -35,32 +41,11 @@ struct CommunityFeedView: View {
                 
                 // MARK: - 1. Main Header
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Community Hub")
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundColor(.primary)
-                        
-                        // --- STAT: Active Users ---
-                        if communityManager.activeUserCount > 0 {
-                            HStack(spacing: 4) {
-                                Circle().fill(Color.green).frame(width: 6, height: 6)
-                                Text("\(communityManager.activeUserCount) active now")
-                                    .font(.caption2).bold()
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
+                    Text("Community Hub")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(.primary)
                     
                     Spacer()
-                    
-                    // Directory Icon (Only for Students)
-                    if authManager.role == .student {
-                        NavigationLink(destination: InstructorDirectoryView()) {
-                            Image(systemName: "person.badge.plus.fill")
-                                .font(.title2)
-                                .foregroundColor(.blue)
-                        }
-                    }
                 }
                 .padding(.horizontal)
                 .padding(.top, 10)
@@ -90,9 +75,8 @@ struct CommunityFeedView: View {
                 ScrollView {
                     VStack(spacing: 15) {
                         
-                        // MARK: - 2. Create Post Bar (Pill Shape)
+                        // MARK: - 2. Create Post Bar
                         HStack(spacing: 12) {
-                            // User Avatar
                             AsyncImage(url: URL(string: authManager.user?.photoURL ?? "")) { phase in
                                 if let image = phase.image {
                                     image.resizable().scaledToFill()
@@ -105,7 +89,6 @@ struct CommunityFeedView: View {
                             .frame(width: 45, height: 45)
                             .clipShape(Circle())
                             
-                            // Text Input Trigger
                             Button {
                                 isCreatePostPresented = true
                             } label: {
@@ -116,7 +99,6 @@ struct CommunityFeedView: View {
                             }
                             .buttonStyle(.plain)
                             
-                            // Green Photo Button
                             PhotosPicker(
                                 selection: $feedPhotoItems,
                                 maxSelectionCount: 5,
@@ -149,7 +131,8 @@ struct CommunityFeedView: View {
                                             loadedData.append(data)
                                         }
                                     }
-                                    self.loadedDataForSheet = loadedData
+                                    // Wrap data in struct to satisfy Identifiable
+                                    self.loadedDataForSheet = PhotoSelection(images: loadedData)
                                     self.feedPhotoItems = []
                                     isProcessingPhotos = false
                                 }
@@ -167,11 +150,10 @@ struct CommunityFeedView: View {
                         } else if communityManager.posts.isEmpty {
                             EmptyStateView(icon: "message.circle", message: "No posts yet. Start a conversation now!")
                         } else if filteredPosts.isEmpty {
-                            EmptyStateView(icon: "magnifyingglass", message: "No posts match your search.")
+                            EmptyStateView(icon: "magnifyingglass", message: "No posts match your filters.")
                         } else {
                             LazyVStack(spacing: 15) {
                                 ForEach(filteredPosts) { post in
-                                    // Use binding to ensure updates (likes/comments) reflect immediately
                                     if let mainIndex = communityManager.posts.firstIndex(where: { $0.id == post.id }) {
                                         PostCard(
                                             post: $communityManager.posts[mainIndex],
@@ -192,7 +174,6 @@ struct CommunityFeedView: View {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 isInitialLoading = false
             }
-            // --- UPDATED: Reload when algorithm changes ---
             .onChange(of: selectedAlgorithm) { newAlgo in
                 communityManager.listenToFeed(algorithm: newAlgo)
             }
@@ -204,8 +185,9 @@ struct CommunityFeedView: View {
                     }
                 )
             }
-            .sheet(item: $loadedDataForSheet) { photoData in
-                CreatePostView(initialPhotoData: photoData, onPostCreated: {
+            // Fix: Use the wrapper struct here
+            .sheet(item: $loadedDataForSheet) { selection in
+                CreatePostView(initialPhotoData: selection.images, onPostCreated: {
                     loadedDataForSheet = nil
                 })
             }
@@ -214,13 +196,7 @@ struct CommunityFeedView: View {
     }
 }
 
-extension Array: Identifiable where Element == Data {
-    public var id: String {
-        self.map { String($0.count) }.joined(separator: "-")
-    }
-}
-
-// MARK: - PostCard
+// MARK: - PostCard Component
 struct PostCard: View {
     @Binding var post: Post
     let onDelete: (String) -> Void
@@ -253,13 +229,10 @@ struct PostCard: View {
             Divider()
                 .background(Color(.systemGray5))
             
-            // Footer: Reactions Left | Comments Right
+            // Footer
             HStack {
                 reactionBar
-                
                 Spacer()
-                
-                // Comments Button
                 Button {
                     withAnimation { isCommenting.toggle() }
                     if isCommenting && fetchedComments == nil {
@@ -305,18 +278,15 @@ struct PostCard: View {
             Text("Are you sure you want to delete this post?")
         }
         .task {
-            // Check follow status
             if let followers = authManager.user?.following {
                 isFollowing = followers.contains(post.authorID)
             }
         }
     }
     
-    // MARK: - PostCard Subviews
-    
+    // MARK: - Subviews
     private var headerView: some View {
         HStack(alignment: .center, spacing: 10) {
-            // 1. Avatar
             NavigationLink(destination: InstructorPublicProfileView(instructorID: post.authorID)) {
                 AsyncImage(url: URL(string: post.authorPhotoURL ?? "")) { phase in
                     if let image = phase.image {
@@ -331,7 +301,6 @@ struct PostCard: View {
                 .clipShape(Circle())
             }
             
-            // 2. Info (Name + Time)
             VStack(alignment: .leading, spacing: 2) {
                 NavigationLink(destination: InstructorPublicProfileView(instructorID: post.authorID)) {
                     Text(post.authorName)
@@ -348,7 +317,6 @@ struct PostCard: View {
             
             Spacer()
             
-            // 3. Right Action: Follow Button or Menu
             if isMe {
                 Menu {
                     Button { isShowingEditSheet = true } label: { Label("Edit Post", systemImage: "pencil") }
@@ -362,7 +330,6 @@ struct PostCard: View {
                         .clipShape(Circle())
                 }
             } else {
-                // Follow Button
                 Button(action: handleFollowToggle) {
                     Text(isFollowing ? "Unfollow" : "Follow")
                         .font(.caption).bold()
@@ -460,7 +427,6 @@ struct PostCard: View {
                     Text("No comments yet.").font(.caption).foregroundColor(.gray)
                 }
                 
-                // Comment Input
                 HStack {
                     TextField("Write a comment...", text: $commentText)
                         .font(.caption)
@@ -522,7 +488,7 @@ struct PostCard: View {
     }
 }
 
-// MARK: - ReactionButton (FIXED)
+// MARK: - Supporting Views
 struct ReactionButton: View {
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var authManager: AuthManager
@@ -546,7 +512,6 @@ struct ReactionButton: View {
                 Image(systemName: icon)
                     .foregroundColor(color)
                 
-                // Only show count if > 0
                 if let count = post.reactionsCount[reactionType], count > 0 {
                     Text("\(count)")
                         .font(.caption).bold()
@@ -559,7 +524,6 @@ struct ReactionButton: View {
     }
 }
 
-// MARK: - Date Extension (FIXED)
 extension Date {
     func timeAgoDisplay() -> String {
         let secondsAgo = Int(Date().timeIntervalSince(self))

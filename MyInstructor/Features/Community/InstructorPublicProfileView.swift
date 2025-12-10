@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: Added Followers/Following counts and updated ProfileHeaderCard ---
+// --- UPDATED: Implemented logic to Hide Followers/Email based on settings ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -51,7 +51,9 @@ struct InstructorPublicProfileView: View {
                     .padding(.horizontal)
                     .padding(.top, 16)
                     
-                    ContactCard(user: user).padding(.horizontal)
+                    // Pass isMe to handle Email privacy
+                    ContactCard(user: user, isMe: isMe).padding(.horizontal)
+                    
                     if user.role == .instructor { RateHighlightCard(user: user).padding(.horizontal) }
                     EducationCard(education: user.education).padding(.horizontal)
                     AboutCard(aboutText: user.aboutMe).padding(.horizontal)
@@ -74,14 +76,11 @@ struct InstructorPublicProfileView: View {
             if !isMe {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 16) {
-                        // Chat Button (only if approved student)
                         if requestState == .approved, let instructorAppUser = instructor {
                             NavigationLink(destination: ChatLoadingView(otherUser: instructorAppUser)) {
                                 Image(systemName: "message.circle.fill").font(.title3).foregroundColor(appBlue)
                             }
                         }
-                        
-                        // Menu
                         Menu {
                             Button(role: .destructive) {
                                 Task { await blockUser() }
@@ -124,7 +123,6 @@ struct InstructorPublicProfileView: View {
                 if isFollowing {
                     try await communityManager.unfollowUser(currentUserID: currentID, targetUserID: instructorID)
                     isFollowing = false
-                    // Update local count for UI responsiveness
                     if var followers = instructor?.followers {
                         if let index = followers.firstIndex(of: currentID) { followers.remove(at: index) }
                         instructor?.followers = followers
@@ -132,7 +130,6 @@ struct InstructorPublicProfileView: View {
                 } else {
                     try await communityManager.followUser(currentUserID: currentID, targetUserID: instructorID, currentUserName: name)
                     isFollowing = true
-                    // Update local count for UI responsiveness
                     if instructor?.followers == nil { instructor?.followers = [] }
                     instructor?.followers?.append(currentID)
                 }
@@ -146,10 +143,7 @@ struct InstructorPublicProfileView: View {
             try await communityManager.blockUserGeneric(blockerID: currentID, targetID: instructorID)
             alertMessage = "User blocked."
             showSuccessAlert = true
-            // If they were student/instructor connected, also block that relationship logic
             if authManager.role == .student {
-               // Also call the specific one to update request status
-               // Note: 'instructorID' here is the profile being viewed
                 if let user = authManager.user {
                     try await communityManager.blockInstructor(instructorID: instructorID, student: user)
                 }
@@ -158,22 +152,17 @@ struct InstructorPublicProfileView: View {
         } catch { alertMessage = "Error blocking: \(error.localizedDescription)" }
     }
     
-    // MARK: - Load Data
-    
     func loadData() async {
         isLoading = true
         guard let myID = authManager.user?.id else { return }
-        
         do {
             let doc = try await Firestore.firestore().collection("users").document(instructorID).getDocument()
             self.instructor = try doc.data(as: AppUser.self)
             
-            // Check following status
             if let followers = self.instructor?.followers {
                 self.isFollowing = followers.contains(myID)
             }
             
-            // Check student/instructor relationship
             if authManager.role == .student {
                 let requests = try await communityManager.fetchSentRequests(for: myID)
                 if let existing = requests.first(where: { $0.instructorID == instructorID }) {
@@ -213,8 +202,8 @@ struct InstructorPublicProfileView: View {
 
 private struct ProfileHeaderCard: View {
     let user: AppUser
-    let isStudent: Bool // Current user is student
-    let isInstructor: Bool // Profile owner is instructor
+    let isStudent: Bool
+    let isInstructor: Bool
     let requestState: RequestButtonState
     let isFollowing: Bool
     let isMe: Bool
@@ -232,9 +221,14 @@ private struct ProfileHeaderCard: View {
         return "Location N/A"
     }
     
-    // --- SOCIAL COUNTS ---
     private var followersCount: Int { user.followers?.count ?? 0 }
     private var followingCount: Int { user.following?.count ?? 0 }
+    
+    // --- CHECK: Should stats be visible? ---
+    // Visible if: It's MY profile OR the user hasn't hidden them.
+    private var showStats: Bool {
+        return isMe || !(user.hideFollowers ?? false)
+    }
     
     var buttonConfig: (text: String, color: Color, isDisabled: Bool) {
         switch requestState {
@@ -266,32 +260,33 @@ private struct ProfileHeaderCard: View {
                 Text(locationString)
             }.font(.system(size: 14)).foregroundColor(Color.primaryBlue)
             
-            // --- FOLLOWERS / FOLLOWING DISPLAY ---
-            HStack(spacing: 40) {
-                VStack(spacing: 2) {
-                    Text("\(followersCount)")
-                        .font(.headline).bold()
-                        .foregroundColor(.primary)
-                    Text("Followers")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            // --- UPDATED STATS DISPLAY ---
+            if showStats {
+                HStack(spacing: 40) {
+                    VStack(spacing: 2) {
+                        Text("\(followersCount)")
+                            .font(.headline).bold()
+                            .foregroundColor(.primary)
+                        Text("Followers")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    VStack(spacing: 2) {
+                        Text("\(followingCount)")
+                            .font(.headline).bold()
+                            .foregroundColor(.primary)
+                        Text("Following")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
-                
-                VStack(spacing: 2) {
-                    Text("\(followingCount)")
-                        .font(.headline).bold()
-                        .foregroundColor(.primary)
-                    Text("Following")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                .padding(.vertical, 8)
             }
-            .padding(.vertical, 8)
-            // -------------------------------------
+            // -----------------------------
             
             if !isMe {
                 HStack(spacing: 12) {
-                    // 1. Follow Button
                     Button(action: onFollowTap) {
                         Text(isFollowing ? "Unfollow" : "Follow")
                             .font(.headline).bold()
@@ -302,7 +297,6 @@ private struct ProfileHeaderCard: View {
                             .cornerRadius(20)
                     }
                     
-                    // 2. "Become a Student" Button (Only if Viewer=Student AND Profile=Instructor)
                     if isStudent && isInstructor {
                         Button(action: onActionTap) {
                             Text(buttonConfig.text)
@@ -327,17 +321,33 @@ private struct ProfileHeaderCard: View {
 
 private struct ContactCard: View {
     let user: AppUser
+    let isMe: Bool // passed from parent
+    
+    // Check if email should be shown
+    private var showEmail: Bool {
+        return isMe || !(user.hideEmail ?? false)
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("CONTACT").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
-            ContactRow(icon: "envelope.fill", label: "Email", value: user.email)
+            
+            // Conditionally show email row
+            if showEmail {
+                ContactRow(icon: "envelope.fill", label: "Email", value: user.email)
+            } else {
+                // Optional: Show "Hidden" or skip entirely. Skipping looks cleaner.
+                // ContactRow(icon: "envelope.fill", label: "Email", value: "Hidden")
+            }
+            
             ContactRow(icon: "phone.fill", label: "Phone", value: user.phone ?? "Not provided")
             ContactRow(icon: "mappin.and.ellipse", label: "Address", value: user.address ?? "Not provided")
         }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
+// ... (Other cards remain unchanged: RateHighlightCard, EducationCard, EduRow, AboutCard, ExpertiseCard)
 private struct RateHighlightCard: View {
     let user: AppUser
     var body: some View {

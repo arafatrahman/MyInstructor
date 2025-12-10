@@ -1,11 +1,10 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/DataService.swift
-// --- UPDATED: fetchStudents(for:) now queries 'student_requests' directly to ensure active students are found ---
+// --- UPDATED: 'resolveStudentName' returns "Deleted Account" if user doc is missing ---
 
 import Foundation
 import Combine
 import FirebaseFirestore
 
-// DTO for Stats
 struct StudentStats {
     let totalLessons: Int
     let completedLessons: Int
@@ -19,15 +18,9 @@ struct StudentStats {
 class DataService: ObservableObject {
     
     private let db = Firestore.firestore()
-    private var usersCollection: CollectionReference {
-        db.collection("users")
-    }
-    private var lessonsCollection: CollectionReference {
-        db.collection("lessons")
-    }
-    private var offlineStudentsCollection: CollectionReference {
-        db.collection("offline_students")
-    }
+    private var usersCollection: CollectionReference { db.collection("users") }
+    private var lessonsCollection: CollectionReference { db.collection("lessons") }
+    private var offlineStudentsCollection: CollectionReference { db.collection("offline_students") }
     
     init() {}
     
@@ -60,23 +53,13 @@ class DataService: ObservableObject {
     // MARK: - Dashboard Data Fetching (Student)
     
     func fetchStudentDashboardData(for studentID: String) async throws -> (upcomingLesson: Lesson?, progress: Double, latestFeedback: String, paymentDue: Bool, completedLessonsCount: Int) {
-        let lessonSnapshot = try await lessonsCollection
-            .whereField("studentID", isEqualTo: studentID)
-            .getDocuments()
-            
+        let lessonSnapshot = try await lessonsCollection.whereField("studentID", isEqualTo: studentID).getDocuments()
         let allLessons = lessonSnapshot.documents.compactMap { try? $0.data(as: Lesson.self) }
         
-        let upcomingLesson = allLessons
-            .filter { $0.status == .scheduled && $0.startTime > Date() }
-            .sorted(by: { $0.startTime < $1.startTime })
-            .first
-            
+        let upcomingLesson = allLessons.filter { $0.status == .scheduled && $0.startTime > Date() }.sorted(by: { $0.startTime < $1.startTime }).first
         let completedCount = allLessons.filter { $0.status == .completed }.count
         
-        let requestsQuery = try await db.collection("student_requests")
-            .whereField("studentID", isEqualTo: studentID)
-            .getDocuments()
-            
+        let requestsQuery = try await db.collection("student_requests").whereField("studentID", isEqualTo: studentID).getDocuments()
         let instructorIDs = Set(requestsQuery.documents.compactMap { $0.data()["instructorID"] as? String })
         
         var totalProgress: Double = 0.0
@@ -85,18 +68,9 @@ class DataService: ObservableObject {
         var latestNoteDate: Date = Date.distantPast
         
         for instructorID in instructorIDs {
-            let recordDoc = try? await usersCollection
-                .document(instructorID)
-                .collection("student_records")
-                .document(studentID)
-                .getDocument()
-            
+            let recordDoc = try? await usersCollection.document(instructorID).collection("student_records").document(studentID).getDocument()
             if let record = try? recordDoc?.data(as: StudentRecord.self) {
-                if let p = record.progress {
-                    totalProgress += p
-                    count += 1
-                }
-                
+                if let p = record.progress { totalProgress += p; count += 1 }
                 if let notes = record.notes, !notes.isEmpty {
                     if let newestInRecord = notes.sorted(by: { $0.timestamp < $1.timestamp }).last {
                         if newestInRecord.timestamp > latestNoteDate {
@@ -107,17 +81,12 @@ class DataService: ObservableObject {
                 }
             }
         }
-        
         let avgProgress = count > 0 ? totalProgress / Double(count) : 0.0
-        
         return (upcomingLesson, avgProgress, latestNoteContent, false, completedCount)
     }
     
     func fetchStudentLessonStats(for studentID: String) async throws -> StudentStats {
-        let snapshot = try await lessonsCollection
-            .whereField("studentID", isEqualTo: studentID)
-            .getDocuments()
-        
+        let snapshot = try await lessonsCollection.whereField("studentID", isEqualTo: studentID).getDocuments()
         let allLessons = snapshot.documents.compactMap { try? $0.data(as: Lesson.self) }
         
         let completed = allLessons.filter { $0.status == .completed }
@@ -129,9 +98,7 @@ class DataService: ObservableObject {
         var coveredSet = Set<String>()
         for lesson in completed {
             let topics = lesson.topic.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-            for topic in topics {
-                coveredSet.insert(topic)
-            }
+            for topic in topics { coveredSet.insert(topic) }
         }
         
         let masterList = DrivingTopics.all
@@ -139,16 +106,15 @@ class DataService: ObservableObject {
         let remaining = masterList.filter { !coveredLower.contains($0.lowercased()) }
         
         var instructorCounts: [String: Int] = [:]
-        for lesson in completed {
-            instructorCounts[lesson.instructorID, default: 0] += 1
-        }
+        for lesson in completed { instructorCounts[lesson.instructorID, default: 0] += 1 }
         
         var breakdown: [(name: String, count: Int)] = []
         for (id, count) in instructorCounts {
             if let user = try? await fetchUser(withId: id) {
                 breakdown.append((name: user.name ?? "Instructor", count: count))
             } else {
-                breakdown.append((name: "Unknown Instructor", count: count))
+                // Handle deleted instructor
+                breakdown.append((name: "Deleted Account", count: count))
             }
         }
         breakdown.sort { $0.count > $1.count }
@@ -178,42 +144,34 @@ class DataService: ObservableObject {
         return allNotes.sorted(by: { $0.timestamp > $1.timestamp })
     }
     
-    // --- UPDATED: Replaced reliance on 'studentIDs' array with direct query to 'student_requests' ---
     func fetchStudents(for instructorID: String) async throws -> [Student] {
         let snapshot = try await db.collection("student_requests")
             .whereField("instructorID", isEqualTo: instructorID)
             .whereField("status", isEqualTo: "approved")
             .getDocuments()
-            
         let studentIDs = snapshot.documents.compactMap { $0.data()["studentID"] as? String }
-        
-        // Use the existing helper to load full profiles
         return try await fetchStudents(fromIDs: studentIDs, instructorID: instructorID)
     }
     
-    // Fetch Students from a specific list of IDs
+    // Fetch Students with safe fallback for deleted users
     func fetchStudents(fromIDs ids: [String], instructorID: String? = nil) async throws -> [Student] {
         guard !ids.isEmpty else { return [] }
-        
-        // Firestore 'in' query limitation is 10. We must chunk it.
         var allStudents: [Student] = []
-        let chunkedIDs = stride(from: 0, to: ids.count, by: 10).map {
-            Array(ids[$0..<min($0 + 10, ids.count)])
-        }
+        let chunkedIDs = stride(from: 0, to: ids.count, by: 10).map { Array(ids[$0..<min($0 + 10, ids.count)]) }
         
         for chunk in chunkedIDs {
             let studentQuery = try await usersCollection.whereField(FieldPath.documentID(), in: chunk).getDocuments()
             
-            // If we have an instructorID, we can fetch progress too
             var progressMap: [String: Double] = [:]
             if let instID = instructorID {
                 let recordsQuery = try await usersCollection.document(instID).collection("student_records").getDocuments()
                 for doc in recordsQuery.documents {
-                    if let record = try? doc.data(as: StudentRecord.self), let id = record.id {
-                        progressMap[id] = record.progress ?? 0.0
-                    }
+                    if let record = try? doc.data(as: StudentRecord.self), let id = record.id { progressMap[id] = record.progress ?? 0.0 }
                 }
             }
+            
+            // Map existing docs
+            let foundIDs = Set(studentQuery.documents.map { $0.documentID })
             
             let chunkStudents = studentQuery.documents.compactMap { document -> Student? in
                 guard let appUser = try? document.data(as: AppUser.self) else { return nil }
@@ -226,6 +184,25 @@ class DataService: ObservableObject {
                 )
             }
             allStudents.append(contentsOf: chunkStudents)
+            
+            // Handle deleted users (IDs requested but not found in Firestore)
+            for requestedID in chunk {
+                if !foundIDs.contains(requestedID) {
+                    // Create a placeholder "Deleted" student so they don't disappear from lists
+                    let placeholder = Student(
+                        id: requestedID,
+                        userID: requestedID,
+                        name: "Deleted Account",
+                        photoURL: nil,
+                        email: "N/A",
+                        drivingSchool: nil,
+                        phone: nil,
+                        address: nil,
+                        averageProgress: progressMap[requestedID] ?? 0.0
+                    )
+                    allStudents.append(placeholder)
+                }
+            }
         }
         return allStudents
     }
@@ -244,15 +221,24 @@ class DataService: ObservableObject {
         return (try await online + convertedOffline).sorted { $0.name < $1.name }
     }
     
+    // Standard fetch user
     func fetchUser(withId userID: String) async throws -> AppUser? {
         let doc = try await usersCollection.document(userID).getDocument()
+        if !doc.exists { return nil }
         return try doc.data(as: AppUser.self)
     }
     
+    // --- UPDATED: Resolves name to "Deleted Account" if doc is missing ---
     func resolveStudentName(studentID: String) async -> String {
-        if let user = try? await fetchUser(withId: studentID) { return user.name ?? "Student" }
-        if let offlineDoc = try? await offlineStudentsCollection.document(studentID).getDocument(), let off = try? offlineDoc.data(as: OfflineStudent.self) { return off.name }
-        return "Unknown Student"
+        if let user = try? await fetchUser(withId: studentID) {
+            return user.name ?? "Student"
+        }
+        // Check offline
+        if let offlineDoc = try? await offlineStudentsCollection.document(studentID).getDocument(), let off = try? offlineDoc.data(as: OfflineStudent.self) {
+            return off.name
+        }
+        // If neither found, assume deleted
+        return "Deleted Account"
     }
     
     func getStudentName(for studentID: String) -> String { return "Loading..." }

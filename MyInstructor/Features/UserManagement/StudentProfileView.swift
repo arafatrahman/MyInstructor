@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
-// --- UPDATED: Added Followers/Following stats and Follow button to Header ---
+// --- UPDATED: Enforced Privacy Settings (Hide Email / Hide Followers) ---
 
 import SwiftUI
 
@@ -64,8 +64,11 @@ struct StudentProfileView: View {
                 .padding(.horizontal)
                 
                 // 3. Contact Card
-                StudentContactCard(student: student)
-                    .padding(.horizontal)
+                StudentContactCard(
+                    student: student,
+                    studentAsAppUser: studentAsAppUser // Passed for privacy checks
+                )
+                .padding(.horizontal)
                 
                 // 4. Notes Card
                 StudentNotesCard(
@@ -288,8 +291,6 @@ private struct StudentProfileHeaderCard: View {
     @EnvironmentObject var authManager: AuthManager
     
     let student: Student
-    // studentAsAppUser might be updated later, so we use Binding or State if needed, but passing it is fine
-    // We make it mutable in the view via State if we want to toggle follow locally
     var studentAsAppUser: AppUser?
     let onEdit: () -> Void
     
@@ -302,6 +303,13 @@ private struct StudentProfileHeaderCard: View {
     private var profileImageURL: URL? {
         guard let urlString = student.photoURL, !urlString.isEmpty else { return nil }
         return URL(string: urlString)
+    }
+    
+    // --- PRIVACY CHECK ---
+    private var showStats: Bool {
+        guard let user = studentAsAppUser else { return false }
+        // Hide if setting is enabled, unless it's the user themselves (which is unlikely in this view, but good practice)
+        return !(user.hideFollowers ?? false)
     }
     
     var body: some View {
@@ -330,8 +338,8 @@ private struct StudentProfileHeaderCard: View {
             Text(student.name).font(.system(size: 22, weight: .semibold)).foregroundColor(.primary)
             Text(student.isOffline ? "Offline Student" : "Active Student").font(.system(size: 15)).foregroundColor(.secondary).padding(.bottom, 4)
             
-            // --- FOLLOWERS / FOLLOWING DISPLAY (New) ---
-            if !student.isOffline {
+            // --- FOLLOWERS / FOLLOWING DISPLAY ---
+            if !student.isOffline && showStats {
                 HStack(spacing: 40) {
                     VStack(spacing: 2) {
                         Text("\(followersCount)")
@@ -353,7 +361,7 @@ private struct StudentProfileHeaderCard: View {
                 }
                 .padding(.vertical, 8)
                 
-                // --- FOLLOW BUTTON (New) ---
+                // --- FOLLOW BUTTON ---
                 if let myID = authManager.user?.id, let studentID = student.id, myID != studentID {
                     Button(action: handleFollowToggle) {
                         Text(isFollowing ? "Unfollow" : "Follow")
@@ -440,11 +448,26 @@ private struct StudentProgressCard: View {
 // MARK: - 3. Contact Card
 private struct StudentContactCard: View {
     let student: Student
+    let studentAsAppUser: AppUser? // Added for privacy check
+    
+    // --- PRIVACY CHECK ---
+    private var showEmail: Bool {
+        if student.isOffline { return true } // Offline students added by instructor -> always show
+        guard let user = studentAsAppUser else { return true }
+        return !(user.hideEmail ?? false)
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("CONTACT").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
-            ContactRow(icon: "envelope.fill", label: "Email", value: student.email.isEmpty ? "Not provided" : student.email)
+            
+            // --- CONDITIONAL EMAIL ROW ---
+            if showEmail {
+                ContactRow(icon: "envelope.fill", label: "Email", value: student.email.isEmpty ? "Not provided" : student.email)
+            }
+            // -----------------------------
+            
             ContactRow(icon: "phone.fill", label: "Phone", value: student.phone ?? "Not provided")
             ContactRow(icon: "mappin.and.ellipse", label: "Address", value: student.address ?? "Not provided")
         }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)

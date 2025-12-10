@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/Model.swift
-// --- UPDATED: Added location fields to Lesson for live tracking ---
+// --- UPDATED: Added Privacy Settings fields to AppUser ---
 
 import Foundation
 import FirebaseFirestore
@@ -37,6 +37,11 @@ struct AppUser: Identifiable, Codable {
     var following: [String]? = []
     var followers: [String]? = []
     var blockedUsers: [String]? = []
+    
+    // --- NEW: Privacy Settings ---
+    var isPrivate: Bool? = false        // If true, profile is locked to non-followers
+    var hideFollowers: Bool? = false    // If true, follower/following counts are hidden
+    var hideEmail: Bool? = false        // If true, email is hidden from public profile
 
     init(id: String, email: String, name: String? = nil, role: UserRole = .unselected) {
         self.id = id; self.email = email; self.name = name; self.role = role
@@ -110,7 +115,7 @@ struct Lesson: Identifiable, Codable {
     var notes: String?
     var status: LessonStatus = .scheduled
     
-    // --- NEW: Live Location Fields ---
+    // Live Location Fields
     var isLocationActive: Bool?
     var instructorLat: Double?
     var instructorLng: Double?

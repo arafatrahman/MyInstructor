@@ -1,6 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
-// --- UPDATED: Uses single-source-of-truth from requests for robust list management ---
-
 import SwiftUI
 
 struct StudentsListView: View {
@@ -11,7 +8,7 @@ struct StudentsListView: View {
     
     // --- STATE ---
     @State private var approvedStudents: [Student] = []   // Stores Active
-    @State private var completedStudentsList: [Student] = [] // Stores Completed (explicitly)
+    @State private var completedStudentsList: [Student] = [] // Stores Completed
     
     @State private var pendingRequests: [StudentRequest] = []
     @State private var deniedRequests: [StudentRequest] = []
@@ -28,8 +25,7 @@ struct StudentsListView: View {
     @State private var isAddingOfflineStudent = false
     @State private var studentToDelete: OfflineStudent? = nil
     @State private var isShowingDeleteAlert = false
-    @State private var deleteErrorMessage: String? = nil
-
+    
     // --- COMPUTED PROPERTIES ---
     
     var activeStudents: [Student] {
@@ -146,7 +142,6 @@ struct StudentsListView: View {
                                         Button { Task { await startChat(with: student) } } label: { Label("Message", systemImage: "message.fill") }.tint(.primaryBlue)
                                     }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                        // --- REMOVE ACTION -> MOVES TO COMPLETED ---
                                         Button(role: .destructive) { Task { await removeStudent(student) } } label: { Label("Complete", systemImage: "checkmark.circle") }
                                     }
                                     .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
@@ -162,7 +157,6 @@ struct StudentsListView: View {
                                 ForEach(completedStudents) { student in
                                     StudentListCard(student: student)
                                     .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                                        // --- REACTIVATE ACTION -> MOVES TO ACTIVE ---
                                         Button { Task { await reactivateStudent(student) } } label: { Label("Add Again", systemImage: "person.badge.plus") }.tint(.accentGreen)
                                     }
                                     .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
@@ -211,7 +205,10 @@ struct StudentsListView: View {
             .navigationBarHidden(true)
             .task { await fetchData() }
             .refreshable { await fetchData() }
-            .onAppear { Task { await fetchData() } }
+            // --- FIX: Force refresh on appear to catch updates from ProfileView ---
+            .onAppear {
+                Task { await fetchData() }
+            }
             .sheet(isPresented: $isAddingOfflineStudent) { OfflineStudentFormView(studentToEdit: nil, onStudentAdded: { Task { await fetchData() } }) }
             .alert("Cannot Start Chat", isPresented: $chatErrorAlert.isPresented, actions: { Button("OK") { } }, message: { Text(chatErrorAlert.message) })
             .alert("Delete Student?", isPresented: $isShowingDeleteAlert, presenting: studentToDelete) { student in
@@ -229,33 +226,30 @@ struct StudentsListView: View {
         guard let instructorID = authManager.user?.id else { return }
         
         // Show loading only if we have NO data yet to prevent flickering on refresh
-        if approvedStudents.isEmpty && completedStudentsList.isEmpty && pendingRequests.isEmpty {
+        if approvedStudents.isEmpty && completedStudentsList.isEmpty && pendingRequests.isEmpty && offlineStudents.isEmpty {
             isLoading = true
         }
-        deleteErrorMessage = nil
         
         do {
-            // 1. Fetch ALL Requests (Single Source of Truth)
+            // 1. Fetch Requests
             let allRequests = try await communityManager.fetchAllRelationships(for: instructorID)
-            
-            // 2. Sort requests into buckets
             self.pendingRequests = allRequests.filter { $0.status == .pending }
             self.deniedRequests = allRequests.filter { $0.status == .denied }
             self.blockedRequests = allRequests.filter { $0.status == .blocked }
             
-            // 3. Extract IDs for Active & Completed
             let activeIDs = allRequests.filter { $0.status == .approved }.map { $0.studentID }
             let completedIDs = allRequests.filter { $0.status == .completed }.map { $0.studentID }
             
-            // 4. Fetch User Profiles for these IDs
+            // 2. Fetch User Profiles & Progress
+            // dataService.fetchStudents now gets the latest progress via student_records
             let allProfileIDs = activeIDs + completedIDs
             let profiles = try await dataService.fetchStudents(fromIDs: allProfileIDs, instructorID: instructorID)
             
-            // 5. Assign to State
+            // 3. Assign
             self.approvedStudents = profiles.filter { activeIDs.contains($0.id ?? "") }
             self.completedStudentsList = profiles.filter { completedIDs.contains($0.id ?? "") }
             
-            // 6. Offline Students
+            // 4. Offline Students (Fetches fresh documents with latest progress)
             self.offlineStudents = try await dataService.fetchOfflineStudents(for: instructorID)
             
         } catch {
@@ -279,14 +273,12 @@ struct StudentsListView: View {
         } catch { print("Failed to handle request: \(error)") }
     }
     
-    // --- UPDATED: 'removeStudent' updates status to .completed ---
     func removeStudent(_ student: Student) async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
         try? await communityManager.removeStudent(studentID: studentID, instructorID: instructorID)
         await fetchData()
     }
     
-    // --- NEW: 'reactivateStudent' updates status to .approved ---
     func reactivateStudent(_ student: Student) async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
         try? await communityManager.reactivateStudent(studentID: studentID, instructorID: instructorID)
@@ -325,11 +317,23 @@ struct CompactRequestRow: View {
     
     var body: some View {
         HStack {
-            AsyncImage(url: URL(string: request.studentPhotoURL ?? "")) { phase in
-                if let image = phase.image { image.resizable().scaledToFill() }
-                else { Image(systemName: "person.circle.fill").resizable().foregroundColor(.primaryBlue) }
+            // Updated Avatar using DefaultAvatar logic inlined
+            if let urlString = request.studentPhotoURL, let url = URL(string: urlString) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image { image.resizable().scaledToFill() }
+                    else {
+                        Circle().fill(Color.primaryBlue.opacity(0.1))
+                            .overlay(Text(request.studentName.prefix(1)).bold().foregroundColor(.primaryBlue))
+                    }
+                }
+                .frame(width: 45, height: 45).clipShape(Circle())
+            } else {
+                ZStack {
+                    Circle().fill(Color.primaryBlue.opacity(0.1))
+                    Text(request.studentName.prefix(1).uppercased()).font(.title3).bold().foregroundColor(.primaryBlue)
+                }
+                .frame(width: 45, height: 45)
             }
-            .frame(width: 45, height: 45).clipShape(Circle())
             
             VStack(alignment: .leading) {
                 Text(request.studentName).font(.headline)
@@ -369,16 +373,45 @@ struct StudentListCard: View {
         }
         return "Not Scheduled"
     }
+    
+    // --- Helper for Initials ---
+    var initials: String {
+        let components = student.name.split(separator: " ")
+        let first = components.first?.prefix(1) ?? ""
+        let second = components.dropFirst().first?.prefix(1) ?? ""
+        return "\(first)\(second)".uppercased()
+    }
 
     var body: some View {
         HStack {
             CircularProgressView(progress: student.averageProgress, color: progressColor, size: 50)
                 .overlay(
-                    AsyncImage(url: URL(string: student.photoURL ?? "")) { phase in
-                        if let image = phase.image { image.resizable().scaledToFill() }
-                        else { Image(systemName: "person.crop.circle.fill").font(.title2).foregroundColor(progressColor) }
+                    Group {
+                        if let urlString = student.photoURL, let url = URL(string: urlString) {
+                            AsyncImage(url: url) { phase in
+                                if let image = phase.image {
+                                    image.resizable().scaledToFill()
+                                } else {
+                                    // Fallback if URL exists but image fails to load
+                                    ZStack {
+                                        Circle().fill(Color(.systemGray5))
+                                        Text(initials).font(.caption).bold().foregroundColor(progressColor)
+                                    }
+                                }
+                            }
+                        } else {
+                            // Default Avatar for Offline/No Photo
+                            ZStack {
+                                Circle().fill(Color(.systemGray5))
+                                Text(initials)
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(progressColor) // Use progress color for text
+                            }
+                        }
                     }
-                    .frame(width: 45, height: 45).clipShape(Circle())
+                    .clipShape(Circle())
+                    .frame(width: 45, height: 45)
                 )
                 .frame(width: 50, height: 50)
             

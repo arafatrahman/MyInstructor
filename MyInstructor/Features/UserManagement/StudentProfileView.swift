@@ -1,6 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
-// --- UPDATED: Implemented Swipe Actions for Notes (Edit/Delete) and removed the menu ---
-
 import SwiftUI
 
 struct StudentProfileView: View {
@@ -70,7 +67,7 @@ struct StudentProfileView: View {
                 )
                 .padding(.horizontal)
                 
-                // 4. Notes Card (Updated with Swipe Actions)
+                // 4. Notes Card
                 StudentNotesCard(
                     notes: studentNotes,
                     onAdd: {
@@ -202,17 +199,17 @@ struct StudentProfileView: View {
         if !isOffline && studentAsAppUser == nil {
             self.studentAsAppUser = try? await dataService.fetchUser(withId: studentID)
             
-            // --- NEW: Fetch Status ---
             if let status = try? await communityManager.fetchRelationshipStatus(instructorID: instructorID, studentID: studentID) {
                 self.studentStatus = status
             }
         }
         
-        // 2. Fetch Notes & Progress
+        // 2. Fetch Notes & Progress (Works for both Offline and Online via Manager)
         if let data = try? await communityManager.fetchInstructorStudentData(instructorID: instructorID, studentID: studentID, isOffline: isOffline) {
             self.currentProgress = data.progress ?? 0.0
             self.studentNotes = data.notes ?? []
         } else {
+            // Fallback for initial load
             self.currentProgress = student.averageProgress
         }
         
@@ -248,21 +245,37 @@ struct StudentProfileView: View {
     }
     
     func saveProgress() async {
-        guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
-        try? await communityManager.updateStudentProgress(instructorID: instructorID, studentID: studentID, newProgress: newProgressValue, isOffline: isOffline)
-        currentProgress = newProgressValue
-        isShowingProgressSheet = false
+        guard let instructorID = authManager.user?.id, let studentID = student.id else {
+            errorMessage = "Missing student or instructor ID."
+            isShowingErrorAlert = true
+            return
+        }
+        
+        do {
+            // This function handles the logic for both Online and Offline
+            try await communityManager.updateStudentProgress(instructorID: instructorID, studentID: studentID, newProgress: newProgressValue, isOffline: isOffline)
+            
+            // Update local state immediately
+            self.currentProgress = newProgressValue
+            isShowingProgressSheet = false
+            
+            // Refresh full data to be safe
+            await fetchData()
+            
+        } catch {
+            print("Failed to save progress: \(error.localizedDescription)")
+            errorMessage = "Failed to update progress: \(error.localizedDescription)"
+            isShowingErrorAlert = true
+        }
     }
     
     func removeStudent() async {
-        // Optimistic update
         self.studentStatus = .completed
         try? await communityManager.removeStudent(studentID: student.id!, instructorID: authManager.user!.id!)
         dismiss()
     }
     
     func reactivateStudent() async {
-        // Optimistic update
         self.studentStatus = .approved
         try? await communityManager.reactivateStudent(studentID: student.id!, instructorID: authManager.user!.id!)
     }
@@ -285,7 +298,7 @@ struct StudentProfileView: View {
     }
 }
 
-// MARK: - 1. Student Header Card
+// MARK: - 1. Student Header Card (Updated with Default Avatar)
 private struct StudentProfileHeaderCard: View {
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var authManager: AuthManager
@@ -296,36 +309,35 @@ private struct StudentProfileHeaderCard: View {
     
     @State private var isFollowing = false
     
-    // --- SOCIAL COUNTS ---
     private var followersCount: Int { studentAsAppUser?.followers?.count ?? 0 }
     private var followingCount: Int { studentAsAppUser?.following?.count ?? 0 }
     
-    private var profileImageURL: URL? {
-        guard let urlString = student.photoURL, !urlString.isEmpty else { return nil }
-        return URL(string: urlString)
-    }
-    
-    // --- PRIVACY CHECK ---
     private var showStats: Bool {
         guard let user = studentAsAppUser else { return false }
-        // Hide if setting is enabled, unless it's the user themselves (which is unlikely in this view, but good practice)
         return !(user.hideFollowers ?? false)
     }
     
     var body: some View {
         VStack(spacing: 12) {
             ZStack(alignment: .bottomTrailing) {
-                AsyncImage(url: profileImageURL) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(.secondary)
+                // --- Updated Avatar Logic ---
+                if let urlString = student.photoURL, let url = URL(string: urlString) {
+                    AsyncImage(url: url) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            // Loading or Error -> Default
+                            DefaultAvatar(name: student.name, size: 100)
+                        }
                     }
+                    .frame(width: 100, height: 100)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
+                } else {
+                    // No URL -> Default
+                    DefaultAvatar(name: student.name, size: 100)
+                        .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
                 }
-                .frame(width: 100, height: 100)
-                .background(Color(.systemGray5))
-                .clipShape(Circle())
-                .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
                 
                 if student.isOffline {
                     Button(action: onEdit) {
@@ -338,36 +350,25 @@ private struct StudentProfileHeaderCard: View {
             Text(student.name).font(.system(size: 22, weight: .semibold)).foregroundColor(.primary)
             Text(student.isOffline ? "Offline Student" : "Active Student").font(.system(size: 15)).foregroundColor(.secondary).padding(.bottom, 4)
             
-            // --- FOLLOWERS / FOLLOWING DISPLAY ---
             if !student.isOffline && showStats {
                 HStack(spacing: 40) {
                     VStack(spacing: 2) {
-                        Text("\(followersCount)")
-                            .font(.headline).bold()
-                            .foregroundColor(.primary)
-                        Text("Followers")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        Text("\(followersCount)").font(.headline).bold().foregroundColor(.primary)
+                        Text("Followers").font(.caption).foregroundColor(.secondary)
                     }
                     
                     VStack(spacing: 2) {
-                        Text("\(followingCount)")
-                            .font(.headline).bold()
-                            .foregroundColor(.primary)
-                        Text("Following")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        Text("\(followingCount)").font(.headline).bold().foregroundColor(.primary)
+                        Text("Following").font(.caption).foregroundColor(.secondary)
                     }
                 }
                 .padding(.vertical, 8)
                 
-                // --- FOLLOW BUTTON ---
                 if let myID = authManager.user?.id, let studentID = student.id, myID != studentID {
                     Button(action: handleFollowToggle) {
                         Text(isFollowing ? "Unfollow" : "Follow")
                             .font(.subheadline).bold()
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 24)
+                            .padding(.vertical, 8).padding(.horizontal, 24)
                             .background(isFollowing ? Color.gray.opacity(0.2) : Color.primaryBlue)
                             .foregroundColor(isFollowing ? .primary : .white)
                             .cornerRadius(20)
@@ -375,7 +376,6 @@ private struct StudentProfileHeaderCard: View {
                     .padding(.bottom, 8)
                 }
             }
-            // -------------------------------------------
             
             HStack(spacing: 20) {
                 if let phone = student.phone, !phone.isEmpty {
@@ -397,19 +397,12 @@ private struct StudentProfileHeaderCard: View {
             }.padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity).background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
-        .onAppear {
-            checkIfFollowing()
-        }
-        .onChange(of: studentAsAppUser?.followers) { _, _ in
-            checkIfFollowing()
-        }
+        .onAppear { checkIfFollowing() }
+        .onChange(of: studentAsAppUser?.followers) { _, _ in checkIfFollowing() }
     }
     
     private func checkIfFollowing() {
-        guard let myID = authManager.user?.id, let followers = studentAsAppUser?.followers else {
-            isFollowing = false
-            return
-        }
+        guard let myID = authManager.user?.id, let followers = studentAsAppUser?.followers else { isFollowing = false; return }
         isFollowing = followers.contains(myID)
     }
     
@@ -424,10 +417,42 @@ private struct StudentProfileHeaderCard: View {
                     try await communityManager.followUser(currentUserID: myID, targetUserID: studentID, currentUserName: name)
                     isFollowing = true
                 }
-            } catch {
-                print("Follow toggle error: \(error)")
+            } catch { print("Follow toggle error: \(error)") }
+        }
+    }
+}
+
+// --- NEW HELPER: Standard Default Avatar ---
+struct DefaultAvatar: View {
+    let name: String
+    let size: CGFloat
+    
+    var initials: String {
+        let components = name.split(separator: " ")
+        let first = components.first?.prefix(1) ?? ""
+        let second = components.dropFirst().first?.prefix(1) ?? ""
+        return "\(first)\(second)".uppercased()
+    }
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color(.systemGray5))
+            
+            // Show initials if name is available, otherwise generic icon
+            if !name.isEmpty {
+                Text(initials)
+                    .font(.system(size: size * 0.4, weight: .bold))
+                    .foregroundColor(.secondary)
+            } else {
+                Image(systemName: "person.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(size * 0.25)
+                    .foregroundColor(.secondary)
             }
         }
+        .frame(width: size, height: size)
     }
 }
 
@@ -448,11 +473,10 @@ private struct StudentProgressCard: View {
 // MARK: - 3. Contact Card
 private struct StudentContactCard: View {
     let student: Student
-    let studentAsAppUser: AppUser? // Added for privacy check
+    let studentAsAppUser: AppUser?
     
-    // --- PRIVACY CHECK ---
     private var showEmail: Bool {
-        if student.isOffline { return true } // Offline students added by instructor -> always show
+        if student.isOffline { return true }
         guard let user = studentAsAppUser else { return true }
         return !(user.hideEmail ?? false)
     }
@@ -461,20 +485,14 @@ private struct StudentContactCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("CONTACT").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
-            
-            // --- CONDITIONAL EMAIL ROW ---
-            if showEmail {
-                ContactRow(icon: "envelope.fill", label: "Email", value: student.email.isEmpty ? "Not provided" : student.email)
-            }
-            // -----------------------------
-            
+            if showEmail { ContactRow(icon: "envelope.fill", label: "Email", value: student.email.isEmpty ? "Not provided" : student.email) }
             ContactRow(icon: "phone.fill", label: "Phone", value: student.phone ?? "Not provided")
             ContactRow(icon: "mappin.and.ellipse", label: "Address", value: student.address ?? "Not provided")
         }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
-// MARK: - 4. Notes Card (Updated for Swipe Actions)
+// MARK: - 4. Notes Card
 private struct StudentNotesCard: View {
     let notes: [StudentNote]
     let onAdd: () -> Void
@@ -486,136 +504,47 @@ private struct StudentNotesCard: View {
             HStack {
                 Text("NOTES").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary)
                 Spacer()
-                Button(action: onAdd) {
-                    Image(systemName: "plus").font(.system(size: 14, weight: .bold)).foregroundColor(.primaryBlue)
-                }
+                Button(action: onAdd) { Image(systemName: "plus").font(.system(size: 14, weight: .bold)).foregroundColor(.primaryBlue) }
             }
             .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
-            
             Divider().padding(.horizontal, 16)
-            
             if !notes.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(notes) { note in
-                        // Use the new SwipeableNoteRow here
-                        SwipeableNoteRow(
-                            note: note,
-                            onEdit: { onEdit(note) },
-                            onDelete: { onDelete(note) }
-                        )
-                        
-                        if note.id != notes.last?.id {
-                            Divider().padding(.horizontal, 16)
-                        }
+                        SwipeableNoteRow(note: note, onEdit: { onEdit(note) }, onDelete: { onDelete(note) })
+                        if note.id != notes.last?.id { Divider().padding(.horizontal, 16) }
                     }
                 }
-            } else {
-                Text("No notes added.")
-                    .font(.system(size: 15))
-                    .foregroundColor(.secondary)
-                    .padding(16)
-            }
+            } else { Text("No notes added.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) }
         }
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+        .background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
-// MARK: - Swipeable Note Row (Helper View)
+// MARK: - Swipeable Note Row
 private struct SwipeableNoteRow: View {
     let note: StudentNote
     let onEdit: () -> Void
     let onDelete: () -> Void
-    
     @State private var offset: CGFloat = 0
     @State private var isSwiped: Bool = false
     
     var body: some View {
         ZStack(alignment: .trailing) {
-            // Action Buttons Layer (Behind Content)
             HStack(spacing: 0) {
                 Spacer()
-                
-                Button(action: {
-                    closeSwipe()
-                    onEdit()
-                }) {
-                    VStack {
-                        Image(systemName: "pencil")
-                            .font(.title3)
-                        Text("Edit")
-                            .font(.caption)
-                    }
-                    .foregroundColor(.white)
-                    .frame(width: 70)
-                    .frame(maxHeight: .infinity)
-                    .background(Color.blue)
-                }
-                
-                Button(action: {
-                    closeSwipe()
-                    onDelete()
-                }) {
-                    VStack {
-                        Image(systemName: "trash")
-                            .font(.title3)
-                        Text("Delete")
-                            .font(.caption)
-                    }
-                    .foregroundColor(.white)
-                    .frame(width: 70)
-                    .frame(maxHeight: .infinity)
-                    .background(Color.red)
-                }
+                Button(action: { closeSwipe(); onEdit() }) { VStack { Image(systemName: "pencil").font(.title3); Text("Edit").font(.caption) }.foregroundColor(.white).frame(width: 70).frame(maxHeight: .infinity).background(Color.blue) }
+                Button(action: { closeSwipe(); onDelete() }) { VStack { Image(systemName: "trash").font(.title3); Text("Delete").font(.caption) }.foregroundColor(.white).frame(width: 70).frame(maxHeight: .infinity).background(Color.red) }
             }
-            
-            // Content Layer (Foreground)
             VStack(alignment: .leading, spacing: 6) {
-                Text(note.content)
-                    .font(.system(size: 15))
-                    .foregroundColor(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                Text(note.timestamp.formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                Text(note.content).font(.system(size: 15)).foregroundColor(.primary).fixedSize(horizontal: false, vertical: true)
+                Text(note.timestamp.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 12)).foregroundColor(.secondary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.systemBackground)) // Background to cover actions
-            .offset(x: offset)
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        // Restrict to left swipe only
-                        if value.translation.width < 0 {
-                            self.offset = value.translation.width
-                        }
-                    }
-                    .onEnded { value in
-                        withAnimation {
-                            if value.translation.width < -70 {
-                                self.offset = -140 // Reveal width of both buttons (70 * 2)
-                                self.isSwiped = true
-                            } else {
-                                self.offset = 0
-                                self.isSwiped = false
-                            }
-                        }
-                    }
-            )
-        }
-        .clipped() // Prevent actions from bleeding out
+            .padding(.horizontal, 16).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading).background(Color(.systemBackground)).offset(x: offset)
+            .gesture(DragGesture().onChanged { if $0.translation.width < 0 { self.offset = $0.translation.width } }.onEnded { if $0.translation.width < -70 { withAnimation { self.offset = -140; self.isSwiped = true } } else { closeSwipe() } })
+        }.clipped()
     }
-    
-    private func closeSwipe() {
-        withAnimation {
-            offset = 0
-            isSwiped = false
-        }
-    }
+    private func closeSwipe() { withAnimation { offset = 0; isSwiped = false } }
 }
 
 // MARK: - 5. Lessons Card

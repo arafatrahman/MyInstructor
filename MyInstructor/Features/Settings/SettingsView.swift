@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/SettingsView.swift
-// --- UPDATED: Renamed Toggle Label & Organized Privacy Section ---
+// --- UPDATED: Added Password Field to Delete Alert for "One Step" Deletion ---
 
 import SwiftUI
 
@@ -21,6 +21,7 @@ struct SettingsView: View {
     // Danger Zone State
     @State private var showDeleteConfirmation = false
     @State private var isDeleting = false
+    @State private var password = "" // NEW: For re-authentication
     
     var isInstructor: Bool {
         authManager.role == .instructor
@@ -58,7 +59,6 @@ struct SettingsView: View {
                             .font(.caption).foregroundColor(.secondary)
                     }
                     
-                    // --- UPDATED LABEL ---
                     Toggle("Hide Follower & Following Counts", isOn: $hideFollowers)
                         .tint(.primaryBlue)
                         .onChange(of: hideFollowers) { _ in savePrivacySettings() }
@@ -85,6 +85,7 @@ struct SettingsView: View {
                     }
                     
                     Button(role: .destructive) {
+                        password = "" // Reset password field
                         showDeleteConfirmation = true
                     } label: {
                         if isDeleting {
@@ -96,7 +97,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Account")
                 } footer: {
-                    Text("Deleting your account removes your public profile and personal data. Instructors may retain lesson records for their analysis.")
+                    Text("Deleting your account removes your public profile, community posts, and personal data. Instructors may retain lesson records for their analysis.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .padding(.top, 5)
@@ -113,13 +114,15 @@ struct SettingsView: View {
                     self.hideEmail = user.hideEmail ?? false
                 }
             }
-            .alert("Delete Account?", isPresented: $showDeleteConfirmation) {
+            // --- UPDATED ALERT: Includes Password Field ---
+            .alert("Delete Account", isPresented: $showDeleteConfirmation) {
+                SecureField("Enter Password", text: $password)
                 Button("Cancel", role: .cancel) { }
                 Button("Delete", role: .destructive) {
                     performAccountDeletion()
                 }
             } message: {
-                Text("Are you sure? This will permanently delete your profile. Your lesson history will remain visible to your instructors/students for record-keeping.")
+                Text("Please enter your password to confirm. This action will permanently delete your profile and community posts.")
             }
         }
     }
@@ -137,10 +140,13 @@ struct SettingsView: View {
     }
     
     private func performAccountDeletion() {
+        guard !password.isEmpty else { return }
+        
         isDeleting = true
         Task {
             do {
-                try await authManager.deleteAccount()
+                // Pass password for immediate re-authentication
+                try await authManager.deleteAccount(password: password)
             } catch {
                 print("Error deleting account: \(error.localizedDescription)")
                 isDeleting = false

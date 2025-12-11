@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Student/MyInstructorsView.swift
-// --- UPDATED: Fixed 'Switch must be exhaustive' error by handling .completed case ---
+// --- UPDATED: Wired up "Find Instructor" button to navigate to directory ---
 
 import SwiftUI
 
@@ -16,12 +16,15 @@ struct MyInstructorsView: View {
     
     @State private var selectedStatus: MyInstructorsFilter = .approved
     
+    // --- NEW: State to trigger navigation ---
+    @State private var showDirectory = false
+    
     // "My Instructors" now includes active AND student-blocked instructors
     private var myInstructorsList: [StudentRequest] {
         sentRequests.filter { $0.status == .approved || ($0.status == .blocked && $0.blockedBy == "student") }
     }
     
-    // --- NEW: Completed (Past) Instructors ---
+    // Completed (Past) Instructors
     private var completedList: [StudentRequest] {
         sentRequests.filter { $0.status == .completed }
     }
@@ -50,6 +53,11 @@ struct MyInstructorsView: View {
                 Color(.systemGroupedBackground) // Light gray background
                     .ignoresSafeArea()
                 
+                // --- NEW: Invisible Navigation Link triggered by the Empty State button ---
+                NavigationLink(isActive: $showDirectory, destination: {
+                    InstructorDirectoryView()
+                }, label: { EmptyView() })
+                
                 VStack(spacing: 0) {
                     // Segmented Control Container
                     VStack {
@@ -76,7 +84,8 @@ struct MyInstructorsView: View {
                                     message: "You haven't connected with any instructors yet.",
                                     actionTitle: "Find an Instructor",
                                     action: {
-                                        // Navigation handled via sidebar/tab usually, but placeholder here
+                                        // Trigger navigation
+                                        showDirectory = true
                                     }
                                 )
                             } else {
@@ -193,7 +202,7 @@ struct MyInstructorsView: View {
         }
     }
     
-    // MARK: - Logic (Same as before)
+    // MARK: - Logic
     private func loadRequests() async {
         guard let studentID = authManager.user?.id else { return }
         isLoading = true
@@ -330,7 +339,7 @@ struct StatusBadge: View {
         case .pending: return ("Pending", .orange)
         case .approved: return ("Approved", .accentGreen)
         case .denied: return ("Denied", .warningRed)
-        case .completed: return ("Past", .gray) // <--- ADDED CASE
+        case .completed: return ("Past", .gray)
         case .blocked:
             return (blockedBy == "student" ? "Blocked" : "Unavailable", .gray)
         }

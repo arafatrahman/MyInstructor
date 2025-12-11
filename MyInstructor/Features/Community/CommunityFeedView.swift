@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: Added Search Button in Header & Top Padding to Algorithm Tags ---
+// --- UPDATED: Fixed Follow/Unfollow button logic to react to changes ---
 
 import SwiftUI
 import PhotosUI
@@ -15,7 +15,7 @@ struct CommunityFeedView: View {
     @EnvironmentObject var authManager: AuthManager
     
     @State private var searchText = ""
-    @State private var isSearchVisible = false // Controls visibility of the search bar
+    @State private var isSearchVisible = false
     @State private var selectedAlgorithm: FeedAlgorithm = .latest
     
     @State private var isCreatePostPresented = false
@@ -49,11 +49,11 @@ struct CommunityFeedView: View {
                     
                     Spacer()
                     
-                    // --- SEARCH BUTTON (Same Row) ---
+                    // Search Button
                     Button {
                         withAnimation {
                             isSearchVisible.toggle()
-                            if !isSearchVisible { searchText = "" } // Clear search when closing
+                            if !isSearchVisible { searchText = "" }
                         }
                     } label: {
                         Image(systemName: isSearchVisible ? "xmark.circle.fill" : "magnifyingglass")
@@ -68,7 +68,7 @@ struct CommunityFeedView: View {
                 .padding(.top, 10)
                 .padding(.bottom, 10)
                 
-                // --- SEARCH BAR (Conditional) ---
+                // Search Bar
                 if isSearchVisible {
                     HStack {
                         Image(systemName: "magnifyingglass").foregroundColor(.gray)
@@ -107,7 +107,7 @@ struct CommunityFeedView: View {
                     .padding(.horizontal)
                     .padding(.bottom, 10)
                 }
-                .padding(.top, 20) // --- ADDED: 20px Top Padding ---
+                .padding(.top, 20)
                 
                 ScrollView {
                     VStack(spacing: 15) {
@@ -224,7 +224,6 @@ struct PostCard: View {
             Divider()
                 .background(Color(.systemGray5))
             
-            // Footer
             HStack {
                 reactionBar
                 Spacer()
@@ -238,8 +237,7 @@ struct PostCard: View {
                         Image(systemName: "bubble.left")
                         Text("\(post.commentsCount) Comments")
                     }
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.caption).foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -247,9 +245,7 @@ struct PostCard: View {
             
             commentsSection
         }
-        .padding(15)
-        .background(Color.white)
-        .cornerRadius(20)
+        .padding(15).background(Color.white).cornerRadius(20)
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
         .sheet(isPresented: $isShowingEditSheet) {
             CreatePostView(
@@ -266,16 +262,22 @@ struct PostCard: View {
         }
         .alert("Delete Post?", isPresented: $isShowingDeleteAlert) {
             Button("Cancel", role: .cancel) { }
-            Button("Delete", role: .destructive) {
-                Task { await deletePost() }
-            }
-        } message: {
-            Text("Are you sure you want to delete this post?")
-        }
+            Button("Delete", role: .destructive) { Task { await deletePost() } }
+        } message: { Text("Are you sure you want to delete this post?") }
         .task {
-            if let followers = authManager.user?.following {
-                isFollowing = followers.contains(post.authorID)
-            }
+            updateFollowingState()
+        }
+        // --- FIX: Watch for changes in AuthManager to update button state ---
+        .onChange(of: authManager.user?.following) { _ in
+            updateFollowingState()
+        }
+    }
+    
+    private func updateFollowingState() {
+        if let followers = authManager.user?.following {
+            isFollowing = followers.contains(post.authorID)
+        } else {
+            isFollowing = false
         }
     }
     
@@ -284,30 +286,20 @@ struct PostCard: View {
         HStack(alignment: .center, spacing: 10) {
             NavigationLink(destination: InstructorPublicProfileView(instructorID: post.authorID)) {
                 AsyncImage(url: URL(string: post.authorPhotoURL ?? "")) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        Image(systemName: "person.circle.fill")
-                            .resizable()
-                            .foregroundColor(.gray)
-                    }
+                    if let image = phase.image { image.resizable().scaledToFill() }
+                    else { Image(systemName: "person.circle.fill").resizable().foregroundColor(.gray) }
                 }
-                .frame(width: 45, height: 45)
-                .clipShape(Circle())
+                .frame(width: 45, height: 45).clipShape(Circle())
             }
             
             VStack(alignment: .leading, spacing: 2) {
                 NavigationLink(destination: InstructorPublicProfileView(instructorID: post.authorID)) {
-                    Text(post.authorName)
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                    Text(post.authorName).font(.headline).foregroundColor(.primary)
                 }
-                
                 HStack(spacing: 4) {
                     Text(post.timestamp.timeAgoDisplay())
                     if post.isEdited == true { Text("• (edited)") }
-                }
-                .font(.caption).foregroundColor(.textLight)
+                }.font(.caption).foregroundColor(.textLight)
             }
             
             Spacer()
@@ -317,14 +309,11 @@ struct PostCard: View {
                     Button { isShowingEditSheet = true } label: { Label("Edit Post", systemImage: "pencil") }
                     Button(role: .destructive) { isShowingDeleteAlert = true } label: { Label("Delete Post", systemImage: "trash") }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.headline)
-                        .foregroundColor(.textLight)
-                        .padding(10)
-                        .background(Color.gray.opacity(0.1))
-                        .clipShape(Circle())
+                    Image(systemName: "ellipsis").font(.headline).foregroundColor(.textLight)
+                        .padding(10).background(Color.gray.opacity(0.1)).clipShape(Circle())
                 }
             } else {
+                // --- Follow/Unfollow Button ---
                 Button(action: handleFollowToggle) {
                     Text(isFollowing ? "Unfollow" : "Follow")
                         .font(.caption).bold()
@@ -342,10 +331,7 @@ struct PostCard: View {
     @ViewBuilder
     private var contentView: some View {
         if let content = post.content {
-            Text(content)
-                .font(.body)
-                .foregroundColor(.primary)
-                .padding(.top, 4)
+            Text(content).font(.body).foregroundColor(.primary).padding(.top, 4)
         }
     }
     
@@ -356,31 +342,17 @@ struct PostCard: View {
                 TabView(selection: $currentImagePage) {
                     ForEach(Array(mediaURLs.enumerated()), id: \.offset) { index, urlString in
                         AsyncImage(url: URL(string: urlString)) { phase in
-                            if let image = phase.image {
-                                image.resizable().scaledToFill()
-                            } else {
-                                ZStack {
-                                    Color.gray.opacity(0.1)
-                                    ProgressView()
-                                }
-                            }
+                            if let image = phase.image { image.resizable().scaledToFill() }
+                            else { ZStack { Color.gray.opacity(0.1); ProgressView() } }
                         }
-                        .tag(index)
-                        .clipped()
+                        .tag(index).clipped()
                     }
                 }
-                .frame(height: 300)
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .cornerRadius(12)
+                .frame(height: 300).tabViewStyle(.page(indexDisplayMode: .never)).cornerRadius(12)
                 
                 if mediaURLs.count > 1 {
                     Text("\(currentImagePage + 1)/\(mediaURLs.count)")
-                        .font(.caption.bold())
-                        .padding(6)
-                        .background(Color.black.opacity(0.6))
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
-                        .padding(10)
+                        .font(.caption.bold()).padding(6).background(Color.black.opacity(0.6)).foregroundColor(.white).cornerRadius(8).padding(10)
                 }
             }
         }
@@ -408,31 +380,18 @@ struct PostCard: View {
                                 if let i = p.image { i.resizable().scaledToFill() } else { Color.gray }
                             }
                             .frame(width: 30, height: 30).clipShape(Circle())
-                            
                             VStack(alignment: .leading) {
                                 Text(comment.authorName).font(.caption).bold()
                                 Text(comment.content).font(.caption)
                             }
                         }
                     }
-                    if comments.count > 3 {
-                        Text("View all comments...").font(.caption).foregroundColor(.blue)
-                    }
-                } else {
-                    Text("No comments yet.").font(.caption).foregroundColor(.gray)
-                }
+                    if comments.count > 3 { Text("View all comments...").font(.caption).foregroundColor(.blue) }
+                } else { Text("No comments yet.").font(.caption).foregroundColor(.gray) }
                 
                 HStack {
-                    TextField("Write a comment...", text: $commentText)
-                        .font(.caption)
-                        .padding(8)
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(15)
-                    
-                    Button { Task { await postComment() } } label: {
-                        Image(systemName: "paperplane.fill").foregroundColor(.blue)
-                    }
-                    .disabled(commentText.isEmpty)
+                    TextField("Write a comment...", text: $commentText).font(.caption).padding(8).background(Color(.secondarySystemBackground)).cornerRadius(15)
+                    Button { Task { await postComment() } } label: { Image(systemName: "paperplane.fill").foregroundColor(.blue) }.disabled(commentText.isEmpty)
                 }
             }
         }
@@ -442,12 +401,21 @@ struct PostCard: View {
     private func handleFollowToggle() {
         Task {
             guard let myID = authManager.user?.id, let name = authManager.user?.name else { return }
-            if isFollowing {
+            // Optimistic update
+            isFollowing.toggle()
+            
+            if !isFollowing { // Was following, now unfollow
                 try? await communityManager.unfollowUser(currentUserID: myID, targetUserID: post.authorID)
-                isFollowing = false
-            } else {
+                // Remove from local state immediately
+                if var following = authManager.user?.following {
+                    following.removeAll { $0 == post.authorID }
+                    authManager.user?.following = following
+                }
+            } else { // Was not following, now follow
                 try? await communityManager.followUser(currentUserID: myID, targetUserID: post.authorID, currentUserName: name)
-                isFollowing = true
+                // Add to local state immediately
+                if authManager.user?.following == nil { authManager.user?.following = [] }
+                authManager.user?.following?.append(post.authorID)
             }
         }
     }
@@ -468,15 +436,7 @@ struct PostCard: View {
     private func postComment() async {
         guard let postID = post.id, let author = authManager.user, let authorID = author.id else { return }
         isPostingComment = true
-        try? await communityManager.addComment(
-            postID: postID,
-            authorID: authorID,
-            authorName: author.name ?? "User",
-            authorRole: author.role,
-            authorPhotoURL: author.photoURL,
-            content: commentText,
-            parentCommentID: nil
-        )
+        try? await communityManager.addComment(postID: postID, authorID: authorID, authorName: author.name ?? "User", authorRole: author.role, authorPhotoURL: author.photoURL, content: commentText, parentCommentID: nil)
         commentText = ""
         isPostingComment = false
         await fetchComments()
@@ -491,7 +451,6 @@ struct ReactionButton: View {
     let reactionType: String
     let icon: String
     let color: Color
-    
     @State private var isDisabled = false
     
     var body: some View {
@@ -504,18 +463,11 @@ struct ReactionButton: View {
             }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .foregroundColor(color)
-                
-                if let count = post.reactionsCount[reactionType], count > 0 {
-                    Text("\(count)")
-                        .font(.caption).bold()
-                        .foregroundColor(.secondary)
-                }
+                Image(systemName: icon).foregroundColor(color)
+                if let count = post.reactionsCount[reactionType], count > 0 { Text("\(count)").font(.caption).bold().foregroundColor(.secondary) }
             }
         }
-        .buttonStyle(.plain)
-        .disabled(isDisabled)
+        .buttonStyle(.plain).disabled(isDisabled)
     }
 }
 

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/AuthManager.swift
-// --- UPDATED: Added 'updatePrivacySettings' and 'deleteAccount' ---
+// --- UPDATED: 'deleteAccount' includes Re-auth & Community Post Cleanup ---
 
 import Combine
 import Foundation
@@ -10,26 +10,21 @@ import UIKit
 
 @MainActor
 class AuthManager: ObservableObject {
-    // MARK: - Published Properties
     @Published var user: AppUser? = nil
     @Published var isAuthenticated: Bool = false
     @Published var isLoading: Bool = true
     @Published var role: UserRole = .unselected
 
-    // MARK: - Private Properties
     private var authHandle: AuthStateDidChangeListenerHandle?
     private let db = Firestore.firestore()
     private let usersCollection = "users"
-
     private var isCurrentlySigningUp = false
 
-    // MARK: - Initialization
     init() {
         self.isLoading = true
         setupAuthStateListener()
     }
 
-    // MARK: - Auth State Listener
     private func setupAuthStateListener() {
         authHandle = Auth.auth().addStateDidChangeListener { [weak self] auth, firebaseUser in
             Task { @MainActor in
@@ -46,18 +41,16 @@ class AuthManager: ObservableObject {
         }
     }
 
-    // MARK: - Data Fetching
     private func fetchUserData(id: String, email: String?) async {
         guard !self.isCurrentlySigningUp else { return }
         if !self.isLoading { self.isLoading = true }
 
         do {
             let document = try await db.collection(usersCollection).document(id).getDocument()
-            if document.exists, let appUser = try? document.data(as: AppUser.self) {
+            if document.exists, var appUser = try? document.data(as: AppUser.self) {
                 self.user = appUser
                 self.role = appUser.role
             } else {
-                // Create default user if doc missing
                 let defaultRole: UserRole = .student
                 var newUser = AppUser(id: id, email: email ?? "unknown@email.com", role: defaultRole)
                 newUser.aboutMe = ""
@@ -69,7 +62,7 @@ class AuthManager: ObservableObject {
             }
             if !self.isAuthenticated { self.isAuthenticated = true }
         } catch {
-            print("FetchUserData FAILED: \(error.localizedDescription)")
+            print("!!! FetchUserData FAILED: \(error.localizedDescription)")
             self.isLoading = false
             return
         }
@@ -85,34 +78,32 @@ class AuthManager: ObservableObject {
         self.isCurrentlySigningUp = false
     }
 
-    // MARK: - Public Actions
-
     func login(email: String, password: String) async throws {
         if self.isCurrentlySigningUp { self.isCurrentlySigningUp = false }
         self.isLoading = true
         do {
             _ = try await Auth.auth().signIn(withEmail: email, password: password)
         } catch {
-            self.isLoading = false
+            print("Login failed: \(error.localizedDescription)")
+            resetState()
             throw error
         }
     }
 
     func signUp(name: String, email: String, phone: String, password: String, role: UserRole, drivingSchool: String?, address: String?, photoData: Data?, hourlyRate: Double?) async throws {
-        guard !self.isCurrentlySigningUp else { return }
+        guard !self.isCurrentlySigningUp else {
+             throw NSError(domain: "AuthManager", code: -10, userInfo: [NSLocalizedDescriptionKey: "Sign up already in progress."])
+        }
         self.isCurrentlySigningUp = true
         self.isLoading = true
-        
         var uid: String = ""
         var photoURL: String? = nil
         do {
             let result = try await Auth.auth().createUser(withEmail: email, password: password)
             uid = result.user.uid
-            
             if let data = photoData {
                 photoURL = try await StorageManager.shared.uploadProfilePhoto(photoData: data, userID: uid)
             }
-            
             var newUser = AppUser(id: uid, email: email, name: name, role: role)
             newUser.phone = phone
             newUser.drivingSchool = drivingSchool
@@ -122,9 +113,7 @@ class AuthManager: ObservableObject {
             newUser.aboutMe = ""
             newUser.education = []
             if role == .instructor { newUser.expertise = [] }
-            
             try await db.collection(usersCollection).document(uid).setData(from: newUser)
-            
             self.user = newUser
             self.role = newUser.role
             self.isAuthenticated = true
@@ -134,15 +123,15 @@ class AuthManager: ObservableObject {
             if !uid.isEmpty && Auth.auth().currentUser?.uid == uid {
                 try? await Auth.auth().currentUser?.delete()
             }
-            self.isLoading = false
-            self.isCurrentlySigningUp = false
+            resetState()
             throw error
         }
     }
 
     func updateUserProfile(name: String, phone: String, address: String, drivingSchool: String?, hourlyRate: Double?, photoData: Data?, aboutMe: String?, education: [EducationEntry]?, expertise: [String]?) async throws {
-        guard let currentUserID = user?.id else { return }
-
+        guard let currentUserID = user?.id else {
+            throw NSError(domain: "AuthManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "User not logged in."])
+        }
         var dataToUpdate: [String: Any] = [:]
         var uploadedPhotoURL: String? = nil
 
@@ -150,64 +139,78 @@ class AuthManager: ObservableObject {
             uploadedPhotoURL = try await StorageManager.shared.uploadProfilePhoto(photoData: data, userID: currentUserID)
             dataToUpdate["photoURL"] = uploadedPhotoURL
         }
-
         if name != self.user?.name { dataToUpdate["name"] = name }
         if phone != self.user?.phone { dataToUpdate["phone"] = phone }
         if address != self.user?.address { dataToUpdate["address"] = address }
         if aboutMe != self.user?.aboutMe { dataToUpdate["aboutMe"] = aboutMe ?? "" }
-        
-        // Complex object handling simplified for brevity - assumes always update if passed
-        if let education = education {
-             let eduDicts = education.map { ["id": $0.id.uuidString, "title": $0.title, "subtitle": $0.subtitle, "years": $0.years] }
+
+        let currentEducation = self.user?.education ?? []
+        let newEducation = education ?? []
+        var educationChanged = false
+        if currentEducation.count != newEducation.count { educationChanged = true }
+        else {
+            for i in 0..<currentEducation.count {
+                if currentEducation[i].title != newEducation[i].title ||
+                   currentEducation[i].subtitle != newEducation[i].subtitle ||
+                   currentEducation[i].years != newEducation[i].years {
+                    educationChanged = true
+                    break
+                }
+            }
+        }
+        if educationChanged {
+             let eduDicts = newEducation.map { ["id": $0.id.uuidString, "title": $0.title, "subtitle": $0.subtitle, "years": $0.years] }
              dataToUpdate["education"] = eduDicts
         }
 
         if role == .instructor {
             if drivingSchool != self.user?.drivingSchool { dataToUpdate["drivingSchool"] = drivingSchool ?? "" }
-            if let rate = hourlyRate { dataToUpdate["hourlyRate"] = rate }
-            if let expertise = expertise { dataToUpdate["expertise"] = expertise }
+            let rateDouble = Double(hourlyRate ?? 0.0)
+            if rateDouble != self.user?.hourlyRate { dataToUpdate["hourlyRate"] = rateDouble }
+            let currentExpertise = self.user?.expertise ?? []
+            let newExpertise = expertise ?? []
+            if currentExpertise.count != newExpertise.count || Set(currentExpertise) != Set(newExpertise) {
+                 dataToUpdate["expertise"] = newExpertise
+            }
         }
 
         if !dataToUpdate.isEmpty {
             try await db.collection(usersCollection).document(currentUserID).updateData(dataToUpdate)
-            
-            // Local update
-            if let name = dataToUpdate["name"] as? String { self.user?.name = name }
-            if let phone = dataToUpdate["phone"] as? String { self.user?.phone = phone }
-            if let url = uploadedPhotoURL { self.user?.photoURL = url }
-            if let school = dataToUpdate["drivingSchool"] as? String { self.user?.drivingSchool = school }
-            if let rate = dataToUpdate["hourlyRate"] as? Double { self.user?.hourlyRate = rate }
-            if let about = dataToUpdate["aboutMe"] as? String { self.user?.aboutMe = about }
-            self.user?.education = education
-            self.user?.expertise = expertise
+            if dataToUpdate["name"] != nil { self.user?.name = name }
+            if dataToUpdate["phone"] != nil { self.user?.phone = phone }
+            if dataToUpdate["address"] != nil { self.user?.address = address }
+            if dataToUpdate["aboutMe"] != nil { self.user?.aboutMe = aboutMe }
+            if dataToUpdate["education"] != nil { self.user?.education = education }
+            if dataToUpdate["photoURL"] != nil { self.user?.photoURL = uploadedPhotoURL }
+            if self.role == .instructor {
+                if dataToUpdate["drivingSchool"] != nil { self.user?.drivingSchool = drivingSchool }
+                if dataToUpdate["hourlyRate"] != nil { self.user?.hourlyRate = Double(hourlyRate ?? 0.0) }
+                if dataToUpdate["expertise"] != nil { self.user?.expertise = expertise }
+            }
         }
     }
     
-    // --- NEW: Update Privacy Settings ---
     func updatePrivacySettings(isPrivate: Bool, hideFollowers: Bool, hideEmail: Bool) async throws {
         guard let uid = user?.id else { return }
-        
         let data: [String: Any] = [
             "isPrivate": isPrivate,
             "hideFollowers": hideFollowers,
             "hideEmail": hideEmail
         ]
-        
         try await db.collection(usersCollection).document(uid).updateData(data)
-        
-        // Update local state
         self.user?.isPrivate = isPrivate
         self.user?.hideFollowers = hideFollowers
         self.user?.hideEmail = hideEmail
     }
-    
+
     func syncApprovedInstructors(approvedInstructorIDs: [String]) async {
         guard let currentUserID = self.user?.id else { return }
         let localIDs = Set(self.user?.instructorIDs ?? [])
         let approvedIDs = Set(approvedInstructorIDs)
-        
         if localIDs != approvedIDs {
-            try? await db.collection(usersCollection).document(currentUserID).updateData(["instructorIDs": approvedInstructorIDs])
+            try? await db.collection(usersCollection).document(currentUserID).updateData([
+                "instructorIDs": approvedInstructorIDs
+            ])
             self.user?.instructorIDs = approvedInstructorIDs
         }
     }
@@ -216,20 +219,52 @@ class AuthManager: ObservableObject {
         try Auth.auth().signOut()
     }
     
-    // --- NEW: Delete Account ---
-    func deleteAccount() async throws {
+    // --- UPDATED: 'deleteAccount' with One-Step Re-authentication ---
+    func deleteAccount(password: String) async throws {
         guard let user = Auth.auth().currentUser else { return }
-        guard let uid = self.user?.id else { return }
+        guard let uid = self.user?.id, let email = user.email else { return }
         
-        // 1. Delete Firestore User Document
-        try await db.collection(usersCollection).document(uid).delete()
+        print("AuthManager: Starting deletion for \(uid)")
         
-        // 2. Delete Authentication Account
-        // Note: This requires recent login. Re-authentication might be needed in a real app flow.
+        // 1. RE-AUTHENTICATE (Solve "Requires Recent Login")
+        let credential = EmailAuthProvider.credential(withEmail: email, password: password)
+        try await user.reauthenticate(with: credential)
+        print("AuthManager: Re-authentication successful.")
+        
+        // 2. DELETE COMMUNITY POSTS
+        await deleteUserCommunityPosts(uid: uid)
+        
+        // 3. DELETE USER DOC
+        do {
+            try await db.collection(usersCollection).document(uid).delete()
+            print("AuthManager: Firestore user doc deleted.")
+        } catch {
+            print("AuthManager Warning: Failed to delete user doc: \(error.localizedDescription)")
+        }
+        
+        // 4. DELETE AUTH ACCOUNT
         try await user.delete()
+        print("AuthManager: Auth account deleted.")
         
-        // 3. Reset Local State
-        resetState()
+        await resetState()
+    }
+    
+    // Helper to delete posts
+    private func deleteUserCommunityPosts(uid: String) async {
+        do {
+            let postsSnapshot = try await db.collection("community_posts")
+                .whereField("authorID", isEqualTo: uid)
+                .getDocuments()
+            
+            let batch = db.batch()
+            for doc in postsSnapshot.documents {
+                batch.deleteDocument(doc.reference)
+            }
+            try await batch.commit()
+            print("AuthManager: Deleted \(postsSnapshot.count) community posts.")
+        } catch {
+            print("AuthManager Error: Failed to delete posts: \(error.localizedDescription)")
+        }
     }
 
     func sendPasswordReset(email: String) async throws {
@@ -237,6 +272,8 @@ class AuthManager: ObservableObject {
     }
 
     deinit {
-        if let handle = authHandle { Auth.auth().removeStateDidChangeListener(handle) }
+        if let handle = authHandle {
+            Auth.auth().removeStateDidChangeListener(handle)
+        }
     }
 }

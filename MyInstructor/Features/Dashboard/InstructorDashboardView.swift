@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: Explicitly injected environmentObjects into sheets to prevent crashes ---
+// --- UPDATED: Reordered Quick Actions (Income/Expense moved above Live Map/Payment) ---
 
 import SwiftUI
 
@@ -72,17 +72,18 @@ struct InstructorDashboardView: View {
                                 // 2. Track Exam
                                 QuickActionButton(title: "Track Exam", icon: "flag.checkered", color: .indigo, action: { activeSheet = .trackExam })
                                 
-                                // 3. Live Map (Replaced "Add Student")
-                                QuickActionButton(title: "Live Map", icon: "map.fill", color: .purple, action: { activeSheet = .liveMap })
-                                
-                                // 4. Record Payment
-                                QuickActionButton(title: "Record Payment", icon: "creditcard.fill", color: .purple, action: { activeSheet = .recordPayment })
-                                
-                                // 5. Track Income
+                                // 3. Track Income (Moved Up)
                                 QuickActionButton(title: "Track Income", icon: "chart.line.uptrend.xyaxis", color: .orange, action: { activeSheet = .trackIncome })
                                 
-                                // 6. Track Expense
+                                // 4. Track Expense (Moved Up)
                                 QuickActionButton(title: "Track Expense", icon: "chart.line.downtrend.xyaxis", color: .warningRed, action: { activeSheet = .trackExpense })
+                                
+                                
+                                // 6. Record Payment (Moved Down)
+                                QuickActionButton(title: "Record Payment", icon: "creditcard.fill", color: .purple, action: { activeSheet = .recordPayment })
+                                // 5. Live Map (Moved Down)
+                                QuickActionButton(title: "Live Map", icon: "map.fill", color: .purple, action: { activeSheet = .liveMap })
+                                
                                 
                                 // 7. Service Book
                                 QuickActionButton(title: "Service Book", icon: "wrench.and.screwdriver.fill", color: .gray, action: { activeSheet = .serviceBook })

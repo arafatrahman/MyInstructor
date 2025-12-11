@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
-// --- UPDATED: Enforced Privacy Settings (Hide Email / Hide Followers) ---
+// --- UPDATED: Implemented Swipe Actions for Notes (Edit/Delete) and removed the menu ---
 
 import SwiftUI
 
@@ -70,7 +70,7 @@ struct StudentProfileView: View {
                 )
                 .padding(.horizontal)
                 
-                // 4. Notes Card
+                // 4. Notes Card (Updated with Swipe Actions)
                 StudentNotesCard(
                     notes: studentNotes,
                     onAdd: {
@@ -474,28 +474,147 @@ private struct StudentContactCard: View {
     }
 }
 
-// MARK: - 4. Notes Card
+// MARK: - 4. Notes Card (Updated for Swipe Actions)
 private struct StudentNotesCard: View {
-    let notes: [StudentNote]; let onAdd: () -> Void; let onEdit: (StudentNote) -> Void; let onDelete: (StudentNote) -> Void
+    let notes: [StudentNote]
+    let onAdd: () -> Void
+    let onEdit: (StudentNote) -> Void
+    let onDelete: (StudentNote) -> Void
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack { Text("NOTES").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary); Spacer(); Button(action: onAdd) { Image(systemName: "plus").font(.system(size: 14, weight: .bold)).foregroundColor(.primaryBlue) } }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+            HStack {
+                Text("NOTES").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary)
+                Spacer()
+                Button(action: onAdd) {
+                    Image(systemName: "plus").font(.system(size: 14, weight: .bold)).foregroundColor(.primaryBlue)
+                }
+            }
+            .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+            
             Divider().padding(.horizontal, 16)
+            
             if !notes.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(notes) { note in
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(alignment: .top) {
-                                Text(note.content).font(.system(size: 15)).foregroundColor(.primary).fixedSize(horizontal: false, vertical: true); Spacer()
-                                Menu { Button(action: { onEdit(note) }) { Label("Edit", systemImage: "pencil") }; Button(role: .destructive, action: { onDelete(note) }) { Label("Delete", systemImage: "trash") } } label: { Image(systemName: "ellipsis").foregroundColor(.secondary).padding(4) }
-                            }
-                            Text(note.timestamp.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 12)).foregroundColor(.secondary)
-                        }.padding(.horizontal, 16).padding(.vertical, 12)
-                        if note.id != notes.last?.id { Divider().padding(.horizontal, 16) }
+                        // Use the new SwipeableNoteRow here
+                        SwipeableNoteRow(
+                            note: note,
+                            onEdit: { onEdit(note) },
+                            onDelete: { onDelete(note) }
+                        )
+                        
+                        if note.id != notes.last?.id {
+                            Divider().padding(.horizontal, 16)
+                        }
                     }
                 }
-            } else { Text("No notes added.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) }
-        }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+            } else {
+                Text("No notes added.")
+                    .font(.system(size: 15))
+                    .foregroundColor(.secondary)
+                    .padding(16)
+            }
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+    }
+}
+
+// MARK: - Swipeable Note Row (Helper View)
+private struct SwipeableNoteRow: View {
+    let note: StudentNote
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    
+    @State private var offset: CGFloat = 0
+    @State private var isSwiped: Bool = false
+    
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            // Action Buttons Layer (Behind Content)
+            HStack(spacing: 0) {
+                Spacer()
+                
+                Button(action: {
+                    closeSwipe()
+                    onEdit()
+                }) {
+                    VStack {
+                        Image(systemName: "pencil")
+                            .font(.title3)
+                        Text("Edit")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.white)
+                    .frame(width: 70)
+                    .frame(maxHeight: .infinity)
+                    .background(Color.blue)
+                }
+                
+                Button(action: {
+                    closeSwipe()
+                    onDelete()
+                }) {
+                    VStack {
+                        Image(systemName: "trash")
+                            .font(.title3)
+                        Text("Delete")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.white)
+                    .frame(width: 70)
+                    .frame(maxHeight: .infinity)
+                    .background(Color.red)
+                }
+            }
+            
+            // Content Layer (Foreground)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(note.content)
+                    .font(.system(size: 15))
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                Text(note.timestamp.formatted(date: .abbreviated, time: .shortened))
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.systemBackground)) // Background to cover actions
+            .offset(x: offset)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        // Restrict to left swipe only
+                        if value.translation.width < 0 {
+                            self.offset = value.translation.width
+                        }
+                    }
+                    .onEnded { value in
+                        withAnimation {
+                            if value.translation.width < -70 {
+                                self.offset = -140 // Reveal width of both buttons (70 * 2)
+                                self.isSwiped = true
+                            } else {
+                                self.offset = 0
+                                self.isSwiped = false
+                            }
+                        }
+                    }
+            )
+        }
+        .clipped() // Prevent actions from bleeding out
+    }
+    
+    private func closeSwipe() {
+        withAnimation {
+            offset = 0
+            isSwiped = false
+        }
     }
 }
 

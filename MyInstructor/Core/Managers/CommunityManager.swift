@@ -474,7 +474,19 @@ class CommunityManager: ObservableObject {
     // MARK: - Offline Students
     
     func addOfflineStudent(instructorID: String, name: String, phone: String?, email: String?, address: String?) async throws {
-        try offlineStudentsCollection.addDocument(from: OfflineStudent(instructorID: instructorID, name: name, phone: phone, email: email, address: address))
+            // Create the object
+            var newStudent = OfflineStudent(
+                instructorID: instructorID,
+                name: name,
+                phone: phone,
+                email: email,
+                address: address
+            )
+            
+            // Explicitly set ID to nil to avoid the [I-FST000002] warning
+            newStudent.id = nil
+            
+            try offlineStudentsCollection.addDocument(from: newStudent)
     }
     
     func updateOfflineStudent(_ student: OfflineStudent) async throws {

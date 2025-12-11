@@ -1,7 +1,13 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
+// --- UPDATED: Executes callback for instant list update ---
+
 import SwiftUI
 
 struct StudentProfileView: View {
     let student: Student
+    
+    // --- Callback for instant updates ---
+    var onProgressUpdate: ((String, Double) -> Void)? = nil
     
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var paymentManager: PaymentManager
@@ -41,7 +47,7 @@ struct StudentProfileView: View {
         ScrollView {
             VStack(spacing: 16) {
                 
-                // 1. Header Card (Photo, Name, Actions, Social Stats)
+                // 1. Header Card
                 StudentProfileHeaderCard(
                     student: student,
                     studentAsAppUser: studentAsAppUser,
@@ -63,7 +69,7 @@ struct StudentProfileView: View {
                 // 3. Contact Card
                 StudentContactCard(
                     student: student,
-                    studentAsAppUser: studentAsAppUser // Passed for privacy checks
+                    studentAsAppUser: studentAsAppUser
                 )
                 .padding(.horizontal)
                 
@@ -100,7 +106,6 @@ struct StudentProfileView: View {
         }
         .navigationTitle("Student Profile")
         .navigationBarTitleDisplayMode(.inline)
-        // --- TOOLBAR ---
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
@@ -108,14 +113,11 @@ struct StudentProfileView: View {
                         Button { isShowingEditSheet = true } label: { Label("Edit Profile", systemImage: "pencil") }
                         Button(role: .destructive) { isShowingDeleteAlert = true } label: { Label("Delete Student", systemImage: "trash") }
                     } else {
-                        // --- COMPLETED / REMOVED LOGIC ---
                         if studentStatus == .completed {
                             Button { Task { await reactivateStudent() } } label: { Label("Reactivate Student", systemImage: "person.badge.plus") }
                         } else {
                             Button(role: .destructive) { isShowingRemoveAlert = true } label: { Label("Remove Student", systemImage: "person.badge.minus") }
                         }
-                        
-                        // --- BLOCK / UNBLOCK LOGIC ---
                         if studentStatus == .blocked {
                             Button { isShowingUnblockAlert = true } label: { Label("Unblock Student", systemImage: "hand.raised.slash.fill") }
                         } else {
@@ -195,31 +197,25 @@ struct StudentProfileView: View {
     func fetchData() async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else { return }
         
-        // 1. Fetch User Object if Online
         if !isOffline && studentAsAppUser == nil {
             self.studentAsAppUser = try? await dataService.fetchUser(withId: studentID)
-            
             if let status = try? await communityManager.fetchRelationshipStatus(instructorID: instructorID, studentID: studentID) {
                 self.studentStatus = status
             }
         }
         
-        // 2. Fetch Notes & Progress (Works for both Offline and Online via Manager)
         if let data = try? await communityManager.fetchInstructorStudentData(instructorID: instructorID, studentID: studentID, isOffline: isOffline) {
             self.currentProgress = data.progress ?? 0.0
             self.studentNotes = data.notes ?? []
         } else {
-            // Fallback for initial load
             self.currentProgress = student.averageProgress
         }
         
-        // 3. Fetch Lessons
         do {
             let allLessons = try await lessonManager.fetchLessonsForStudent(studentID: studentID, start: .distantPast, end: .distantFuture)
             self.lessonHistory = allLessons.sorted(by: { $0.startTime > $1.startTime })
         } catch { print("Error fetching lessons: \(error)") }
         
-        // 4. Fetch Payments
         self.payments = (try? await paymentManager.fetchStudentPayments(for: studentID)) ?? []
     }
     
@@ -244,6 +240,7 @@ struct StudentProfileView: View {
         await fetchData()
     }
     
+    // --- UPDATED SAVE FUNCTION ---
     func saveProgress() async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else {
             errorMessage = "Missing student or instructor ID."
@@ -252,14 +249,15 @@ struct StudentProfileView: View {
         }
         
         do {
-            // This function handles the logic for both Online and Offline
             try await communityManager.updateStudentProgress(instructorID: instructorID, studentID: studentID, newProgress: newProgressValue, isOffline: isOffline)
             
             // Update local state immediately
             self.currentProgress = newProgressValue
             isShowingProgressSheet = false
             
-            // Refresh full data to be safe
+            // --- EXECUTE CALLBACK ---
+            onProgressUpdate?(studentID, newProgressValue)
+            
             await fetchData()
             
         } catch {
@@ -298,7 +296,8 @@ struct StudentProfileView: View {
     }
 }
 
-// MARK: - 1. Student Header Card (Updated with Default Avatar)
+// MARK: - Subviews
+
 private struct StudentProfileHeaderCard: View {
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var authManager: AuthManager
@@ -320,13 +319,11 @@ private struct StudentProfileHeaderCard: View {
     var body: some View {
         VStack(spacing: 12) {
             ZStack(alignment: .bottomTrailing) {
-                // --- Updated Avatar Logic ---
                 if let urlString = student.photoURL, let url = URL(string: urlString) {
                     AsyncImage(url: url) { phase in
                         if let image = phase.image {
                             image.resizable().scaledToFill()
                         } else {
-                            // Loading or Error -> Default
                             DefaultAvatar(name: student.name, size: 100)
                         }
                     }
@@ -334,7 +331,6 @@ private struct StudentProfileHeaderCard: View {
                     .clipShape(Circle())
                     .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
                 } else {
-                    // No URL -> Default
                     DefaultAvatar(name: student.name, size: 100)
                         .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
                 }
@@ -438,8 +434,6 @@ struct DefaultAvatar: View {
         ZStack {
             Circle()
                 .fill(Color(.systemGray5))
-            
-            // Show initials if name is available, otherwise generic icon
             if !name.isEmpty {
                 Text(initials)
                     .font(.system(size: size * 0.4, weight: .bold))
@@ -456,7 +450,6 @@ struct DefaultAvatar: View {
     }
 }
 
-// MARK: - 2. Progress Card
 private struct StudentProgressCard: View {
     let progress: Double; let onUpdate: () -> Void
     var body: some View {
@@ -470,7 +463,6 @@ private struct StudentProgressCard: View {
     }
 }
 
-// MARK: - 3. Contact Card
 private struct StudentContactCard: View {
     let student: Student
     let studentAsAppUser: AppUser?
@@ -492,7 +484,6 @@ private struct StudentContactCard: View {
     }
 }
 
-// MARK: - 4. Notes Card
 private struct StudentNotesCard: View {
     let notes: [StudentNote]
     let onAdd: () -> Void
@@ -521,7 +512,6 @@ private struct StudentNotesCard: View {
     }
 }
 
-// MARK: - Swipeable Note Row
 private struct SwipeableNoteRow: View {
     let note: StudentNote
     let onEdit: () -> Void
@@ -547,7 +537,6 @@ private struct SwipeableNoteRow: View {
     private func closeSwipe() { withAnimation { offset = 0; isSwiped = false } }
 }
 
-// MARK: - 5. Lessons Card
 private struct StudentLessonsCard: View {
     let lessons: [Lesson]; var recentLessons: [Lesson] { Array(lessons.prefix(3)) }
     var body: some View {
@@ -571,7 +560,6 @@ private struct StudentLessonsCard: View {
     func statusColor(_ status: LessonStatus) -> Color { switch status { case .completed: return .accentGreen; case .cancelled: return .warningRed; case .scheduled: return .primaryBlue } }
 }
 
-// MARK: - 6. Payments Card
 private struct StudentPaymentsCard: View {
     let payments: [Payment]; var recentPayments: [Payment] { Array(payments.sorted(by: { $0.date > $1.date }).prefix(3)) }
     var body: some View {

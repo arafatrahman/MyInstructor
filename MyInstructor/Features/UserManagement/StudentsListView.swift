@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
+// --- UPDATED: Passing 'onProgressUpdate' closure to ensure instant UI updates ---
+
 import SwiftUI
 
 struct StudentsListView: View {
@@ -78,6 +81,19 @@ struct StudentsListView: View {
             nextLessonTopic: nil
         )
     }
+    
+    // --- Helper to update progress locally ---
+    func updateLocalStudentProgress(id: String, progress: Double) {
+        if let index = approvedStudents.firstIndex(where: { $0.id == id }) {
+            approvedStudents[index].averageProgress = progress
+        }
+        if let index = completedStudentsList.firstIndex(where: { $0.id == id }) {
+            completedStudentsList[index].averageProgress = progress
+        }
+        if let index = offlineStudents.firstIndex(where: { $0.id == id }) {
+            offlineStudents[index].progress = progress
+        }
+    }
 
     var body: some View {
         NavigationView {
@@ -145,7 +161,12 @@ struct StudentsListView: View {
                                         Button(role: .destructive) { Task { await removeStudent(student) } } label: { Label("Complete", systemImage: "checkmark.circle") }
                                     }
                                     .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-                                    .background(NavigationLink { StudentProfileView(student: student) } label: { EmptyView() }.opacity(0))
+                                    // --- UPDATED NAVIGATION ---
+                                    .background(NavigationLink {
+                                        StudentProfileView(student: student, onProgressUpdate: { id, progress in
+                                            updateLocalStudentProgress(id: id, progress: progress)
+                                        })
+                                    } label: { EmptyView() }.opacity(0))
                                 }
                             }
                         }
@@ -160,7 +181,12 @@ struct StudentsListView: View {
                                         Button { Task { await reactivateStudent(student) } } label: { Label("Add Again", systemImage: "person.badge.plus") }.tint(.accentGreen)
                                     }
                                     .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-                                    .background(NavigationLink { StudentProfileView(student: student) } label: { EmptyView() }.opacity(0))
+                                    // --- UPDATED NAVIGATION ---
+                                    .background(NavigationLink {
+                                        StudentProfileView(student: student, onProgressUpdate: { id, progress in
+                                            updateLocalStudentProgress(id: id, progress: progress)
+                                        })
+                                    } label: { EmptyView() }.opacity(0))
                                 }
                             }
                         }
@@ -193,7 +219,12 @@ struct StudentsListView: View {
                                             } label: { Label("Delete", systemImage: "trash.fill") }
                                         }
                                         .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-                                        .background(NavigationLink(destination: StudentProfileView(student: convertedStudent)) { EmptyView() }.opacity(0))
+                                        // --- UPDATED NAVIGATION ---
+                                        .background(NavigationLink {
+                                            StudentProfileView(student: convertedStudent, onProgressUpdate: { id, progress in
+                                                updateLocalStudentProgress(id: id, progress: progress)
+                                            })
+                                        } label: { EmptyView() }.opacity(0))
                                 }
                             }
                         }

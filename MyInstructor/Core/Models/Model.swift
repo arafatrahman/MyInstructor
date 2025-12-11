@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/Model.swift
-// --- UPDATED: Added Privacy Settings fields to AppUser ---
+// --- UPDATED: Fixed Student equality check to include averageProgress ---
 
 import Foundation
 import FirebaseFirestore
@@ -38,10 +38,10 @@ struct AppUser: Identifiable, Codable {
     var followers: [String]? = []
     var blockedUsers: [String]? = []
     
-    // --- NEW: Privacy Settings ---
-    var isPrivate: Bool? = false        // If true, profile is locked to non-followers
-    var hideFollowers: Bool? = false    // If true, follower/following counts are hidden
-    var hideEmail: Bool? = false        // If true, email is hidden from public profile
+    // Privacy Settings
+    var isPrivate: Bool? = false
+    var hideFollowers: Bool? = false
+    var hideEmail: Bool? = false
 
     init(id: String, email: String, name: String? = nil, role: UserRole = .unselected) {
         self.id = id; self.email = email; self.name = name; self.role = role
@@ -68,8 +68,21 @@ struct Student: Identifiable, Codable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, userID, name, photoURL, email, drivingSchool, phone, address, averageProgress, nextLessonTime, nextLessonTopic, isOffline
     }
-    static func == (lhs: Student, rhs: Student) -> Bool { lhs.id == rhs.id }
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    
+    // --- FIX: Compare progress and name to ensure UI updates ---
+    static func == (lhs: Student, rhs: Student) -> Bool {
+        return lhs.id == rhs.id &&
+               lhs.averageProgress == rhs.averageProgress &&
+               lhs.name == rhs.name &&
+               lhs.photoURL == rhs.photoURL
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(averageProgress)
+        hasher.combine(name)
+        hasher.combine(photoURL)
+    }
 }
 
 // MARK: - Note Models

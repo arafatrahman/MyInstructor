@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/StudentDashboardView.swift
-// --- UPDATED: Explicitly injected environmentObjects into sheets to prevent crashes ---
+// --- UPDATED: Reordered Quick Actions (Track Exam -> Live Map pos, Live Map -> Payment History pos, Payment History -> Track Exam pos) ---
 
 import SwiftUI
 
@@ -85,19 +85,28 @@ struct StudentDashboardView: View {
                             Text("Quick Actions").font(.headline).padding(.horizontal)
                             
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
+                                // 1. Find Instructor
                                 StudentQuickActionButton(title: "Find Instructor", icon: "magnifyingglass.circle.fill", color: .teal, action: { activeSheet = .findInstructor })
                                 
-                                // --- UPDATED: Replaced "My Instructors" with "Live Map" ---
-                                StudentQuickActionButton(title: "Live Map", icon: "map.fill", color: .purple, action: { activeSheet = .liveMap })
-                                
-                                StudentQuickActionButton(title: "Lesson Stats", icon: "chart.bar.fill", color: .primaryBlue, action: { activeSheet = .lessonStats })
-                                StudentQuickActionButton(title: "Log Practice", icon: "timer", color: .accentGreen, action: { activeSheet = .logPractice })
-                                
-                                // TRACK EXAM
+                                // 2. Track Exam (Moved from position 5 to position 2)
                                 StudentQuickActionButton(title: "Track Exam", icon: "flag.checkered", color: .indigo, action: { activeSheet = .trackExam })
                                 
+                                // 3. Lesson Stats
+                                StudentQuickActionButton(title: "Lesson Stats", icon: "chart.bar.fill", color: .primaryBlue, action: { activeSheet = .lessonStats })
+                                
+                                // 4. Log Practice
+                                StudentQuickActionButton(title: "Log Practice", icon: "timer", color: .accentGreen, action: { activeSheet = .logPractice })
+                                
+                                // 5. Payment History (Moved from position 6 to position 5)
                                 StudentQuickActionButton(title: "Payment History", icon: "creditcard.fill", color: .orange, action: { activeSheet = .paymentHistory })
+                                
+                                // 6. Live Map (Moved from position 2 to position 6)
+                                StudentQuickActionButton(title: "Live Map", icon: "map.fill", color: .purple, action: { activeSheet = .liveMap })
+                                
+                                // 7. Notes
                                 StudentQuickActionButton(title: "Notes", icon: "note.text", color: .pink, action: { activeSheet = .notes })
+                                
+                                // 8. Contacts
                                 StudentQuickActionButton(title: "Contacts", icon: "phone.circle.fill", color: .blue, action: { activeSheet = .contacts })
                             }
                             .padding(.horizontal)

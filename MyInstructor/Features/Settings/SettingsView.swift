@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/SettingsView.swift
-// --- UPDATED: Added Password Field to Delete Alert for "One Step" Deletion ---
+// --- UPDATED: Removed "Public Progress" setting ---
 
 import SwiftUI
 
@@ -10,7 +10,6 @@ struct SettingsView: View {
     @State private var isLocationSharingEnabled = true
     @State private var receiveLessonReminders = true
     @State private var receiveCommunityAlerts = true
-    @State private var isProgressPublic = false
     @State private var isPrivacyConsentShowing = false
     
     // Profile Privacy Settings
@@ -21,7 +20,7 @@ struct SettingsView: View {
     // Danger Zone State
     @State private var showDeleteConfirmation = false
     @State private var isDeleting = false
-    @State private var password = "" // NEW: For re-authentication
+    @State private var password = "" // For re-authentication
     
     var isInstructor: Bool {
         authManager.role == .instructor
@@ -43,7 +42,8 @@ struct SettingsView: View {
                         Toggle("Auto-Share Pickup", isOn: .constant(true)).tint(.primaryBlue)
                     }
                     
-                    Toggle("Public Progress", isOn: $isProgressPublic).tint(.primaryBlue)
+                    // --- REMOVED: Public Progress Toggle ---
+                    
                     Toggle("Lesson Reminders", isOn: $receiveLessonReminders).tint(.primaryBlue)
                     Toggle("Community Alerts", isOn: $receiveCommunityAlerts).tint(.primaryBlue)
                 }

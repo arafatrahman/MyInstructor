@@ -1,8 +1,9 @@
-// File: MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: PostCard now supports reply, edit, and delete via shared CommentRow logic ---
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
+// --- UPDATED: PostCard now uses a REAL-TIME Listener for comments (syncs with other users) ---
 
 import SwiftUI
 import PhotosUI
+import FirebaseFirestore
 
 // --- Wrapper to make [Data] Identifiable for the sheet ---
 struct PhotoSelection: Identifiable {
@@ -204,10 +205,11 @@ struct PostCard: View {
     @State private var isCommenting: Bool = false
     @State private var commentText: String = ""
     @State private var isPostingComment: Bool = false
-    @State private var fetchedComments: [Comment]? = nil
-    @State private var isLoadingComments: Bool = false
-    @State private var isFollowing = false
     
+    @State private var fetchedComments: [Comment]? = nil
+    @State private var commentsListener: ListenerRegistration? // --- LISTENER REF ---
+    
+    @State private var isFollowing = false
     @State private var isShowingEditSheet = false
     @State private var isShowingDeleteAlert = false
     
@@ -233,8 +235,11 @@ struct PostCard: View {
                 Spacer()
                 Button {
                     withAnimation { isCommenting.toggle() }
-                    if isCommenting && fetchedComments == nil {
-                        Task { await fetchComments() }
+                    // --- TOGGLE LISTENER ---
+                    if isCommenting {
+                        startListeningToComments()
+                    } else {
+                        stopListeningToComments()
                     }
                 } label: {
                     HStack(spacing: 4) {
@@ -274,6 +279,24 @@ struct PostCard: View {
         .onChange(of: authManager.user?.following) { _ in
             updateFollowingState()
         }
+        .onDisappear {
+            stopListeningToComments() // Clean up when view goes away
+        }
+    }
+    
+    // --- NEW: LISTENER FUNCTIONS ---
+    private func startListeningToComments() {
+        guard let postID = post.id else { return }
+        stopListeningToComments() // Safety check
+        commentsListener = communityManager.listenToCommentsForPost(postID: postID) { newComments in
+            self.fetchedComments = newComments
+        }
+    }
+    
+    private func stopListeningToComments() {
+        commentsListener?.remove()
+        commentsListener = nil
+        // fetchedComments = nil // Optional: Keep data or clear it. Keeping it prevents flicker if re-opened.
     }
     
     private func updateFollowingState() {
@@ -390,7 +413,8 @@ struct PostCard: View {
                     }
                 }
                 
-                if isLoadingComments {
+                if fetchedComments == nil {
+                    // Initial loading state
                     HStack { Spacer(); ProgressView(); Spacer() }
                 } else if let comments = fetchedComments, !comments.isEmpty {
                     ForEach(comments.prefix(3)) { comment in
@@ -458,12 +482,7 @@ struct PostCard: View {
         await MainActor.run { onDelete(postID) }
     }
     
-    private func fetchComments() async {
-        guard let postID = post.id else { return }
-        isLoadingComments = true
-        fetchedComments = try? await communityManager.fetchComments(for: postID)
-        isLoadingComments = false
-    }
+    // Removed fetchComments() - replaced by startListeningToComments()
     
     private func postComment() async {
         guard let postID = post.id, let author = authManager.user, let authorID = author.id else { return }
@@ -480,20 +499,18 @@ struct PostCard: View {
         else {
             let parentID = replyingToComment?.id
             try? await communityManager.addComment(postID: postID, authorID: authorID, authorName: author.name ?? "User", authorRole: author.role, authorPhotoURL: author.photoURL, content: content, parentCommentID: parentID)
-            post.commentsCount += 1
+            // No manual array update needed - listener will catch it
             replyingToComment = nil
         }
         
         commentText = ""
         isPostingComment = false
-        await fetchComments()
     }
     
     private func deleteComment(_ comment: Comment) async {
         guard let postID = post.id, let commentID = comment.id else { return }
         try? await communityManager.deleteComment(postID: postID, commentID: commentID, parentCommentID: comment.parentCommentID)
-        post.commentsCount -= 1
-        await fetchComments()
+        // No manual array update needed - listener will catch it
     }
 }
 

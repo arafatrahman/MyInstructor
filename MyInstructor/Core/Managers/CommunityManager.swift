@@ -1,5 +1,5 @@
-// File: MyInstructor/Core/Managers/CommunityManager.swift
-// --- UPDATED: Enhanced comment logic for real-time updates and permissions ---
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
+// --- UPDATED: Added 'listenToCommentsForPost' for individual Feed Cards ---
 
 import Combine
 import Foundation
@@ -26,7 +26,7 @@ class CommunityManager: ObservableObject {
     private var offlineStudentsCollection: CollectionReference { db.collection("offline_students") }
     
     @Published var posts: [Post] = []
-    @Published var comments: [Comment] = []
+    @Published var comments: [Comment] = [] // For PostDetailView (Single source)
     @Published var activeUserCount: Int = 0
     
     private var authorCache: [String: AppUser] = [:]
@@ -173,6 +173,7 @@ class CommunityManager: ObservableObject {
     
     // MARK: - Comment System
     
+    // --- THIS IS FOR POST DETAILS VIEW (Single Post) ---
     func listenToComments(for postID: String) {
         commentsListener?.remove()
         commentsListener = postsCollection.document(postID).collection("comments").order(by: "timestamp", descending: false).addSnapshotListener { [weak self] snapshot, _ in
@@ -182,6 +183,22 @@ class CommunityManager: ObservableObject {
     }
     
     func stopListeningToComments() { commentsListener?.remove(); commentsListener = nil; comments = [] }
+    
+    // --- *** NEW: THIS IS FOR COMMUNITY FEED (Multiple Posts) *** ---
+    // Returns a listener registration so individual PostCards can manage their own connection
+    func listenToCommentsForPost(postID: String, onUpdate: @escaping ([Comment]) -> Void) -> ListenerRegistration {
+        return postsCollection.document(postID).collection("comments")
+            .order(by: "timestamp", descending: false)
+            .addSnapshotListener { snapshot, error in
+                if let error = error {
+                    print("Error listening to comments for post \(postID): \(error.localizedDescription)")
+                    return
+                }
+                guard let documents = snapshot?.documents else { return }
+                let comments = documents.compactMap { try? $0.data(as: Comment.self) }
+                onUpdate(comments)
+            }
+    }
     
     func fetchComments(for postID: String) async throws -> [Comment] {
         let snapshot = try await postsCollection.document(postID).collection("comments").order(by: "timestamp", descending: false).getDocuments()
@@ -198,56 +215,37 @@ class CommunityManager: ObservableObject {
             timestamp: Date(),
             content: content,
             parentCommentID: parentCommentID,
-            isEdited: false // Initially false
+            isEdited: false
         )
-        
-        // Add the comment document
         try postsCollection.document(postID).collection("comments").addDocument(from: newComment)
-        
-        // Update counts
         try await postsCollection.document(postID).updateData(["commentsCount": FieldValue.increment(1.0)])
         
         if let parentID = parentCommentID {
-            // If it's a reply, increment the parent comment's reply count (optional, but good for UI)
             try? await postsCollection.document(postID).collection("comments").document(parentID).updateData(["repliesCount": FieldValue.increment(1.0)])
         }
         
-        // Notifications
         let postDoc = try await postsCollection.document(postID).getDocument()
         guard let post = try? postDoc.data(as: Post.self) else { return }
-        
-        if let parentID = parentCommentID,
-           let parentDoc = try? await postsCollection.document(postID).collection("comments").document(parentID).getDocument(),
-           let parentComment = try? parentDoc.data(as: Comment.self),
-           parentComment.authorID != authorID {
-            
-            NotificationManager.shared.sendNotification(to: parentComment.authorID, title: "New Reply", message: "\(authorName) replied to your comment.", type: "reply", relatedID: postID)
-            
+        if let parentID = parentCommentID, let parentDoc = try? await postsCollection.document(postID).collection("comments").document(parentID).getDocument(), let parentComment = try? parentDoc.data(as: Comment.self), parentComment.authorID != authorID {
+            NotificationManager.shared.sendNotification(to: parentComment.authorID, title: "New Reply", message: "\(authorName) replied to your comment.", type: "reply")
         } else if post.authorID != authorID {
-            NotificationManager.shared.sendNotification(to: post.authorID, title: "New Comment", message: "\(authorName) commented on your post.", type: "comment", relatedID: postID)
+            NotificationManager.shared.sendNotification(to: post.authorID, title: "New Comment", message: "\(authorName) commented on your post.", type: "comment")
         }
     }
     
     func deleteComment(postID: String, commentID: String, parentCommentID: String?) async throws {
-        // Delete the document
         try await postsCollection.document(postID).collection("comments").document(commentID).delete()
-        
-        // Decrement post total count
         try await postsCollection.document(postID).updateData(["commentsCount": FieldValue.increment(-1.0)])
-        
         if let parentID = parentCommentID {
-            // Decrement parent reply count if applicable
             try? await postsCollection.document(postID).collection("comments").document(parentID).updateData(["repliesCount": FieldValue.increment(-1.0)])
         }
     }
     
     func updateComment(postID: String, commentID: String, newContent: String) async throws {
-        try await postsCollection.document(postID).collection("comments").document(commentID).updateData([
-            "content": newContent,
-            "isEdited": true,
-            "timestamp": FieldValue.serverTimestamp() // Optionally update timestamp, or keep original
-        ])
+        try await postsCollection.document(postID).collection("comments").document(commentID).updateData(["content": newContent, "isEdited": true])
     }
+    
+    // ... (Rest of the class remains unchanged: relationships, requests, student management) ...
     
     func fetchRelationshipStatus(instructorID: String, studentID: String) async throws -> RequestStatus? {
         let query = requestsCollection.whereField("studentID", isEqualTo: studentID).whereField("instructorID", isEqualTo: instructorID)
@@ -333,11 +331,9 @@ class CommunityManager: ObservableObject {
     
     func cancelRequest(requestID: String) async throws { try await requestsCollection.document(requestID).delete() }
     
-    // MARK: - Offline Students
-    
     func addOfflineStudent(instructorID: String, name: String, phone: String?, email: String?, address: String?) async throws {
         var newStudent = OfflineStudent(instructorID: instructorID, name: name, phone: phone, email: email, address: address)
-        newStudent.id = nil // Ensure fresh ID
+        newStudent.id = nil
         try offlineStudentsCollection.addDocument(from: newStudent)
     }
     
@@ -349,15 +345,11 @@ class CommunityManager: ObservableObject {
     func deleteOfflineStudent(studentID: String) async throws {
         try await offlineStudentsCollection.document(studentID).delete()
     }
-
-    // MARK: - Student Progress & Notes
     
     func updateStudentProgress(instructorID: String, studentID: String, newProgress: Double, isOffline: Bool) async throws {
         if isOffline {
-            // Directly update the offline student document
             try await offlineStudentsCollection.document(studentID).updateData(["progress": newProgress])
         } else {
-            // Update the subcollection for online students
             let recordRef = usersCollection.document(instructorID).collection("student_records").document(studentID)
             try await recordRef.setData(["progress": newProgress], merge: true)
             NotificationManager.shared.sendNotification(to: studentID, title: "Progress Updated", message: "Your mastery level has been updated to \(Int(newProgress * 100))%.", type: "progress")

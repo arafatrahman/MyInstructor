@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: Analytics now shows Last 12 Months; Chart Card is Full Width ---
+// --- UPDATED: Changed Analytics Quick Action color to .accentGreen ---
 
 import SwiftUI
 
@@ -81,8 +81,8 @@ struct InstructorDashboardView: View {
                                 // 4. Track Expense
                                 QuickActionButton(title: "Track Expense", icon: "chart.line.downtrend.xyaxis", color: .warningRed, action: { activeSheet = .trackExpense })
                                 
-                                // 5. Overall Analytics
-                                QuickActionButton(title: "Analytics", icon: "chart.bar.xaxis", color: .purple, action: { activeSheet = .analytics })
+                                // 5. Overall Analytics (--- COLOR CHANGED TO GREEN ---)
+                                QuickActionButton(title: "Analytics", icon: "chart.bar.xaxis", color: .accentGreen, action: { activeSheet = .analytics })
                                 
                                 // 6. Record Payment
                                 QuickActionButton(title: "Record Payment", icon: "creditcard.fill", color: .purple, action: { activeSheet = .recordPayment })
@@ -91,7 +91,7 @@ struct InstructorDashboardView: View {
                                 QuickActionButton(title: "Live Map", icon: "map.fill", color: .teal, action: { activeSheet = .liveMap })
                                 
                                 // 8. Service Book
-                                QuickActionButton(title: "Service Book", icon: "wrench.and.screwdriver.fill", color: .gray, action: { activeSheet = .serviceBook })
+                                QuickActionButton(title: "Service Book", icon: "wrench.and.screwdriver.fill", color: .yellow, action: { activeSheet = .serviceBook })
                                 
                                 // 9. My Vehicles
                                 QuickActionButton(title: "My Vehicles", icon: "car.circle.fill", color: .primaryBlue, action: { activeSheet = .myVehicles })
@@ -100,7 +100,7 @@ struct InstructorDashboardView: View {
                                 QuickActionButton(title: "Notes", icon: "note.text", color: .pink, action: { activeSheet = .notes })
                                 
                                 // 11. Contacts
-                                QuickActionButton(title: "Contacts", icon: "phone.circle.fill", color: .blue, action: { activeSheet = .contacts })
+                                QuickActionButton(title: "Contacts", icon: "phone.circle.fill", color: .indigo, action: { activeSheet = .contacts })
                                 
                             }.padding(.horizontal)
                         }.padding(.top, 15)
@@ -234,6 +234,7 @@ struct InstructorLessonsListView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Close") { dismiss() }
                 }
+                
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         isAddSheetPresented = true
@@ -318,7 +319,6 @@ struct InstructorAnalyticsView: View {
                         
                         // 2. Financial Chart (Full Width)
                         VStack(alignment: .leading, spacing: 15) {
-                            // --- UPDATED: Title to 12 Months ---
                             Text("Last 12 Months Performance")
                                 .font(.headline)
                                 .padding(.horizontal)
@@ -330,7 +330,7 @@ struct InstructorAnalyticsView: View {
                                     .padding()
                             } else {
                                 ChartView(data: monthlyData)
-                                    .padding(.horizontal) // Matches other cards padding
+                                    .padding(.horizontal)
                             }
                         }
                         
@@ -427,7 +427,6 @@ struct InstructorAnalyticsView: View {
                 self.passRate = 0.0
             }
             
-            // --- UPDATED: Generate 12 Months of Data ---
             self.monthlyData = generateMonthlyData(payments: payments, expenses: expenses)
             
         } catch {
@@ -441,7 +440,6 @@ struct InstructorAnalyticsView: View {
         let calendar = Calendar.current
         let now = Date()
         
-        // Loop back 11 months + current month (Total 12)
         for i in (0...11).reversed() {
             guard let date = calendar.date(byAdding: .month, value: -i, to: now) else { continue }
             
@@ -449,7 +447,6 @@ struct InstructorAnalyticsView: View {
             guard let startOfMonth = calendar.date(from: components),
                   let endOfMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth) else { continue }
             
-            // Short month name (e.g., "Jan", "Feb")
             let monthName = startOfMonth.formatted(.dateTime.month(.abbreviated))
             
             let monthIncome = payments
@@ -526,20 +523,17 @@ struct ChartView: View {
     }
     
     var body: some View {
-        // Use GeometryReader for dynamic spacing with 12 items
-        HStack(alignment: .bottom, spacing: 0) { // Spacing 0, handle with frame
+        HStack(alignment: .bottom, spacing: 0) {
             ForEach(data) { item in
                 VStack(spacing: 6) {
-                    HStack(alignment: .bottom, spacing: 2) { // Tighter bar spacing
-                        // Income Bar
+                    HStack(alignment: .bottom, spacing: 2) {
                         VStack {
                             Spacer()
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(Color.accentGreen.gradient)
-                                .frame(width: 8, height: barHeight(for: item.income)) // Thinner bars for 12 months
+                                .frame(width: 8, height: barHeight(for: item.income))
                         }
                         
-                        // Expense Bar
                         VStack {
                             Spacer()
                             RoundedRectangle(cornerRadius: 3)
@@ -549,11 +543,11 @@ struct ChartView: View {
                     }
                     .frame(height: 150)
                     
-                    Text(item.month.prefix(1)) // Show first letter of month to save space
+                    Text(item.month.prefix(1))
                         .font(.caption2).bold()
                         .foregroundColor(.secondary)
                 }
-                .frame(maxWidth: .infinity) // Distribute equally
+                .frame(maxWidth: .infinity)
             }
         }
         .padding()
@@ -590,7 +584,7 @@ struct StatRow: View {
     }
 }
 
-// ... (Existing Subviews like StudentQuickOverviewSheet, etc. remain unchanged)
+// ... (Existing Subviews remain unchanged)
 struct StudentQuickOverviewSheet: View {
     @EnvironmentObject var dataService: DataService; @EnvironmentObject var authManager: AuthManager; @Environment(\.dismiss) var dismiss
     @State private var onlineStudents: [Student] = []; @State private var offlineStudents: [OfflineStudent] = []; @State private var isLoading = true; @State private var searchText = ""; @State private var isAddingStudent = false

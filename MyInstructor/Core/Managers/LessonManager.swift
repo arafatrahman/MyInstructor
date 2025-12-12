@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/LessonManager.swift
-// --- UPDATED: Passing relatedID to notifications ---
+// --- UPDATED: Sends notification to the other party upon cancellation ---
 
 import Foundation
 import FirebaseFirestore
@@ -68,7 +68,7 @@ class LessonManager: ObservableObject {
             title: "New Lesson Scheduled",
             message: "A new lesson '\(newLesson.topic)' has been scheduled for \(dateString).",
             type: "lesson",
-            relatedID: ref.documentID // Link notification to lesson
+            relatedID: ref.documentID
         )
     }
     
@@ -85,13 +85,54 @@ class LessonManager: ObservableObject {
             title: "Lesson Updated",
             message: "Your lesson '\(lesson.topic)' has been updated to \(dateString).",
             type: "lesson",
-            relatedID: lessonID // Link notification to lesson
+            relatedID: lessonID
         )
     }
 
+    // --- UPDATED FUNCTION ---
     func updateLessonStatus(lessonID: String, status: LessonStatus, initiatorID: String? = nil) async throws {
+        // 1. Update the status in Firestore
         try await lessonsCollection.document(lessonID).updateData(["status": status.rawValue])
-        if status == .cancelled || status == .completed {
+        
+        // 2. Handle Logic for Cancellation or Completion
+        if status == .cancelled {
+            // Cancel local reminders
+            NotificationManager.shared.cancelReminders(for: lessonID)
+            
+            // Notify the other party if we know who initiated it
+            if let initiatorID = initiatorID {
+                // We need to fetch the lesson to know the other party's ID
+                let doc = try await lessonsCollection.document(lessonID).getDocument()
+                if let lesson = try? doc.data(as: Lesson.self) {
+                    
+                    var recipientID: String?
+                    var message = ""
+                    let dateStr = lesson.startTime.formatted(date: .abbreviated, time: .shortened)
+                    
+                    if initiatorID == lesson.instructorID {
+                        // Instructor cancelled -> Notify Student
+                        recipientID = lesson.studentID
+                        message = "Your instructor has cancelled the lesson on \(dateStr)."
+                    } else if initiatorID == lesson.studentID {
+                        // Student cancelled -> Notify Instructor
+                        recipientID = lesson.instructorID
+                        message = "The student has cancelled the lesson on \(dateStr)."
+                    }
+                    
+                    // Send the notification
+                    if let toID = recipientID, !message.isEmpty {
+                        NotificationManager.shared.sendNotification(
+                            to: toID,
+                            title: "Lesson Cancelled",
+                            message: message,
+                            type: "lesson", // Keeps using the lesson icon style
+                            relatedID: lessonID
+                        )
+                    }
+                }
+            }
+            
+        } else if status == .completed {
             NotificationManager.shared.cancelReminders(for: lessonID)
         }
     }
@@ -123,7 +164,7 @@ class LessonManager: ObservableObject {
         try await practiceCollection.document(id).delete()
     }
     
-    // MARK: - Exam Results (Updated)
+    // MARK: - Exam Results
     
     func logExamResult(_ exam: ExamResult) async throws {
         var data = exam

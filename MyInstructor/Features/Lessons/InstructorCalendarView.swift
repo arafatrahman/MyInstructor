@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/InstructorCalendarView.swift
-// --- UPDATED: Handles Lesson and Exam clicks with Sheets ---
+// --- UPDATED: Lessons now navigate to Details View; improved click handling ---
 
 import SwiftUI
 
@@ -13,15 +13,16 @@ struct InstructorCalendarView: View {
     @State private var selectedDate: Date = Date()
     @State private var calendarItems: [CalendarItem] = []
     
-    // Sheets
+    // --- Navigation State ---
+    @State private var selectedLesson: Lesson? = nil // For navigation to details
+    
+    // --- Sheet States ---
     @State private var isAddLessonSheetPresented = false
     @State private var isAddPersonalSheetPresented = false
     
-    // Edit States
     @State private var serviceToEdit: ServiceRecord? = nil
     @State private var personalEventToEdit: PersonalEvent? = nil
-    @State private var lessonToEdit: Lesson? = nil // <--- Added
-    @State private var examToEdit: ExamResult? = nil   // <--- Added
+    @State private var examToEdit: ExamResult? = nil
     
     @State private var isLoading = false
     
@@ -40,6 +41,14 @@ struct InstructorCalendarView: View {
             ZStack {
                 Color(.systemGroupedBackground).ignoresSafeArea()
                 
+                // --- INVISIBLE NAVIGATION LINK FOR LESSON DETAILS ---
+                if let lesson = selectedLesson {
+                    NavigationLink(destination: LessonDetailsView(lesson: lesson), isActive: Binding(
+                        get: { selectedLesson != nil },
+                        set: { if !$0 { selectedLesson = nil } }
+                    )) { EmptyView() }
+                }
+                
                 VStack(spacing: 0) {
                     CustomMonthlyCalendar(selectedDate: $selectedDate, eventDates: eventDates)
                         .padding(.horizontal)
@@ -54,7 +63,7 @@ struct InstructorCalendarView: View {
                                 DaySectionView(
                                     date: selectedDate,
                                     items: selectedDayItems,
-                                    onSelectLesson: { lesson in self.lessonToEdit = lesson },
+                                    onSelectLesson: { lesson in self.selectedLesson = lesson }, // Navigates to details
                                     onSelectService: { service in self.serviceToEdit = service },
                                     onSelectPersonal: { event in self.personalEventToEdit = event },
                                     onSelectExam: { exam in self.examToEdit = exam }
@@ -84,13 +93,23 @@ struct InstructorCalendarView: View {
             .onChange(of: selectedDate) { _, _ in Task { await fetchCalendarData() } }
             
             // --- Sheets ---
-            .sheet(isPresented: $isAddLessonSheetPresented) { AddLessonFormView(onLessonAdded: { _ in Task { await fetchCalendarData() } }) }
-            .sheet(isPresented: $isAddPersonalSheetPresented) { AddPersonalEventView(onSave: { Task { await fetchCalendarData() } }) }
+            .sheet(isPresented: $isAddLessonSheetPresented) {
+                AddLessonFormView(onLessonAdded: { _ in Task { await fetchCalendarData() } })
+            }
+            .sheet(isPresented: $isAddPersonalSheetPresented) {
+                AddPersonalEventView(onSave: { Task { await fetchCalendarData() } })
+            }
             
-            .sheet(item: $lessonToEdit) { lesson in AddLessonFormView(lessonToEdit: lesson, onLessonAdded: { _ in Task { await fetchCalendarData() } }) }
-            .sheet(item: $examToEdit) { exam in AddExamFormView(studentID: exam.studentID, examToEdit: exam, onSave: { Task { await fetchCalendarData() } }) }
-            .sheet(item: $serviceToEdit) { service in AddServiceRecordView(recordToEdit: service, onSave: { serviceToEdit = nil; Task { await fetchCalendarData() } }) }
-            .sheet(item: $personalEventToEdit) { event in AddPersonalEventView(eventToEdit: event, onSave: { personalEventToEdit = nil; Task { await fetchCalendarData() } }) }
+            // Edit Sheets (For items other than Lessons)
+            .sheet(item: $examToEdit) { exam in
+                AddExamFormView(studentID: exam.studentID, examToEdit: exam, onSave: { Task { await fetchCalendarData() } })
+            }
+            .sheet(item: $serviceToEdit) { service in
+                AddServiceRecordView(recordToEdit: service, onSave: { serviceToEdit = nil; Task { await fetchCalendarData() } })
+            }
+            .sheet(item: $personalEventToEdit) { event in
+                AddPersonalEventView(eventToEdit: event, onSave: { personalEventToEdit = nil; Task { await fetchCalendarData() } })
+            }
         }
     }
     
@@ -99,7 +118,7 @@ struct InstructorCalendarView: View {
         
         let calendar = Calendar.current
         guard let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: selectedDate)),
-              let endOfMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth) else { return }
+              let _ = calendar.date(byAdding: .month, value: 1, to: startOfMonth) else { return }
         
         guard let startFetch = calendar.date(byAdding: .month, value: -1, to: startOfMonth),
               let endFetch = calendar.date(byAdding: .month, value: 2, to: startOfMonth) else { return }

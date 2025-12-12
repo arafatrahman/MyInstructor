@@ -1,11 +1,12 @@
-// File: arafatrahman/myinstructor/MyInstructor-2f8649d5290df12ef23a2c82aa6e901f06812272/MyInstructor/Features/Authentication/AuthenticationView.swift
-// --- UPDATED: Defaults to Sign Up tab ---
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Authentication/AuthenticationView.swift
+// --- UPDATED: Defaults to Login tab (Welcome Back) ---
 
 import SwiftUI
 
 // Flow Item 4: Login / Register Container
 struct AuthenticationView: View {
-    @State private var selection: Int = 1 // 0 for Login, 1 for Sign Up (Default)
+    // Change default to 0 so it starts on "Login / Welcome Back"
+    @State private var selection: Int = 0
     
     var body: some View {
         VStack {

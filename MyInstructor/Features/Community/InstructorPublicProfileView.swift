@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: Implemented logic to Hide Followers/Email based on settings ---
+// --- UPDATED: handleFollowTap now updates AuthManager to sync follow state with Community Hub ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -121,17 +121,38 @@ struct InstructorPublicProfileView: View {
             guard let currentID = authManager.user?.id, let name = authManager.user?.name else { return }
             do {
                 if isFollowing {
+                    // --- UNFOLLOW ---
                     try await communityManager.unfollowUser(currentUserID: currentID, targetUserID: instructorID)
                     isFollowing = false
+                    
+                    // 1. Update Local Instructor Object (for UI count on this screen)
                     if var followers = instructor?.followers {
                         if let index = followers.firstIndex(of: currentID) { followers.remove(at: index) }
                         instructor?.followers = followers
                     }
+                    
+                    // 2. Update AuthManager (so Community Hub & Feed knows instantly)
+                    if var myFollowing = authManager.user?.following {
+                        if let index = myFollowing.firstIndex(of: instructorID) {
+                            myFollowing.remove(at: index)
+                            authManager.user?.following = myFollowing
+                        }
+                    }
+                    
                 } else {
+                    // --- FOLLOW ---
                     try await communityManager.followUser(currentUserID: currentID, targetUserID: instructorID, currentUserName: name)
                     isFollowing = true
+                    
+                    // 1. Update Local Instructor Object
                     if instructor?.followers == nil { instructor?.followers = [] }
                     instructor?.followers?.append(currentID)
+                    
+                    // 2. Update AuthManager
+                    if authManager.user?.following == nil { authManager.user?.following = [] }
+                    if authManager.user?.following?.contains(instructorID) == false {
+                        authManager.user?.following?.append(instructorID)
+                    }
                 }
             } catch { print("Follow error: \(error)") }
         }

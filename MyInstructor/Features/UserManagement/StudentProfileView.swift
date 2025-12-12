@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
-// --- UPDATED: Added Exam History Card at the bottom ---
+// --- UPDATED: Refactored Follow logic to parent view to sync with AuthManager/Community Hub ---
 
 import SwiftUI
 
@@ -20,10 +20,13 @@ struct StudentProfileView: View {
     @State private var lessonHistory: [Lesson] = []
     @State private var payments: [Payment] = []
     @State private var studentNotes: [StudentNote] = []
-    @State private var examHistory: [ExamResult] = [] // <--- NEW STATE
+    @State private var examHistory: [ExamResult] = []
     @State private var currentProgress: Double = 0.0
     
     @State private var studentStatus: RequestStatus = .approved
+    
+    // --- NEW: Social State ---
+    @State private var isFollowing = false
     
     // Alert states
     @State private var isShowingRemoveAlert = false
@@ -48,11 +51,13 @@ struct StudentProfileView: View {
         ScrollView {
             VStack(spacing: 16) {
                 
-                // 1. Header Card
+                // 1. Header Card (Updated params)
                 StudentProfileHeaderCard(
                     student: student,
                     studentAsAppUser: studentAsAppUser,
-                    onEdit: { isShowingEditSheet = true }
+                    isFollowing: isFollowing,
+                    onEdit: { isShowingEditSheet = true },
+                    onFollowTap: handleFollowToggle
                 )
                 .padding(.horizontal)
                 .padding(.top, 16)
@@ -101,7 +106,7 @@ struct StudentProfileView: View {
                 StudentPaymentsCard(payments: payments)
                     .padding(.horizontal)
                 
-                // 7. Exam History Card (--- NEW ---)
+                // 7. Exam History Card
                 StudentExamsCard(exams: examHistory)
                     .padding(.horizontal)
                 
@@ -207,6 +212,10 @@ struct StudentProfileView: View {
             if let status = try? await communityManager.fetchRelationshipStatus(instructorID: instructorID, studentID: studentID) {
                 self.studentStatus = status
             }
+            // --- NEW: Check Follow Status ---
+            if let myID = authManager.user?.id, let followers = studentAsAppUser?.followers {
+                self.isFollowing = followers.contains(myID)
+            }
         }
         
         if let data = try? await communityManager.fetchInstructorStudentData(instructorID: instructorID, studentID: studentID, isOffline: isOffline) {
@@ -219,14 +228,53 @@ struct StudentProfileView: View {
         do {
             let allLessons = try await lessonManager.fetchLessonsForStudent(studentID: studentID, start: .distantPast, end: .distantFuture)
             self.lessonHistory = allLessons.sorted(by: { $0.startTime > $1.startTime })
-            
-            // --- Fetch Exams ---
             let exams = try await lessonManager.fetchExamResults(for: studentID)
             self.examHistory = exams.sorted(by: { $0.date > $1.date })
-            
         } catch { print("Error fetching data: \(error)") }
         
         self.payments = (try? await paymentManager.fetchStudentPayments(for: studentID)) ?? []
+    }
+    
+    // --- NEW: Handle Follow Toggle ---
+    func handleFollowToggle() {
+        Task {
+            guard let myID = authManager.user?.id, let name = authManager.user?.name, let studentID = student.id else { return }
+            do {
+                if isFollowing {
+                    // --- UNFOLLOW ---
+                    try await communityManager.unfollowUser(currentUserID: myID, targetUserID: studentID)
+                    isFollowing = false
+                    
+                    // 1. Update Local Student User
+                    if var followers = studentAsAppUser?.followers {
+                        if let index = followers.firstIndex(of: myID) { followers.remove(at: index) }
+                        studentAsAppUser?.followers = followers
+                    }
+                    
+                    // 2. Update AuthManager (Community Hub sync)
+                    if var myFollowing = authManager.user?.following {
+                        if let index = myFollowing.firstIndex(of: studentID) {
+                            myFollowing.remove(at: index)
+                            authManager.user?.following = myFollowing
+                        }
+                    }
+                } else {
+                    // --- FOLLOW ---
+                    try await communityManager.followUser(currentUserID: myID, targetUserID: studentID, currentUserName: name)
+                    isFollowing = true
+                    
+                    // 1. Update Local Student User
+                    if studentAsAppUser?.followers == nil { studentAsAppUser?.followers = [] }
+                    studentAsAppUser?.followers?.append(myID)
+                    
+                    // 2. Update AuthManager
+                    if authManager.user?.following == nil { authManager.user?.following = [] }
+                    if authManager.user?.following?.contains(studentID) == false {
+                        authManager.user?.following?.append(studentID)
+                    }
+                }
+            } catch { print("Follow toggle error: \(error)") }
+        }
     }
     
     func saveOrUpdateNote() async {
@@ -307,9 +355,11 @@ private struct StudentProfileHeaderCard: View {
     
     let student: Student
     var studentAsAppUser: AppUser?
-    let onEdit: () -> Void
     
-    @State private var isFollowing = false
+    // --- NEW: Props for Follow Logic ---
+    let isFollowing: Bool
+    let onEdit: () -> Void
+    let onFollowTap: () -> Void
     
     private var followersCount: Int { studentAsAppUser?.followers?.count ?? 0 }
     private var followingCount: Int { studentAsAppUser?.following?.count ?? 0 }
@@ -364,7 +414,8 @@ private struct StudentProfileHeaderCard: View {
                 .padding(.vertical, 8)
                 
                 if let myID = authManager.user?.id, let studentID = student.id, myID != studentID {
-                    Button(action: handleFollowToggle) {
+                    // --- UPDATED BUTTON ---
+                    Button(action: onFollowTap) {
                         Text(isFollowing ? "Unfollow" : "Follow")
                             .font(.subheadline).bold()
                             .padding(.vertical, 8).padding(.horizontal, 24)
@@ -396,28 +447,6 @@ private struct StudentProfileHeaderCard: View {
             }.padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity).background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
-        .onAppear { checkIfFollowing() }
-        .onChange(of: studentAsAppUser?.followers) { _, _ in checkIfFollowing() }
-    }
-    
-    private func checkIfFollowing() {
-        guard let myID = authManager.user?.id, let followers = studentAsAppUser?.followers else { isFollowing = false; return }
-        isFollowing = followers.contains(myID)
-    }
-    
-    private func handleFollowToggle() {
-        Task {
-            guard let myID = authManager.user?.id, let name = authManager.user?.name, let studentID = student.id else { return }
-            do {
-                if isFollowing {
-                    try await communityManager.unfollowUser(currentUserID: myID, targetUserID: studentID)
-                    isFollowing = false
-                } else {
-                    try await communityManager.followUser(currentUserID: myID, targetUserID: studentID, currentUserName: name)
-                    isFollowing = true
-                }
-            } catch { print("Follow toggle error: \(error)") }
-        }
     }
 }
 
@@ -564,7 +593,6 @@ private struct StudentPaymentsCard: View {
     }
 }
 
-// MARK: - 7. Exam History Card (--- NEW ---)
 private struct StudentExamsCard: View {
     let exams: [ExamResult]
     

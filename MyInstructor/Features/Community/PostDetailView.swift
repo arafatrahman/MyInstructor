@@ -1,5 +1,5 @@
 // File: MyInstructor/Features/Community/PostDetailView.swift
-// --- UPDATED: Implemented Long Press Context Menu for Edit/Delete and visible Reply Button ---
+// --- UPDATED: Ensures exact same hierarchical & collapsible behavior as CommunityFeedView ---
 
 import SwiftUI
 
@@ -16,6 +16,8 @@ struct PostDetailView: View {
     // We rely on communityManager.comments for live updates
     
     @State private var visibleCommentLimit: Int = 10
+    
+    // --- Collapsed by default (empty set) ---
     @State private var expandedReplyIDs: Set<String> = []
     
     @State private var replyingToComment: Comment? = nil
@@ -88,12 +90,12 @@ struct PostDetailView: View {
                                     onDelete: { deleteComment(comment) }
                                 )
                                 
-                                // Replies (from LIVE data)
-                                let replyComments = communityManager.comments
-                                    .filter { $0.parentCommentID == comment.id }
-                                    .sorted(by: { $0.timestamp < $1.timestamp })
-                                
-                                if !replyComments.isEmpty && isExpanded {
+                                // Replies (Nested & Collapsible)
+                                if isExpanded {
+                                    let replyComments = communityManager.comments
+                                        .filter { $0.parentCommentID == comment.id }
+                                        .sorted(by: { $0.timestamp < $1.timestamp })
+                                    
                                     ForEach(replyComments) { reply in
                                         CommentRow(
                                             comment: reply,
@@ -104,7 +106,7 @@ struct PostDetailView: View {
                                             onEdit: { editComment(reply) },
                                             onDelete: { deleteComment(reply) }
                                         )
-                                        .padding(.leading, 30)
+                                        .padding(.leading, 30) // --- Indentation ---
                                     }
                                 }
                             }

@@ -1,5 +1,5 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: PostCard now uses a REAL-TIME Listener for comments (syncs with other users) ---
+// File: MyInstructor/Features/Community/CommunityFeedView.swift
+// --- UPDATED: Replies are now nested, collapsed by default, and expandable ---
 
 import SwiftUI
 import PhotosUI
@@ -207,7 +207,10 @@ struct PostCard: View {
     @State private var isPostingComment: Bool = false
     
     @State private var fetchedComments: [Comment]? = nil
-    @State private var commentsListener: ListenerRegistration? // --- LISTENER REF ---
+    @State private var commentsListener: ListenerRegistration?
+    
+    // --- NEW: Track Expanded Replies ---
+    @State private var expandedReplyIDs: Set<String> = []
     
     @State private var isFollowing = false
     @State private var isShowingEditSheet = false
@@ -235,7 +238,6 @@ struct PostCard: View {
                 Spacer()
                 Button {
                     withAnimation { isCommenting.toggle() }
-                    // --- TOGGLE LISTENER ---
                     if isCommenting {
                         startListeningToComments()
                     } else {
@@ -280,30 +282,7 @@ struct PostCard: View {
             updateFollowingState()
         }
         .onDisappear {
-            stopListeningToComments() // Clean up when view goes away
-        }
-    }
-    
-    // --- NEW: LISTENER FUNCTIONS ---
-    private func startListeningToComments() {
-        guard let postID = post.id else { return }
-        stopListeningToComments() // Safety check
-        commentsListener = communityManager.listenToCommentsForPost(postID: postID) { newComments in
-            self.fetchedComments = newComments
-        }
-    }
-    
-    private func stopListeningToComments() {
-        commentsListener?.remove()
-        commentsListener = nil
-        // fetchedComments = nil // Optional: Keep data or clear it. Keeping it prevents flicker if re-opened.
-    }
-    
-    private func updateFollowingState() {
-        if let followers = authManager.user?.following {
-            isFollowing = followers.contains(post.authorID)
-        } else {
-            isFollowing = false
+            stopListeningToComments()
         }
     }
     
@@ -417,29 +396,71 @@ struct PostCard: View {
                     // Initial loading state
                     HStack { Spacer(); ProgressView(); Spacer() }
                 } else if let comments = fetchedComments, !comments.isEmpty {
-                    ForEach(comments.prefix(3)) { comment in
-                        // Reusing the robust CommentRow logic
+                    
+                    // --- Hierarchical & Collapsible Comments Display ---
+                    let parents = comments.filter { $0.parentCommentID == nil }
+                    let visibleParents = parents.prefix(3)
+                    
+                    ForEach(visibleParents) { parent in
+                        // --- 1. Render Parent ---
+                        let isExpanded = expandedReplyIDs.contains(parent.id ?? "")
+                        
                         CommentRow(
-                            comment: comment,
-                            isExpanded: false,
+                            comment: parent,
+                            isExpanded: isExpanded,
                             currentUserID: authManager.user?.id,
                             postAuthorID: post.authorID,
                             onReply: {
-                                replyingToComment = comment
+                                replyingToComment = parent
                                 editingComment = nil
-                                commentText = "@\(comment.authorName) "
+                                commentText = "@\(parent.authorName) "
+                            },
+                            onToggleReplies: {
+                                // Toggle local state
+                                withAnimation {
+                                    if isExpanded { expandedReplyIDs.remove(parent.id ?? "") }
+                                    else { expandedReplyIDs.insert(parent.id ?? "") }
+                                }
                             },
                             onEdit: {
-                                editingComment = comment
+                                editingComment = parent
                                 replyingToComment = nil
-                                commentText = comment.content
+                                commentText = parent.content
                             },
                             onDelete: {
-                                Task { await deleteComment(comment) }
+                                Task { await deleteComment(parent) }
                             }
                         )
+                        
+                        // --- 2. Render Replies (Collapsible & Indented) ---
+                        if isExpanded {
+                            let replies = comments.filter { $0.parentCommentID == parent.id }
+                            ForEach(replies) { reply in
+                                CommentRow(
+                                    comment: reply,
+                                    isExpanded: false,
+                                    currentUserID: authManager.user?.id,
+                                    postAuthorID: post.authorID,
+                                    onReply: {
+                                        replyingToComment = parent
+                                        editingComment = nil
+                                        commentText = "@\(reply.authorName) "
+                                    },
+                                    onEdit: {
+                                        editingComment = reply
+                                        replyingToComment = nil
+                                        commentText = reply.content
+                                    },
+                                    onDelete: {
+                                        Task { await deleteComment(reply) }
+                                    }
+                                )
+                                .padding(.leading, 30) // Indentation
+                            }
+                        }
                     }
-                    if comments.count > 3 {
+                    
+                    if parents.count > 3 {
                         NavigationLink(destination: PostDetailView(post: post)) {
                             Text("View all comments...").font(.caption).foregroundColor(.blue)
                         }
@@ -457,6 +478,28 @@ struct PostCard: View {
     }
     
     // MARK: - Logic
+    
+    private func startListeningToComments() {
+        guard let postID = post.id else { return }
+        stopListeningToComments()
+        commentsListener = communityManager.listenToCommentsForPost(postID: postID) { newComments in
+            self.fetchedComments = newComments
+        }
+    }
+    
+    private func stopListeningToComments() {
+        commentsListener?.remove()
+        commentsListener = nil
+    }
+    
+    private func updateFollowingState() {
+        if let followers = authManager.user?.following {
+            isFollowing = followers.contains(post.authorID)
+        } else {
+            isFollowing = false
+        }
+    }
+    
     private func handleFollowToggle() {
         Task {
             guard let myID = authManager.user?.id, let name = authManager.user?.name else { return }
@@ -482,8 +525,6 @@ struct PostCard: View {
         await MainActor.run { onDelete(postID) }
     }
     
-    // Removed fetchComments() - replaced by startListeningToComments()
-    
     private func postComment() async {
         guard let postID = post.id, let author = authManager.user, let authorID = author.id else { return }
         isPostingComment = true
@@ -499,7 +540,6 @@ struct PostCard: View {
         else {
             let parentID = replyingToComment?.id
             try? await communityManager.addComment(postID: postID, authorID: authorID, authorName: author.name ?? "User", authorRole: author.role, authorPhotoURL: author.photoURL, content: content, parentCommentID: parentID)
-            // No manual array update needed - listener will catch it
             replyingToComment = nil
         }
         
@@ -510,11 +550,10 @@ struct PostCard: View {
     private func deleteComment(_ comment: Comment) async {
         guard let postID = post.id, let commentID = comment.id else { return }
         try? await communityManager.deleteComment(postID: postID, commentID: commentID, parentCommentID: comment.parentCommentID)
-        // No manual array update needed - listener will catch it
     }
 }
 
-// MARK: - Supporting Views
+// MARK: - Supporting Views (Unchanged)
 struct ReactionButton: View {
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var authManager: AuthManager

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
-// --- UPDATED: Executes callback for instant list update ---
+// --- UPDATED: Added Exam History Card at the bottom ---
 
 import SwiftUI
 
@@ -20,6 +20,7 @@ struct StudentProfileView: View {
     @State private var lessonHistory: [Lesson] = []
     @State private var payments: [Payment] = []
     @State private var studentNotes: [StudentNote] = []
+    @State private var examHistory: [ExamResult] = [] // <--- NEW STATE
     @State private var currentProgress: Double = 0.0
     
     @State private var studentStatus: RequestStatus = .approved
@@ -98,6 +99,10 @@ struct StudentProfileView: View {
                 
                 // 6. Payments Card
                 StudentPaymentsCard(payments: payments)
+                    .padding(.horizontal)
+                
+                // 7. Exam History Card (--- NEW ---)
+                StudentExamsCard(exams: examHistory)
                     .padding(.horizontal)
                 
                 Spacer(minLength: 20)
@@ -214,7 +219,12 @@ struct StudentProfileView: View {
         do {
             let allLessons = try await lessonManager.fetchLessonsForStudent(studentID: studentID, start: .distantPast, end: .distantFuture)
             self.lessonHistory = allLessons.sorted(by: { $0.startTime > $1.startTime })
-        } catch { print("Error fetching lessons: \(error)") }
+            
+            // --- Fetch Exams ---
+            let exams = try await lessonManager.fetchExamResults(for: studentID)
+            self.examHistory = exams.sorted(by: { $0.date > $1.date })
+            
+        } catch { print("Error fetching data: \(error)") }
         
         self.payments = (try? await paymentManager.fetchStudentPayments(for: studentID)) ?? []
     }
@@ -240,7 +250,6 @@ struct StudentProfileView: View {
         await fetchData()
     }
     
-    // --- UPDATED SAVE FUNCTION ---
     func saveProgress() async {
         guard let instructorID = authManager.user?.id, let studentID = student.id else {
             errorMessage = "Missing student or instructor ID."
@@ -250,16 +259,10 @@ struct StudentProfileView: View {
         
         do {
             try await communityManager.updateStudentProgress(instructorID: instructorID, studentID: studentID, newProgress: newProgressValue, isOffline: isOffline)
-            
-            // Update local state immediately
             self.currentProgress = newProgressValue
             isShowingProgressSheet = false
-            
-            // --- EXECUTE CALLBACK ---
             onProgressUpdate?(studentID, newProgressValue)
-            
             await fetchData()
-            
         } catch {
             print("Failed to save progress: \(error.localizedDescription)")
             errorMessage = "Failed to update progress: \(error.localizedDescription)"
@@ -418,35 +421,21 @@ private struct StudentProfileHeaderCard: View {
     }
 }
 
-// --- NEW HELPER: Standard Default Avatar ---
 struct DefaultAvatar: View {
     let name: String
     let size: CGFloat
-    
     var initials: String {
         let components = name.split(separator: " ")
         let first = components.first?.prefix(1) ?? ""
         let second = components.dropFirst().first?.prefix(1) ?? ""
         return "\(first)\(second)".uppercased()
     }
-    
     var body: some View {
         ZStack {
-            Circle()
-                .fill(Color(.systemGray5))
-            if !name.isEmpty {
-                Text(initials)
-                    .font(.system(size: size * 0.4, weight: .bold))
-                    .foregroundColor(.secondary)
-            } else {
-                Image(systemName: "person.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .padding(size * 0.25)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .frame(width: size, height: size)
+            Circle().fill(Color(.systemGray5))
+            if !name.isEmpty { Text(initials).font(.system(size: size * 0.4, weight: .bold)).foregroundColor(.secondary) }
+            else { Image(systemName: "person.fill").resizable().scaledToFit().padding(size * 0.25).foregroundColor(.secondary) }
+        }.frame(width: size, height: size)
     }
 }
 
@@ -466,13 +455,11 @@ private struct StudentProgressCard: View {
 private struct StudentContactCard: View {
     let student: Student
     let studentAsAppUser: AppUser?
-    
     private var showEmail: Bool {
         if student.isOffline { return true }
         guard let user = studentAsAppUser else { return true }
         return !(user.hideEmail ?? false)
     }
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("CONTACT").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
@@ -489,15 +476,13 @@ private struct StudentNotesCard: View {
     let onAdd: () -> Void
     let onEdit: (StudentNote) -> Void
     let onDelete: (StudentNote) -> Void
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("NOTES").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary)
                 Spacer()
                 Button(action: onAdd) { Image(systemName: "plus").font(.system(size: 14, weight: .bold)).foregroundColor(.primaryBlue) }
-            }
-            .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+            }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
             if !notes.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
@@ -507,8 +492,7 @@ private struct StudentNotesCard: View {
                     }
                 }
             } else { Text("No notes added.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) }
-        }
-        .background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+        }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
@@ -518,7 +502,6 @@ private struct SwipeableNoteRow: View {
     let onDelete: () -> Void
     @State private var offset: CGFloat = 0
     @State private var isSwiped: Bool = false
-    
     var body: some View {
         ZStack(alignment: .trailing) {
             HStack(spacing: 0) {
@@ -529,8 +512,7 @@ private struct SwipeableNoteRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(note.content).font(.system(size: 15)).foregroundColor(.primary).fixedSize(horizontal: false, vertical: true)
                 Text(note.timestamp.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 12)).foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 16).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading).background(Color(.systemBackground)).offset(x: offset)
+            }.padding(.horizontal, 16).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading).background(Color(.systemBackground)).offset(x: offset)
             .gesture(DragGesture().onChanged { if $0.translation.width < 0 { self.offset = $0.translation.width } }.onEnded { if $0.translation.width < -70 { withAnimation { self.offset = -140; self.isSwiped = true } } else { closeSwipe() } })
         }.clipped()
     }
@@ -579,5 +561,47 @@ private struct StudentPaymentsCard: View {
                 }
             } else { Text("No payments recorded.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) }
         }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+    }
+}
+
+// MARK: - 7. Exam History Card (--- NEW ---)
+private struct StudentExamsCard: View {
+    let exams: [ExamResult]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("EXAM HISTORY").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+            Divider().padding(.horizontal, 16)
+            if !exams.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(exams) { exam in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(exam.testCenter).font(.system(size: 16, weight: .medium)).foregroundColor(.primary)
+                                Text(exam.date.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 13)).foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            
+                            // Badge
+                            if exam.status == .scheduled {
+                                Text("Scheduled").font(.system(size: 12, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 4).background(Color.blue.opacity(0.15)).foregroundColor(.blue).cornerRadius(8)
+                            } else {
+                                if exam.isPass == true {
+                                    Text("PASS").font(.system(size: 12, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 4).background(Color.green.opacity(0.15)).foregroundColor(.green).cornerRadius(8)
+                                } else {
+                                    Text("FAIL").font(.system(size: 12, weight: .bold)).padding(.horizontal, 8).padding(.vertical, 4).background(Color.red.opacity(0.15)).foregroundColor(.red).cornerRadius(8)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 12)
+                        
+                        if exam.id != exams.last?.id { Divider().padding(.horizontal, 16) }
+                    }
+                }
+            } else {
+                Text("No exams recorded.").font(.system(size: 15)).foregroundColor(.secondary).padding(16)
+            }
+        }
+        .background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }

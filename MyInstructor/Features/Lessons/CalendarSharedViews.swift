@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/CalendarSharedViews.swift
-// --- UPDATED: Added .exam case ---
+// --- UPDATED: Modernized cards, added clickable callbacks, and cancelled status handling ---
 
 import SwiftUI
 
@@ -8,7 +8,7 @@ enum CalendarItemType {
     case lesson(Lesson)
     case service(ServiceRecord)
     case personal(PersonalEvent)
-    case exam(ExamResult) // <--- NEW
+    case exam(ExamResult)
 }
 
 struct CalendarItem: Identifiable {
@@ -96,12 +96,16 @@ struct DayCell: View {
     }
 }
 
-// MARK: - Section View (Updated with Exam Case)
+// MARK: - Section View
 struct DaySectionView: View {
     let date: Date
     let items: [CalendarItem]
+    
+    // Callbacks for interaction
+    let onSelectLesson: (Lesson) -> Void
     let onSelectService: (ServiceRecord) -> Void
     let onSelectPersonal: (PersonalEvent) -> Void
+    let onSelectExam: (ExamResult) -> Void
     
     var isToday: Bool { Calendar.current.isDateInToday(date) }
     
@@ -114,22 +118,162 @@ struct DaySectionView: View {
                 Spacer()
             }.padding(.horizontal).padding(.top, 10)
             
+            if items.isEmpty {
+                Text("No events scheduled.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+            }
+            
             ForEach(items) { item in
                 switch item.type {
-                case .lesson(let lesson): ModernLessonCard(lesson: lesson).padding(.horizontal)
-                case .service(let service): Button { onSelectService(service) } label: { ServiceEventCard(service: service) }.buttonStyle(.plain).padding(.horizontal)
-                case .personal(let event): Button { onSelectPersonal(event) } label: { PersonalEventCard(event: event) }.buttonStyle(.plain).padding(.horizontal)
-                
-                // --- NEW EXAM CARD ---
+                case .lesson(let lesson):
+                    Button { onSelectLesson(lesson) } label: {
+                        ModernLessonCard(lesson: lesson)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    
+                case .service(let service):
+                    Button { onSelectService(service) } label: {
+                        ServiceEventCard(service: service)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    
+                case .personal(let event):
+                    Button { onSelectPersonal(event) } label: {
+                        PersonalEventCard(event: event)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    
                 case .exam(let exam):
-                    ExamCalendarCard(exam: exam).padding(.horizontal)
+                    Button { onSelectExam(exam) } label: {
+                        ExamCalendarCard(exam: exam)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
                 }
             }
         }
     }
 }
 
-// --- NEW EXAM CARD ---
+// MARK: - Modern Cards
+
+struct ModernLessonCard: View {
+    let lesson: Lesson
+    
+    var statusColor: Color {
+        switch lesson.status {
+        case .completed: return .accentGreen
+        case .cancelled: return .warningRed
+        case .scheduled: return .primaryBlue
+        }
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Time Column
+            VStack(spacing: 2) {
+                Text(lesson.startTime, style: .time)
+                    .font(.caption).bold()
+                    .foregroundColor(.primary)
+                Text((lesson.duration ?? 3600).formattedDuration())
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: 50, alignment: .leading)
+            
+            // Vertical Divider
+            Capsule()
+                .fill(statusColor)
+                .frame(width: 4)
+                .padding(.vertical, 4)
+            
+            // Info Column
+            VStack(alignment: .leading, spacing: 4) {
+                Text(lesson.topic)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                
+                HStack(spacing: 4) {
+                    Image(systemName: "mappin.and.ellipse")
+                        .font(.caption2)
+                    Text(lesson.pickupLocation)
+                        .font(.caption)
+                        .lineLimit(1)
+                }
+                .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            // Status Badge
+            if lesson.status == .cancelled {
+                Text("CANCELLED")
+                    .font(.system(size: 9, weight: .bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.warningRed.opacity(0.1))
+                    .foregroundColor(.warningRed)
+                    .cornerRadius(4)
+            } else if lesson.status == .completed {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.accentGreen)
+            }
+        }
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 1)
+        .opacity(lesson.status == .cancelled ? 0.7 : 1.0)
+    }
+}
+
+struct ServiceEventCard: View {
+    let service: ServiceRecord
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Color.orange.opacity(0.15)).frame(width: 40, height: 40)
+                Image(systemName: "wrench.and.screwdriver.fill").font(.caption).foregroundColor(.orange)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(service.serviceType).font(.subheadline).bold()
+                Text(service.garageName).font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+            Text(service.cost, format: .currency(code: "GBP"))
+                .font(.caption).bold()
+                .foregroundColor(.primary)
+        }
+        .padding(12).background(Color(.secondarySystemGroupedBackground)).cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 1)
+    }
+}
+
+struct PersonalEventCard: View {
+    let event: PersonalEvent
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Color.purple.opacity(0.15)).frame(width: 40, height: 40)
+                Image(systemName: "person.fill").font(.caption).foregroundColor(.purple)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.title).font(.subheadline).bold()
+                Text(event.date, style: .time).font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+        }
+        .padding(12).background(Color(.secondarySystemGroupedBackground)).cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 1)
+    }
+}
+
 struct ExamCalendarCard: View {
     let exam: ExamResult
     
@@ -143,39 +287,30 @@ struct ExamCalendarCard: View {
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10).fill(statusColor.opacity(0.15)).frame(width: 50, height: 50)
-                Image(systemName: "flag.checkered").font(.title3).foregroundColor(statusColor)
+                RoundedRectangle(cornerRadius: 10).fill(statusColor.opacity(0.15)).frame(width: 40, height: 40)
+                Image(systemName: "flag.checkered").font(.subheadline).foregroundColor(statusColor)
             }
             
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Driving Test").font(.headline).foregroundColor(.primary)
-                Text(exam.testCenter).font(.subheadline).foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Driving Test").font(.subheadline).bold().foregroundColor(.primary)
+                Text(exam.testCenter).font(.caption).foregroundColor(.secondary)
             }
             Spacer()
             
-            VStack(alignment: .trailing) {
-                Text(exam.date, style: .time).font(.subheadline).fontWeight(.bold)
-                
-                if exam.status == .completed {
-                    Text(exam.isPass == true ? "PASSED" : "FAILED")
-                        .font(.caption2).bold()
-                        .padding(4)
-                        .background(statusColor.opacity(0.2))
-                        .foregroundColor(statusColor)
-                        .cornerRadius(4)
-                } else {
-                    Text("Scheduled")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
+            if exam.status == .completed {
+                Text(exam.isPass == true ? "PASSED" : "FAILED")
+                    .font(.caption2).bold()
+                    .padding(4)
+                    .background(statusColor.opacity(0.2))
+                    .foregroundColor(statusColor)
+                    .cornerRadius(4)
+            } else {
+                Text(exam.date, style: .time)
+                    .font(.caption).bold()
+                    .foregroundColor(statusColor)
             }
         }
-        .padding(12).background(Color(.secondarySystemGroupedBackground)).cornerRadius(12).shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 1)
+        .padding(12).background(Color(.secondarySystemGroupedBackground)).cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 1)
     }
 }
-
-// ... (Other cards remain the same)
-// Simplified versions for brevity (assuming they exist in your previous file)
-struct PersonalEventCard: View { let event: PersonalEvent; var body: some View { Text("Event: \(event.title)") } }
-struct ServiceEventCard: View { let service: ServiceRecord; var body: some View { Text("Service: \(service.serviceType)") } }
-struct ModernLessonCard: View { let lesson: Lesson; var body: some View { Text("Lesson: \(lesson.topic)") } }

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Student/StudentCalendarView.swift
-// --- UPDATED: Fetches and displays ExamResults ---
+// --- UPDATED: Handles Lesson and Exam clicks ---
 
 import SwiftUI
 
@@ -16,6 +16,10 @@ struct StudentCalendarView: View {
     @State private var isAddPersonalSheetPresented = false
     @State private var personalEventToEdit: PersonalEvent? = nil
     
+    // --- Selection States ---
+    @State private var selectedLesson: Lesson? = nil
+    @State private var selectedExam: ExamResult? = nil
+    
     private var eventDates: Set<DateComponents> {
         let components = calendarItems.map { Calendar.current.dateComponents([.year, .month, .day], from: $0.date) }
         return Set(components)
@@ -30,6 +34,14 @@ struct StudentCalendarView: View {
         NavigationView {
             ZStack {
                 Color(.systemGroupedBackground).ignoresSafeArea()
+                
+                // Invisible Navigation Link for Lesson Details
+                if let lesson = selectedLesson {
+                    NavigationLink(destination: LessonDetailsView(lesson: lesson), isActive: Binding(
+                        get: { selectedLesson != nil },
+                        set: { if !$0 { selectedLesson = nil } }
+                    )) { EmptyView() }
+                }
                 
                 VStack(spacing: 0) {
                     CustomMonthlyCalendar(selectedDate: $selectedDate, eventDates: eventDates)
@@ -54,8 +66,10 @@ struct StudentCalendarView: View {
                                 DaySectionView(
                                     date: selectedDate,
                                     items: selectedDayItems,
+                                    onSelectLesson: { lesson in self.selectedLesson = lesson },
                                     onSelectService: { _ in },
-                                    onSelectPersonal: { event in self.personalEventToEdit = event }
+                                    onSelectPersonal: { event in self.personalEventToEdit = event },
+                                    onSelectExam: { exam in self.selectedExam = exam }
                                 )
                             }
                             .padding(.vertical, 20)
@@ -82,6 +96,24 @@ struct StudentCalendarView: View {
             .sheet(isPresented: $isShowingStats) { if let studentID = authManager.user?.id { StudentLessonStatsView(studentID: studentID) } }
             .sheet(isPresented: $isAddPersonalSheetPresented) { AddPersonalEventView(onSave: { Task { await fetchStudentCalendarData() } }) }
             .sheet(item: $personalEventToEdit) { event in AddPersonalEventView(eventToEdit: event, onSave: { personalEventToEdit = nil; Task { await fetchStudentCalendarData() } }) }
+            
+            // Sheet for Exam (using the generic Add/Edit form for viewing/updating)
+            .sheet(item: $selectedExam) { exam in
+                StudentTrackExamView(onSave: {
+                    selectedExam = nil
+                    Task { await fetchStudentCalendarData() }
+                })
+                // Note: StudentTrackExamView currently doesn't support 'edit' mode in its init easily based on previous context,
+                // so for now this might just open the form. Ideally, we should pass 'examToEdit'.
+                // Assuming StudentTrackExamView stays as is (create mode), let's use the generic form that supports editing if possible,
+                // or just ExamListView if we want to list.
+                // Since user wants to click a schedule item, they probably want to see *that* exam.
+                // I'll use AddExamFormView which is more robust for editing/viewing.
+                AddExamFormView(studentID: authManager.user?.id, examToEdit: exam, onSave: {
+                    selectedExam = nil
+                    Task { await fetchStudentCalendarData() }
+                })
+            }
         }
     }
     
@@ -100,7 +132,6 @@ struct StudentCalendarView: View {
         do {
             async let lessonsTask = lessonManager.fetchLessonsForStudent(studentID: studentID, start: startFetch, end: endFetch)
             async let personalTask = personalEventManager.fetchEvents(for: studentID, start: startFetch, end: endFetch)
-            // --- NEW: Fetch Exams ---
             async let examsTask = lessonManager.fetchExamResults(for: studentID)
             
             let fetchedLessons = try await lessonsTask
@@ -109,7 +140,7 @@ struct StudentCalendarView: View {
             
             let lessonItems = fetchedLessons.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.startTime, type: .lesson($0)) }
             let personalItems = fetchedPersonal.map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.date, type: .personal($0)) }
-            // Filter exams by date locally as the fetch was broad
+            
             let examItems = fetchedExams
                 .filter { $0.date >= startFetch && $0.date < endFetch }
                 .map { CalendarItem(id: $0.id ?? UUID().uuidString, date: $0.date, type: .exam($0)) }

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/InstructorCalendarView.swift
-// --- UPDATED: Fetches and displays student exams ---
+// --- UPDATED: Handles Lesson and Exam clicks with Sheets ---
 
 import SwiftUI
 
@@ -13,11 +13,15 @@ struct InstructorCalendarView: View {
     @State private var selectedDate: Date = Date()
     @State private var calendarItems: [CalendarItem] = []
     
+    // Sheets
     @State private var isAddLessonSheetPresented = false
     @State private var isAddPersonalSheetPresented = false
     
+    // Edit States
     @State private var serviceToEdit: ServiceRecord? = nil
     @State private var personalEventToEdit: PersonalEvent? = nil
+    @State private var lessonToEdit: Lesson? = nil // <--- Added
+    @State private var examToEdit: ExamResult? = nil   // <--- Added
     
     @State private var isLoading = false
     
@@ -44,23 +48,16 @@ struct InstructorCalendarView: View {
                     
                     if isLoading {
                         Spacer(); ProgressView("Loading Schedule..."); Spacer()
-                    } else if selectedDayItems.isEmpty {
-                        Spacer()
-                        EmptyStateView(
-                            icon: "calendar.badge.plus",
-                            message: "No events on \(selectedDate.formatted(.dateTime.day().month()))",
-                            actionTitle: "Add Event",
-                            action: { isAddLessonSheetPresented = true }
-                        )
-                        Spacer()
                     } else {
                         ScrollView {
                             LazyVStack(spacing: 20) {
                                 DaySectionView(
                                     date: selectedDate,
                                     items: selectedDayItems,
+                                    onSelectLesson: { lesson in self.lessonToEdit = lesson },
                                     onSelectService: { service in self.serviceToEdit = service },
-                                    onSelectPersonal: { event in self.personalEventToEdit = event }
+                                    onSelectPersonal: { event in self.personalEventToEdit = event },
+                                    onSelectExam: { exam in self.examToEdit = exam }
                                 )
                             }
                             .padding(.vertical, 20)
@@ -86,8 +83,12 @@ struct InstructorCalendarView: View {
             .onAppear { Task { await fetchCalendarData() } }
             .onChange(of: selectedDate) { _, _ in Task { await fetchCalendarData() } }
             
+            // --- Sheets ---
             .sheet(isPresented: $isAddLessonSheetPresented) { AddLessonFormView(onLessonAdded: { _ in Task { await fetchCalendarData() } }) }
             .sheet(isPresented: $isAddPersonalSheetPresented) { AddPersonalEventView(onSave: { Task { await fetchCalendarData() } }) }
+            
+            .sheet(item: $lessonToEdit) { lesson in AddLessonFormView(lessonToEdit: lesson, onLessonAdded: { _ in Task { await fetchCalendarData() } }) }
+            .sheet(item: $examToEdit) { exam in AddExamFormView(studentID: exam.studentID, examToEdit: exam, onSave: { Task { await fetchCalendarData() } }) }
             .sheet(item: $serviceToEdit) { service in AddServiceRecordView(recordToEdit: service, onSave: { serviceToEdit = nil; Task { await fetchCalendarData() } }) }
             .sheet(item: $personalEventToEdit) { event in AddPersonalEventView(eventToEdit: event, onSave: { personalEventToEdit = nil; Task { await fetchCalendarData() } }) }
         }
@@ -109,7 +110,6 @@ struct InstructorCalendarView: View {
             async let lessonsTask = lessonManager.fetchLessons(for: instructorID, start: startFetch, end: endFetch)
             async let servicesTask = vehicleManager.fetchServiceRecords(for: instructorID)
             async let personalTask = personalEventManager.fetchEvents(for: instructorID, start: startFetch, end: endFetch)
-            // --- NEW: Fetch Exams ---
             async let examsTask = lessonManager.fetchExamsForInstructor(instructorID: instructorID)
             
             let lessons = try await lessonsTask

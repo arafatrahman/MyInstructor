@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/StudentTrackExamView.swift
-// --- UPDATED: Fixed 'Missing argument for parameter status' error ---
+// --- UPDATED: Pass initiatorID for notifications ---
 
 import SwiftUI
 
@@ -97,7 +97,7 @@ struct StudentTrackExamView: View {
             instructorID: instructorID, // Added optional instructorID
             date: date,
             testCenter: testCenter,
-            status: .completed, // FIX: Added required status
+            status: .completed, // Required status
             isPass: isPass,
             minorFaults: minorFaults,
             seriousFaults: seriousFaults,
@@ -106,7 +106,8 @@ struct StudentTrackExamView: View {
         
         Task {
             do {
-                try await lessonManager.logExamResult(exam)
+                // Pass studentID as initiator
+                try await lessonManager.logExamResult(exam, initiatorID: studentID)
                 onSave()
                 dismiss()
             } catch {

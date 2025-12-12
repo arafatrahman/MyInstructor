@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/NotificationsView.swift
-// --- UPDATED: Added icon for 'location' notifications ---
+// --- UPDATED: Added "exam" notification type ---
 
 import SwiftUI
 
@@ -90,15 +90,16 @@ struct AppNotificationRow: View {
     var iconName: String {
         switch item.type {
         case "lesson": return "calendar"
+        case "exam": return "flag.checkered" // --- NEW ---
         case "progress": return "chart.bar.fill"
         case "note": return "note.text"
         case "reaction": return "heart.fill"
         case "comment": return "bubble.left.fill"
         case "reply": return "arrowshape.turn.up.left.fill"
         case "message": return "message.fill"
-        case "location": return "location.fill" // <--- ADDED
-        case "follow": return "person.badge.plus.fill" // <--- ADDED
-        case "post": return "doc.text.image.fill" // <--- ADDED
+        case "location": return "location.fill"
+        case "follow": return "person.badge.plus.fill"
+        case "post": return "doc.text.image.fill"
         default: return "bell.fill"
         }
     }
@@ -106,12 +107,13 @@ struct AppNotificationRow: View {
     var iconColor: Color {
         switch item.type {
         case "lesson": return .accentGreen
+        case "exam": return .indigo // --- NEW ---
         case "progress": return .primaryBlue
         case "note": return .orange
         case "reaction": return .red
         case "comment", "reply", "message": return .primaryBlue
-        case "location": return .purple // <--- ADDED
-        case "follow", "post": return .accentGreen // <--- ADDED
+        case "location": return .purple
+        case "follow", "post": return .accentGreen
         default: return .gray
         }
     }

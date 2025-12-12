@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/AddExamFormView.swift
-// --- UPDATED: Added 'Delete Exam' button in Edit Mode ---
+// --- UPDATED: Pass initiatorID for notifications on Save/Delete ---
 
 import SwiftUI
 
@@ -104,7 +104,7 @@ struct AddExamFormView: View {
                     }
                 }
                 
-                // --- NEW: DELETE BUTTON ---
+                // --- DELETE BUTTON ---
                 if isEditing {
                     Section {
                         Button(role: .destructive) {
@@ -134,7 +134,7 @@ struct AddExamFormView: View {
             .task {
                 await loadInitialData()
             }
-            // --- NEW: DELETE ALERT ---
+            // --- DELETE ALERT ---
             .alert("Delete Exam?", isPresented: $isShowingDeleteAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Delete", role: .destructive) {
@@ -190,8 +190,8 @@ struct AddExamFormView: View {
     }
     
     private func saveExam() {
-        guard let finalStudentID = effectiveStudentID else {
-            errorMessage = "Please select a student."
+        guard let finalStudentID = effectiveStudentID, let currentUserID = authManager.user?.id else {
+            errorMessage = "Please select a student or sign in."
             return
         }
         
@@ -220,9 +220,9 @@ struct AddExamFormView: View {
         Task {
             do {
                 if isEditing {
-                    try await lessonManager.updateExamResult(exam)
+                    try await lessonManager.updateExamResult(exam, initiatorID: currentUserID)
                 } else {
-                    try await lessonManager.logExamResult(exam)
+                    try await lessonManager.logExamResult(exam, initiatorID: currentUserID)
                 }
                 onSave()
                 dismiss()
@@ -233,13 +233,12 @@ struct AddExamFormView: View {
         }
     }
     
-    // --- NEW: DELETE FUNCTION ---
     private func deleteExam() {
-        guard let id = examToEdit?.id else { return }
+        guard let id = examToEdit?.id, let currentUserID = authManager.user?.id else { return }
         isLoading = true
         Task {
             do {
-                try await lessonManager.deleteExamResult(id: id)
+                try await lessonManager.deleteExamResult(id: id, initiatorID: currentUserID)
                 onSave() // Refresh list
                 dismiss()
             } catch {

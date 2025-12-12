@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/ExamListView.swift
-// --- UPDATED: Handles Instructor 'All Exams' View ---
+// --- UPDATED: Pass initiatorID for delete notifications ---
 
 import SwiftUI
 
@@ -97,13 +97,10 @@ struct ExamListView: View {
         isLoading = true
         do {
             if let specificID = studentID {
-                // Case 1: Viewing a specific student (Student Dashboard OR Instructor -> Student Profile)
                 self.exams = try await lessonManager.fetchExamResults(for: specificID)
             } else if authManager.role == .instructor, let instructorID = authManager.user?.id {
-                // Case 2: Instructor Dashboard -> View ALL student exams
                 self.exams = try await lessonManager.fetchExamsForInstructor(instructorID: instructorID)
             } else if let myID = authManager.user?.id {
-                // Case 3: Student fallback
                 self.exams = try await lessonManager.fetchExamResults(for: myID)
             }
         } catch {
@@ -121,11 +118,12 @@ struct ExamListView: View {
     }
     
     func deleteItems(at offsets: IndexSet, from list: [ExamResult]) {
+        guard let currentUserID = authManager.user?.id else { return }
         for index in offsets {
             let exam = list[index]
             guard let id = exam.id else { return }
             Task {
-                try? await lessonManager.deleteExamResult(id: id)
+                try? await lessonManager.deleteExamResult(id: id, initiatorID: currentUserID)
                 await fetchData()
             }
         }

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/LessonManager.swift
-// --- UPDATED: Sends notification to the other party upon cancellation ---
+// --- UPDATED: Sends notifications for Exam Schedule, Edit, and Delete ---
 
 import Foundation
 import FirebaseFirestore
@@ -89,7 +89,6 @@ class LessonManager: ObservableObject {
         )
     }
 
-    // --- UPDATED FUNCTION ---
     func updateLessonStatus(lessonID: String, status: LessonStatus, initiatorID: String? = nil) async throws {
         // 1. Update the status in Firestore
         try await lessonsCollection.document(lessonID).updateData(["status": status.rawValue])
@@ -125,7 +124,7 @@ class LessonManager: ObservableObject {
                             to: toID,
                             title: "Lesson Cancelled",
                             message: message,
-                            type: "lesson", // Keeps using the lesson icon style
+                            type: "lesson",
                             relatedID: lessonID
                         )
                     }
@@ -164,19 +163,62 @@ class LessonManager: ObservableObject {
         try await practiceCollection.document(id).delete()
     }
     
-    // MARK: - Exam Results
+    // MARK: - Exam Results (Updated for Notifications)
     
-    func logExamResult(_ exam: ExamResult) async throws {
+    func logExamResult(_ exam: ExamResult, initiatorID: String) async throws {
         var data = exam
         data.id = nil
-        try examsCollection.addDocument(from: data)
+        let ref = try examsCollection.addDocument(from: data)
+        
+        let dateStr = exam.date.formatted(date: .abbreviated, time: .shortened)
+        notifyExamParty(exam: exam, initiatorID: initiatorID, title: "Exam Scheduled", message: "A new driving exam at \(exam.testCenter) has been scheduled for \(dateStr).", relatedID: ref.documentID)
     }
     
-    func updateExamResult(_ exam: ExamResult) async throws {
+    func updateExamResult(_ exam: ExamResult, initiatorID: String) async throws {
         guard let id = exam.id else { return }
         var data = exam
         data.id = nil
         try examsCollection.document(id).setData(from: data)
+        
+        let dateStr = exam.date.formatted(date: .abbreviated, time: .shortened)
+        notifyExamParty(exam: exam, initiatorID: initiatorID, title: "Exam Updated", message: "The driving exam at \(exam.testCenter) on \(dateStr) has been updated.", relatedID: id)
+    }
+    
+    func deleteExamResult(id: String, initiatorID: String) async throws {
+        // Fetch first to get details for notification
+        let doc = try await examsCollection.document(id).getDocument()
+        if let exam = try? doc.data(as: ExamResult.self) {
+            try await examsCollection.document(id).delete()
+            
+            let dateStr = exam.date.formatted(date: .abbreviated, time: .shortened)
+            notifyExamParty(exam: exam, initiatorID: initiatorID, title: "Exam Cancelled", message: "The driving exam at \(exam.testCenter) on \(dateStr) has been cancelled.", relatedID: nil)
+        } else {
+            // Just delete if we can't read it
+            try await examsCollection.document(id).delete()
+        }
+    }
+    
+    // --- Helper for Exam Notifications ---
+    private func notifyExamParty(exam: ExamResult, initiatorID: String, title: String, message: String, relatedID: String?) {
+        var recipientID: String?
+        
+        if initiatorID == exam.studentID {
+            // Student performed the action -> Notify Instructor
+            recipientID = exam.instructorID
+        } else if initiatorID == exam.instructorID {
+            // Instructor performed the action -> Notify Student
+            recipientID = exam.studentID
+        }
+        
+        if let toID = recipientID, !toID.isEmpty {
+            NotificationManager.shared.sendNotification(
+                to: toID,
+                title: title,
+                message: message,
+                type: "exam", // Used in NotificationsView for custom icon
+                relatedID: relatedID
+            )
+        }
     }
     
     func fetchExamResults(for studentID: String) async throws -> [ExamResult] {
@@ -192,9 +234,5 @@ class LessonManager: ObservableObject {
             .whereField("instructorID", isEqualTo: instructorID)
             .getDocuments()
         return snapshot.documents.compactMap { try? $0.data(as: ExamResult.self) }
-    }
-    
-    func deleteExamResult(id: String) async throws {
-        try await examsCollection.document(id).delete()
     }
 }

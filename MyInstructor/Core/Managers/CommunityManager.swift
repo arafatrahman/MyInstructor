@@ -1,3 +1,6 @@
+// File: MyInstructor/Core/Managers/CommunityManager.swift
+// --- UPDATED: Enhanced comment logic for real-time updates and permissions ---
+
 import Combine
 import Foundation
 import FirebaseFirestore
@@ -168,6 +171,8 @@ class CommunityManager: ObservableObject {
         try await usersCollection.document(blockerID).updateData(["blockedUsers": FieldValue.arrayRemove([targetID])])
     }
     
+    // MARK: - Comment System
+    
     func listenToComments(for postID: String) {
         commentsListener?.remove()
         commentsListener = postsCollection.document(postID).collection("comments").order(by: "timestamp", descending: false).addSnapshotListener { [weak self] snapshot, _ in
@@ -184,26 +189,64 @@ class CommunityManager: ObservableObject {
     }
     
     func addComment(postID: String, authorID: String, authorName: String, authorRole: UserRole, authorPhotoURL: String?, content: String, parentCommentID: String?) async throws {
-        let newComment = Comment(postID: postID, authorID: authorID, authorName: authorName, authorPhotoURL: authorPhotoURL, authorRole: authorRole, timestamp: Date(), content: content, parentCommentID: parentCommentID)
+        let newComment = Comment(
+            postID: postID,
+            authorID: authorID,
+            authorName: authorName,
+            authorPhotoURL: authorPhotoURL,
+            authorRole: authorRole,
+            timestamp: Date(),
+            content: content,
+            parentCommentID: parentCommentID,
+            isEdited: false // Initially false
+        )
+        
+        // Add the comment document
         try postsCollection.document(postID).collection("comments").addDocument(from: newComment)
+        
+        // Update counts
         try await postsCollection.document(postID).updateData(["commentsCount": FieldValue.increment(1.0)])
         
+        if let parentID = parentCommentID {
+            // If it's a reply, increment the parent comment's reply count (optional, but good for UI)
+            try? await postsCollection.document(postID).collection("comments").document(parentID).updateData(["repliesCount": FieldValue.increment(1.0)])
+        }
+        
+        // Notifications
         let postDoc = try await postsCollection.document(postID).getDocument()
         guard let post = try? postDoc.data(as: Post.self) else { return }
-        if let parentID = parentCommentID, let parentDoc = try? await postsCollection.document(postID).collection("comments").document(parentID).getDocument(), let parentComment = try? parentDoc.data(as: Comment.self), parentComment.authorID != authorID {
-            NotificationManager.shared.sendNotification(to: parentComment.authorID, title: "New Reply", message: "\(authorName) replied to your comment.", type: "reply")
+        
+        if let parentID = parentCommentID,
+           let parentDoc = try? await postsCollection.document(postID).collection("comments").document(parentID).getDocument(),
+           let parentComment = try? parentDoc.data(as: Comment.self),
+           parentComment.authorID != authorID {
+            
+            NotificationManager.shared.sendNotification(to: parentComment.authorID, title: "New Reply", message: "\(authorName) replied to your comment.", type: "reply", relatedID: postID)
+            
         } else if post.authorID != authorID {
-            NotificationManager.shared.sendNotification(to: post.authorID, title: "New Comment", message: "\(authorName) commented on your post.", type: "comment")
+            NotificationManager.shared.sendNotification(to: post.authorID, title: "New Comment", message: "\(authorName) commented on your post.", type: "comment", relatedID: postID)
         }
     }
     
     func deleteComment(postID: String, commentID: String, parentCommentID: String?) async throws {
+        // Delete the document
         try await postsCollection.document(postID).collection("comments").document(commentID).delete()
+        
+        // Decrement post total count
         try await postsCollection.document(postID).updateData(["commentsCount": FieldValue.increment(-1.0)])
+        
+        if let parentID = parentCommentID {
+            // Decrement parent reply count if applicable
+            try? await postsCollection.document(postID).collection("comments").document(parentID).updateData(["repliesCount": FieldValue.increment(-1.0)])
+        }
     }
     
     func updateComment(postID: String, commentID: String, newContent: String) async throws {
-        try await postsCollection.document(postID).collection("comments").document(commentID).updateData(["content": newContent, "isEdited": true])
+        try await postsCollection.document(postID).collection("comments").document(commentID).updateData([
+            "content": newContent,
+            "isEdited": true,
+            "timestamp": FieldValue.serverTimestamp() // Optionally update timestamp, or keep original
+        ])
     }
     
     func fetchRelationshipStatus(instructorID: String, studentID: String) async throws -> RequestStatus? {

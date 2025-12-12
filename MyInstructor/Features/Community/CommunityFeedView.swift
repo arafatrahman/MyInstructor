@@ -1,5 +1,5 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: Fixed Follow/Unfollow button logic to react to changes ---
+// File: MyInstructor/Features/Community/CommunityFeedView.swift
+// --- UPDATED: PostCard now supports reply, edit, and delete via shared CommentRow logic ---
 
 import SwiftUI
 import PhotosUI
@@ -211,6 +211,10 @@ struct PostCard: View {
     @State private var isShowingEditSheet = false
     @State private var isShowingDeleteAlert = false
     
+    // Reply/Edit State
+    @State private var replyingToComment: Comment? = nil
+    @State private var editingComment: Comment? = nil
+    
     var isMe: Bool {
         post.authorID == authManager.user?.id
     }
@@ -267,7 +271,6 @@ struct PostCard: View {
         .task {
             updateFollowingState()
         }
-        // --- FIX: Watch for changes in AuthManager to update button state ---
         .onChange(of: authManager.user?.following) { _ in
             updateFollowingState()
         }
@@ -313,7 +316,6 @@ struct PostCard: View {
                         .padding(10).background(Color.gray.opacity(0.1)).clipShape(Circle())
                 }
             } else {
-                // --- Follow/Unfollow Button ---
                 Button(action: handleFollowToggle) {
                     Text(isFollowing ? "Unfollow" : "Follow")
                         .font(.caption).bold()
@@ -371,23 +373,56 @@ struct PostCard: View {
         if showCommentsList && isCommenting {
             VStack(alignment: .leading, spacing: 10) {
                 Divider()
+                
+                // Indicators for Edit/Reply
+                if let replying = replyingToComment {
+                    HStack {
+                        Text("Replying to \(replying.authorName)").font(.caption).foregroundColor(.secondary)
+                        Spacer()
+                        Button { replyingToComment = nil; commentText = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain)
+                    }
+                }
+                if let editing = editingComment {
+                    HStack {
+                        Text("Editing your comment").font(.caption).foregroundColor(.primaryBlue)
+                        Spacer()
+                        Button { editingComment = nil; commentText = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain)
+                    }
+                }
+                
                 if isLoadingComments {
                     HStack { Spacer(); ProgressView(); Spacer() }
                 } else if let comments = fetchedComments, !comments.isEmpty {
                     ForEach(comments.prefix(3)) { comment in
-                        HStack(alignment: .top, spacing: 8) {
-                            AsyncImage(url: URL(string: comment.authorPhotoURL ?? "")) { p in
-                                if let i = p.image { i.resizable().scaledToFill() } else { Color.gray }
+                        // Reusing the robust CommentRow logic
+                        CommentRow(
+                            comment: comment,
+                            isExpanded: false,
+                            currentUserID: authManager.user?.id,
+                            postAuthorID: post.authorID,
+                            onReply: {
+                                replyingToComment = comment
+                                editingComment = nil
+                                commentText = "@\(comment.authorName) "
+                            },
+                            onEdit: {
+                                editingComment = comment
+                                replyingToComment = nil
+                                commentText = comment.content
+                            },
+                            onDelete: {
+                                Task { await deleteComment(comment) }
                             }
-                            .frame(width: 30, height: 30).clipShape(Circle())
-                            VStack(alignment: .leading) {
-                                Text(comment.authorName).font(.caption).bold()
-                                Text(comment.content).font(.caption)
-                            }
+                        )
+                    }
+                    if comments.count > 3 {
+                        NavigationLink(destination: PostDetailView(post: post)) {
+                            Text("View all comments...").font(.caption).foregroundColor(.blue)
                         }
                     }
-                    if comments.count > 3 { Text("View all comments...").font(.caption).foregroundColor(.blue) }
-                } else { Text("No comments yet.").font(.caption).foregroundColor(.gray) }
+                } else {
+                    Text("No comments yet.").font(.caption).foregroundColor(.gray)
+                }
                 
                 HStack {
                     TextField("Write a comment...", text: $commentText).font(.caption).padding(8).background(Color(.secondarySystemBackground)).cornerRadius(15)
@@ -401,19 +436,16 @@ struct PostCard: View {
     private func handleFollowToggle() {
         Task {
             guard let myID = authManager.user?.id, let name = authManager.user?.name else { return }
-            // Optimistic update
             isFollowing.toggle()
             
-            if !isFollowing { // Was following, now unfollow
+            if !isFollowing {
                 try? await communityManager.unfollowUser(currentUserID: myID, targetUserID: post.authorID)
-                // Remove from local state immediately
                 if var following = authManager.user?.following {
                     following.removeAll { $0 == post.authorID }
                     authManager.user?.following = following
                 }
-            } else { // Was not following, now follow
+            } else {
                 try? await communityManager.followUser(currentUserID: myID, targetUserID: post.authorID, currentUserName: name)
-                // Add to local state immediately
                 if authManager.user?.following == nil { authManager.user?.following = [] }
                 authManager.user?.following?.append(post.authorID)
             }
@@ -436,9 +468,31 @@ struct PostCard: View {
     private func postComment() async {
         guard let postID = post.id, let author = authManager.user, let authorID = author.id else { return }
         isPostingComment = true
-        try? await communityManager.addComment(postID: postID, authorID: authorID, authorName: author.name ?? "User", authorRole: author.role, authorPhotoURL: author.photoURL, content: commentText, parentCommentID: nil)
+        
+        let content = commentText
+        
+        // --- EDIT ---
+        if let editing = editingComment, let cid = editing.id {
+            try? await communityManager.updateComment(postID: postID, commentID: cid, newContent: content)
+            editingComment = nil
+        }
+        // --- CREATE ---
+        else {
+            let parentID = replyingToComment?.id
+            try? await communityManager.addComment(postID: postID, authorID: authorID, authorName: author.name ?? "User", authorRole: author.role, authorPhotoURL: author.photoURL, content: content, parentCommentID: parentID)
+            post.commentsCount += 1
+            replyingToComment = nil
+        }
+        
         commentText = ""
         isPostingComment = false
+        await fetchComments()
+    }
+    
+    private func deleteComment(_ comment: Comment) async {
+        guard let postID = post.id, let commentID = comment.id else { return }
+        try? await communityManager.deleteComment(postID: postID, commentID: commentID, parentCommentID: comment.parentCommentID)
+        post.commentsCount -= 1
         await fetchComments()
     }
 }

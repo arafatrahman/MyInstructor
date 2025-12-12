@@ -1,5 +1,5 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/PostDetailView.swift
-// --- UPDATED: Complete file with real-time comments and notification-ready reactions ---
+// File: MyInstructor/Features/Community/PostDetailView.swift
+// --- UPDATED: Implemented Long Press Context Menu for Edit/Delete and visible Reply Button ---
 
 import SwiftUI
 
@@ -15,7 +15,7 @@ struct PostDetailView: View {
     
     // We rely on communityManager.comments for live updates
     
-    @State private var visibleCommentLimit: Int = 3
+    @State private var visibleCommentLimit: Int = 10
     @State private var expandedReplyIDs: Set<String> = []
     
     @State private var replyingToComment: Comment? = nil
@@ -41,9 +41,9 @@ struct PostDetailView: View {
                             .font(.subheadline).bold()
                         Spacer()
                         
-                        ReactionActionButton(post: $post, reactionType: "thumbsup", icon: "hand.thumbsup", color: .primaryBlue)
-                        ReactionActionButton(post: $post, reactionType: "fire", icon: "flame", color: .orange)
-                        ReactionActionButton(post: $post, reactionType: "heart", icon: "heart", color: .warningRed)
+                        ReactionActionButton(post: $post, reactionType: "thumbsup", icon: "hand.thumbsup.fill", color: .primaryBlue)
+                        ReactionActionButton(post: $post, reactionType: "fire", icon: "flame.fill", color: .orange)
+                        ReactionActionButton(post: $post, reactionType: "heart", icon: "heart.fill", color: .warningRed)
                     }
                     .padding(.horizontal)
                     
@@ -206,7 +206,7 @@ struct PostDetailView: View {
         editingComment = nil
         
         if let parentID = comment.parentCommentID {
-            // Find parent in live data
+            // If replying to a reply, link it to the parent
             self.replyingToComment = communityManager.comments.first(where: { $0.id == parentID })
         } else {
             self.replyingToComment = comment
@@ -229,8 +229,6 @@ struct PostDetailView: View {
         Task {
             do {
                 try await communityManager.deleteComment(postID: postID, commentID: commentID, parentCommentID: comment.parentCommentID)
-                // We update local count for UI consistency, but the list updates automatically via listener
-                post.commentsCount -= 1
             } catch {
                 print("Error deleting comment: \(error)")
             }
@@ -251,7 +249,6 @@ struct PostDetailView: View {
                 editingComment = nil
                 commentText = ""
                 isCommentFieldFocused = false
-                // No manual fetch needed, listener updates UI
             } catch {
                 print("Failed to update comment: \(error)")
             }
@@ -275,8 +272,6 @@ struct PostDetailView: View {
             commentText = ""
             replyingToComment = nil
             isCommentFieldFocused = false
-            post.commentsCount += 1
-            // No manual fetch needed
             
         } catch {
             print("Failed to post comment: \(error.localizedDescription)")
@@ -286,7 +281,6 @@ struct PostDetailView: View {
 
 // MARK: - Supporting Views
 
-// 1. ReactionActionButton
 struct ReactionActionButton: View {
     @EnvironmentObject var communityManager: CommunityManager
     @EnvironmentObject var authManager: AuthManager
@@ -324,7 +318,7 @@ struct ReactionActionButton: View {
     }
 }
 
-// 2. CommentRow (Shared by Feed and Detail)
+// --- UPDATED CommentRow with Context Menu and Reply Button ---
 struct CommentRow: View {
     let comment: Comment
     let isExpanded: Bool
@@ -351,6 +345,7 @@ struct CommentRow: View {
         return currentUserID == comment.authorID
     }
     
+    // Author of comment OR Author of post can delete
     var canDelete: Bool {
         return currentUserID == comment.authorID || currentUserID == postAuthorID
     }
@@ -371,7 +366,7 @@ struct CommentRow: View {
             .background(Color.secondaryGray.clipShape(Circle()))
             
             VStack(alignment: .leading, spacing: 4) {
-                // Header: Name • Time • (edited) ... Menu
+                // Header: Name • Time • (edited)
                 HStack(alignment: .center) {
                     Text(comment.authorName)
                         .font(.subheadline).bold()
@@ -387,58 +382,48 @@ struct CommentRow: View {
                     }
                     
                     Spacer()
-                    
-                    if canEdit || canDelete {
-                        Menu {
-                            if canEdit {
-                                Button(action: { onEdit?() }) {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-                            }
-                            if canDelete {
-                                Button(role: .destructive, action: { onDelete?() }) {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .font(.caption)
-                                .foregroundColor(.textLight)
-                                .padding(8)
-                                .background(Color.white.opacity(0.01))
-                        }
-                        .buttonStyle(.plain)
-                    }
                 }
                 
                 Text(comment.content)
                     .font(.body)
                 
-                // Footer: Reply • View Replies
+                // Footer: Reply Button & View Replies Toggle
                 HStack(spacing: 12) {
                     Button("Reply") { onReply?() }
-                        .font(.caption).bold().foregroundColor(.textLight)
+                        .font(.caption).bold().foregroundColor(.primaryBlue)
                         .buttonStyle(.plain)
                     
                     if comment.repliesCount > 0 {
                         Button { onToggleReplies?() } label: {
                             HStack(spacing: 3) {
                                 Text("•")
-                                Text("\(comment.repliesCount) replies")
+                                Text("View \(comment.repliesCount) replies")
                                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                             }
-                            .font(.caption).bold().foregroundColor(.primaryBlue)
+                            .font(.caption).bold().foregroundColor(.textLight)
                         }
                         .buttonStyle(.plain)
                     }
                 }
             }
         }
-        .contentShape(Rectangle()) // Make entire row tappable
+        .padding(.vertical, 4)
+        .contentShape(Rectangle()) // Make entire row interactable for long press
+        .contextMenu {
+            if canEdit {
+                Button(action: { onEdit?() }) {
+                    Label("Edit Comment", systemImage: "pencil")
+                }
+            }
+            if canDelete {
+                Button(role: .destructive, action: { onDelete?() }) {
+                    Label("Delete Comment", systemImage: "trash")
+                }
+            }
+        }
     }
 }
 
-// 3. CommentInputView
 struct CommentInputView: View {
     @Binding var commentText: String
     @Binding var isReportFlowPresented: Bool

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: Changed Analytics Quick Action color to .accentGreen ---
+// --- UPDATED: Replaced Financial Trend Chart with "Recent Activity" list ---
 
 import SwiftUI
 
@@ -81,7 +81,7 @@ struct InstructorDashboardView: View {
                                 // 4. Track Expense
                                 QuickActionButton(title: "Track Expense", icon: "chart.line.downtrend.xyaxis", color: .warningRed, action: { activeSheet = .trackExpense })
                                 
-                                // 5. Overall Analytics (--- COLOR CHANGED TO GREEN ---)
+                                // 5. Overall Analytics
                                 QuickActionButton(title: "Analytics", icon: "chart.bar.xaxis", color: .accentGreen, action: { activeSheet = .analytics })
                                 
                                 // 6. Record Payment
@@ -267,6 +267,27 @@ struct InstructorLessonsListView: View {
 }
 
 // MARK: - Instructor Analytics View
+enum AnalyticsFilter: String, CaseIterable, Identifiable {
+    case daily = "Daily"
+    case weekly = "Weekly"
+    case monthly = "Monthly"
+    case yearly = "Yearly"
+    case custom = "Custom"
+    
+    var id: String { self.rawValue }
+}
+
+struct TransactionItem: Identifiable {
+    let id = UUID()
+    let title: String
+    let subtitle: String
+    let amount: Double
+    let date: Date
+    let type: TransactionType
+    
+    enum TransactionType { case income, expense }
+}
+
 struct InstructorAnalyticsView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var paymentManager: PaymentManager
@@ -274,111 +295,69 @@ struct InstructorAnalyticsView: View {
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var authManager: AuthManager
     
-    // Analytics State
+    // --- Filters ---
+    @State private var selectedFilter: AnalyticsFilter = .monthly
+    @State private var currentDate: Date = Date()
+    @State private var customStartDate: Date = Date().addingTimeInterval(-86400 * 30)
+    @State private var customEndDate: Date = Date()
+    
+    // --- Data ---
     @State private var totalIncome: Double = 0.0
     @State private var totalExpenses: Double = 0.0
     @State private var netProfit: Double = 0.0
-    @State private var monthlyData: [MonthlyFinancial] = []
+    @State private var recentTransactions: [TransactionItem] = []
     
     @State private var totalLessonsCount: Int = 0
     @State private var passRate: Double = 0.0
     @State private var totalExams: Int = 0
     @State private var passedExams: Int = 0
     
+    // --- Breakdown Data ---
+    @State private var expensesByCategory: [(label: String, amount: Double, color: Color)] = []
+    @State private var incomeByMethod: [(label: String, amount: Double, color: Color)] = []
+    
     @State private var isLoading = true
     
-    struct MonthlyFinancial: Identifiable {
-        let id = UUID()
-        let month: String
-        let income: Double
-        let expense: Double
+    // --- Helpers ---
+    private let calendar = Calendar.current
+    
+    var dateRangeDisplay: String {
+        switch selectedFilter {
+        case .daily: return currentDate.formatted(date: .abbreviated, time: .omitted)
+        case .weekly:
+            guard let start = calendar.dateInterval(of: .weekOfYear, for: currentDate)?.start,
+                  let end = calendar.dateInterval(of: .weekOfYear, for: currentDate)?.end.addingTimeInterval(-1) else { return "" }
+            return "\(start.formatted(.dateTime.day().month())) - \(end.formatted(.dateTime.day().month()))"
+        case .monthly: return currentDate.formatted(.dateTime.month(.wide).year())
+        case .yearly: return currentDate.formatted(.dateTime.year())
+        case .custom: return "Custom Range"
+        }
     }
     
     var body: some View {
         NavigationView {
             ScrollView {
-                if isLoading {
-                    VStack(spacing: 20) {
-                        ProgressView()
-                        Text("Gathering Data...")
-                            .foregroundColor(.secondary)
+                VStack(spacing: 20) {
+                    
+                    // Filter Control
+                    filterSection
+                    
+                    if isLoading {
+                        VStack(spacing: 20) {
+                            ProgressView()
+                            Text("Crunching Numbers...")
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(height: 300)
+                    } else {
+                        VStack(spacing: 24) {
+                            financialOverview
+                            performanceStats
+                            financialBreakdown
+                            recentActivitySection
+                            Spacer(minLength: 30)
+                        }
                     }
-                    .frame(height: 300)
-                } else {
-                    VStack(spacing: 24) {
-                        
-                        // 1. Financial Overview Cards
-                        VStack(spacing: 12) {
-                            HStack(spacing: 12) {
-                                AnalyticsStatCard(title: "Income", value: totalIncome, type: .currency, color: .accentGreen, icon: "arrow.down.left.circle.fill")
-                                AnalyticsStatCard(title: "Expenses", value: totalExpenses, type: .currency, color: .warningRed, icon: "arrow.up.right.circle.fill")
-                            }
-                            AnalyticsStatCard(title: "Net Profit", value: netProfit, type: .currency, color: .primaryBlue, icon: "banknote.fill", isLarge: true)
-                        }
-                        .padding(.horizontal)
-                        
-                        // 2. Financial Chart (Full Width)
-                        VStack(alignment: .leading, spacing: 15) {
-                            Text("Last 12 Months Performance")
-                                .font(.headline)
-                                .padding(.horizontal)
-                            
-                            if monthlyData.isEmpty {
-                                Text("No financial data available.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .padding()
-                            } else {
-                                ChartView(data: monthlyData)
-                                    .padding(.horizontal)
-                            }
-                        }
-                        
-                        // 3. Student Performance Section
-                        VStack(alignment: .leading, spacing: 15) {
-                            Text("Student Performance")
-                                .font(.headline)
-                                .padding(.horizontal)
-                            
-                            HStack(spacing: 20) {
-                                ZStack {
-                                    Circle()
-                                        .stroke(lineWidth: 12)
-                                        .opacity(0.1)
-                                        .foregroundColor(.purple)
-                                    
-                                    Circle()
-                                        .trim(from: 0.0, to: CGFloat(min(passRate / 100, 1.0)))
-                                        .stroke(style: StrokeStyle(lineWidth: 12, lineCap: .round, lineJoin: .round))
-                                        .foregroundColor(.purple)
-                                        .rotationEffect(Angle(degrees: 270.0))
-                                    
-                                    VStack(spacing: 2) {
-                                        Text("\(Int(passRate))%")
-                                            .font(.title2).bold()
-                                        Text("Pass Rate")
-                                            .font(.caption2).foregroundColor(.secondary)
-                                    }
-                                }
-                                .frame(width: 120, height: 120)
-                                
-                                VStack(alignment: .leading, spacing: 12) {
-                                    StatRow(label: "Total Exams", value: "\(totalExams)", icon: "flag.checkered", color: .indigo)
-                                    StatRow(label: "Passed", value: "\(passedExams)", icon: "checkmark.seal.fill", color: .accentGreen)
-                                    StatRow(label: "Lessons Taught", value: "\(totalLessonsCount)", icon: "steeringwheel", color: .orange)
-                                }
-                                Spacer()
-                            }
-                            .padding()
-                            .background(Color(.systemBackground))
-                            .cornerRadius(16)
-                            .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
-                            .padding(.horizontal)
-                        }
-                        
-                        Spacer(minLength: 30)
-                    }
-                    .padding(.top)
                 }
             }
             .background(Color(.systemGroupedBackground))
@@ -389,77 +368,351 @@ struct InstructorAnalyticsView: View {
                     Button("Close") { dismiss() }
                 }
             }
-            .task {
-                await fetchAnalytics()
+            .task { await fetchData() }
+            .onChange(of: selectedFilter) { _ in Task { await fetchData() } }
+            .onChange(of: currentDate) { _ in Task { await fetchData() } }
+            .onChange(of: customStartDate) { _ in if selectedFilter == .custom { Task { await fetchData() } } }
+            .onChange(of: customEndDate) { _ in if selectedFilter == .custom { Task { await fetchData() } } }
+        }
+    }
+    
+    // MARK: - Subviews
+    
+    private var filterSection: some View {
+        VStack(spacing: 12) {
+            Picker("Filter", selection: $selectedFilter) {
+                ForEach(AnalyticsFilter.allCases) { filter in
+                    Text(filter.rawValue).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            
+            if selectedFilter == .custom {
+                HStack {
+                    DatePicker("Start", selection: $customStartDate, displayedComponents: .date)
+                        .labelsHidden()
+                    Text("-")
+                    DatePicker("End", selection: $customEndDate, displayedComponents: .date)
+                        .labelsHidden()
+                }
+            } else {
+                HStack {
+                    Button { shiftDate(by: -1) } label: { Image(systemName: "chevron.left").padding() }
+                    Spacer()
+                    Text(dateRangeDisplay).font(.headline)
+                    Spacer()
+                    Button { shiftDate(by: 1) } label: { Image(systemName: "chevron.right").padding() }
+                }
+                .padding(.horizontal)
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(10)
+                .padding(.horizontal)
+            }
+        }
+        .padding(.top, 10)
+    }
+    
+    private var financialOverview: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                NavigationLink(destination: PaymentsView()) {
+                    AnalyticsStatCard(title: "Income", value: totalIncome, type: .currency, color: .accentGreen, icon: "arrow.down.left.circle.fill", clickable: true)
+                }
+                .buttonStyle(.plain)
+                
+                NavigationLink(destination: ExpensesView()) {
+                    AnalyticsStatCard(title: "Expenses", value: totalExpenses, type: .currency, color: .warningRed, icon: "arrow.up.right.circle.fill", clickable: true)
+                }
+                .buttonStyle(.plain)
+            }
+            AnalyticsStatCard(title: "Net Profit", value: netProfit, type: .currency, color: .primaryBlue, icon: "banknote.fill", isLarge: true)
+        }
+        .padding(.horizontal)
+    }
+    
+    private var performanceStats: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Performance")
+                .font(.headline)
+                .padding(.horizontal)
+            
+            HStack(spacing: 20) {
+                ZStack {
+                    Circle()
+                        .stroke(lineWidth: 12)
+                        .opacity(0.1)
+                        .foregroundColor(.purple)
+                    
+                    Circle()
+                        .trim(from: 0.0, to: CGFloat(min(passRate / 100, 1.0)))
+                        .stroke(style: StrokeStyle(lineWidth: 12, lineCap: .round, lineJoin: .round))
+                        .foregroundColor(.purple)
+                        .rotationEffect(Angle(degrees: 270.0))
+                    
+                    VStack(spacing: 2) {
+                        Text("\(Int(passRate))%")
+                            .font(.title2).bold()
+                        Text("Pass Rate")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+                .frame(width: 120, height: 120)
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    StatRow(label: "Exams", value: "\(totalExams)", icon: "flag.checkered", color: .indigo)
+                    StatRow(label: "Passed", value: "\(passedExams)", icon: "checkmark.seal.fill", color: .accentGreen)
+                    StatRow(label: "Lessons", value: "\(totalLessonsCount)", icon: "steeringwheel", color: .orange)
+                }
+                Spacer()
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+            .padding(.horizontal)
+        }
+    }
+    
+    private var financialBreakdown: some View {
+        Group {
+            if !expensesByCategory.isEmpty || !incomeByMethod.isEmpty {
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Financial Breakdown")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    VStack(spacing: 20) {
+                        if !incomeByMethod.isEmpty {
+                            BreakdownView(title: "Income by Method", items: incomeByMethod)
+                        }
+                        if !expensesByCategory.isEmpty {
+                            BreakdownView(title: "Expense Breakdown", items: expensesByCategory)
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemBackground))
+                    .cornerRadius(16)
+                    .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+                    .padding(.horizontal)
+                }
             }
         }
     }
     
-    private func fetchAnalytics() async {
+    private var recentActivitySection: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Recent Activity")
+                .font(.headline)
+                .padding(.horizontal)
+            
+            if recentTransactions.isEmpty {
+                Text("No recent activity for this period.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(recentTransactions) { item in
+                        HStack {
+                            ZStack {
+                                Circle()
+                                    .fill(item.type == .income ? Color.accentGreen.opacity(0.15) : Color.warningRed.opacity(0.15))
+                                    .frame(width: 40, height: 40)
+                                Image(systemName: item.type == .income ? "arrow.down.left" : "arrow.up.right")
+                                    .foregroundColor(item.type == .income ? .accentGreen : .warningRed)
+                                    .font(.system(size: 14, weight: .bold))
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.title)
+                                    .font(.subheadline).bold()
+                                    .foregroundColor(.primary)
+                                Text(item.subtitle)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(item.amount, format: .currency(code: "GBP"))
+                                    .font(.subheadline).bold()
+                                    .foregroundColor(item.type == .income ? .accentGreen : .warningRed)
+                                Text(item.date.formatted(date: .numeric, time: .omitted))
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding()
+                        
+                        if item.id != recentTransactions.last?.id {
+                            Divider().padding(.leading, 60)
+                        }
+                    }
+                }
+                .background(Color(.systemBackground))
+                .cornerRadius(16)
+                .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+                .padding(.horizontal)
+            }
+        }
+    }
+    
+    // MARK: - Logic Helpers
+    
+    private func shiftDate(by value: Int) {
+        let component: Calendar.Component
+        switch selectedFilter {
+        case .daily: component = .day
+        case .weekly: component = .weekOfYear
+        case .monthly: component = .month
+        case .yearly: component = .year
+        default: component = .day
+        }
+        if let newDate = calendar.date(byAdding: component, value: value, to: currentDate) {
+            currentDate = newDate
+        }
+    }
+    
+    private func getRange() -> (start: Date, end: Date) {
+        switch selectedFilter {
+        case .daily:
+            let start = calendar.startOfDay(for: currentDate)
+            let end = calendar.date(byAdding: .day, value: 1, to: start)!
+            return (start, end)
+        case .weekly:
+            let interval = calendar.dateInterval(of: .weekOfYear, for: currentDate)!
+            return (interval.start, interval.end)
+        case .monthly:
+            let interval = calendar.dateInterval(of: .month, for: currentDate)!
+            return (interval.start, interval.end)
+        case .yearly:
+            let interval = calendar.dateInterval(of: .year, for: currentDate)!
+            return (interval.start, interval.end)
+        case .custom:
+            return (calendar.startOfDay(for: customStartDate), calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: customEndDate))!)
+        }
+    }
+    
+    private func fetchData() async {
         guard let instructorID = authManager.user?.id else { return }
+        isLoading = true
+        
+        let range = getRange()
         
         do {
             async let paymentsTask = paymentManager.fetchInstructorPayments(for: instructorID)
             async let expensesTask = expenseManager.fetchExpenses(for: instructorID)
             async let examsTask = lessonManager.fetchExamsForInstructor(instructorID: instructorID)
-            async let lessonsTask = lessonManager.fetchLessons(for: instructorID, start: .distantPast, end: .distantFuture)
+            async let lessonsTask = lessonManager.fetchLessons(for: instructorID, start: range.start, end: range.end)
             
-            let payments = try await paymentsTask
-            let expenses = try await expensesTask
-            let exams = try await examsTask
-            let lessons = try await lessonsTask
+            let allPayments = try await paymentsTask
+            let allExpenses = try await expensesTask
+            let allExams = try await examsTask
+            let rangeLessons = try await lessonsTask
             
-            let income = payments.reduce(0) { $0 + $1.amount }
-            let expense = expenses.reduce(0) { $0 + $1.amount }
+            let rangePayments = allPayments.filter { $0.date >= range.start && $0.date < range.end }
+            let rangeExpenses = allExpenses.filter { $0.date >= range.start && $0.date < range.end }
+            let rangeExams = allExams.filter { $0.date >= range.start && $0.date < range.end }
             
-            self.totalIncome = income
-            self.totalExpenses = expense
-            self.netProfit = income - expense
-            self.totalLessonsCount = lessons.count
+            self.totalIncome = rangePayments.reduce(0) { $0 + $1.amount }
+            self.totalExpenses = rangeExpenses.reduce(0) { $0 + $1.amount }
+            self.netProfit = totalIncome - totalExpenses
+            self.totalLessonsCount = rangeLessons.count
             
-            let completedExams = exams.filter { $0.status == .completed }
+            let completedExams = rangeExams.filter { $0.status == .completed }
             self.totalExams = completedExams.count
             self.passedExams = completedExams.filter { $0.isPass == true }.count
+            self.passRate = totalExams > 0 ? (Double(passedExams) / Double(totalExams)) * 100.0 : 0.0
             
-            if totalExams > 0 {
-                self.passRate = (Double(passedExams) / Double(totalExams)) * 100.0
-            } else {
-                self.passRate = 0.0
-            }
+            generateBreakdowns(payments: rangePayments, expenses: rangeExpenses)
+            prepareRecentActivity(payments: rangePayments, expenses: rangeExpenses)
             
-            self.monthlyData = generateMonthlyData(payments: payments, expenses: expenses)
-            
-        } catch {
-            print("Error loading analytics: \(error)")
-        }
+        } catch { print("Analytics Error: \(error)") }
+        
         isLoading = false
     }
     
-    private func generateMonthlyData(payments: [Payment], expenses: [Expense]) -> [MonthlyFinancial] {
-        var data: [MonthlyFinancial] = []
-        let calendar = Calendar.current
-        let now = Date()
+    private func generateBreakdowns(payments: [Payment], expenses: [Expense]) {
+        // Expense by Category
+        var expMap: [ExpenseCategory: Double] = [:]
+        for e in expenses { expMap[e.category, default: 0] += e.amount }
         
-        for i in (0...11).reversed() {
-            guard let date = calendar.date(byAdding: .month, value: -i, to: now) else { continue }
-            
-            let components = calendar.dateComponents([.year, .month], from: date)
-            guard let startOfMonth = calendar.date(from: components),
-                  let endOfMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth) else { continue }
-            
-            let monthName = startOfMonth.formatted(.dateTime.month(.abbreviated))
-            
-            let monthIncome = payments
-                .filter { $0.date >= startOfMonth && $0.date < endOfMonth }
-                .reduce(0) { $0 + $1.amount }
-            
-            let monthExpense = expenses
-                .filter { $0.date >= startOfMonth && $0.date < endOfMonth }
-                .reduce(0) { $0 + $1.amount }
-            
-            data.append(MonthlyFinancial(month: monthName, income: monthIncome, expense: monthExpense))
+        let sortedExp = expMap.sorted { $0.value > $1.value }
+        
+        self.expensesByCategory = sortedExp.map { (cat, amt) in
+            // Assign color based on category
+            let color: Color
+            switch cat {
+            case .fuel: color = .orange
+            case .maintenance: color = .warningRed
+            case .insurance: color = .purple
+            case .tax: color = .blue
+            case .marketing: color = .teal
+            case .other: color = .gray
+            }
+            return (label: cat.rawValue, amount: amt, color: color)
         }
-        return data
+        
+        // Income by Method
+        var incMap: [String: Double] = [:]
+        for p in payments {
+            let method = p.paymentMethod?.rawValue ?? "Unknown"
+            incMap[method, default: 0] += p.amount
+        }
+        
+        self.incomeByMethod = incMap.sorted { $0.value > $1.value }.map { (method, amt) in
+            return (label: method, amount: amt, color: method == "Cash" ? Color.accentGreen : Color.primaryBlue)
+        }
+    }
+    
+    private func prepareRecentActivity(payments: [Payment], expenses: [Expense]) {
+        var items: [TransactionItem] = []
+        
+        for p in payments {
+            // Note: studentID is just an ID here. In a real app we'd fetch names,
+            // but for "recent activity" overview, "Payment" is sufficient.
+            // subtitle can show payment method or note.
+            let subtitle = p.note?.isEmpty == false ? p.note! : (p.paymentMethod?.rawValue ?? "Student Payment")
+            items.append(TransactionItem(title: "Payment Received", subtitle: subtitle, amount: p.amount, date: p.date, type: .income))
+        }
+        
+        for e in expenses {
+            items.append(TransactionItem(title: e.title, subtitle: e.category.rawValue, amount: e.amount, date: e.date, type: .expense))
+        }
+        
+        self.recentTransactions = Array(items.sorted(by: { $0.date > $1.date }).prefix(5))
+    }
+}
+
+// MARK: - Breakdown View
+struct BreakdownView: View {
+    let title: String
+    let items: [(label: String, amount: Double, color: Color)]
+    
+    var total: Double { items.reduce(0) { $0 + $1.amount } }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.subheadline).bold().foregroundColor(.secondary)
+            ForEach(items, id: \.label) { item in
+                VStack(spacing: 5) {
+                    HStack {
+                        Text(item.label).font(.caption).fontWeight(.medium)
+                        Spacer()
+                        Text(item.amount, format: .currency(code: "GBP")).font(.caption).bold()
+                    }
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color(.systemGray6))
+                            Capsule().fill(item.color).frame(width: total > 0 ? (item.amount / total) * geo.size.width : 0)
+                        }
+                    }.frame(height: 6)
+                }
+            }
+        }
     }
 }
 
@@ -472,38 +725,23 @@ struct AnalyticsStatCard: View {
     let color: Color
     let icon: String
     var isLarge: Bool = false
+    var clickable: Bool = false
     
     enum ValueType { case currency, number }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Image(systemName: icon)
-                    .foregroundColor(color)
-                    .font(isLarge ? .title2 : .body)
+                Image(systemName: icon).foregroundColor(color).font(isLarge ? .title2 : .body)
                 Spacer()
+                if clickable { Image(systemName: "chevron.right").font(.caption2).foregroundColor(.secondary.opacity(0.5)) }
             }
-            
             if type == .currency {
-                Text(value, format: .currency(code: "GBP"))
-                    .font(isLarge ? .title : .title3).bold()
-                    .foregroundColor(.primary)
-                    .minimumScaleFactor(0.8)
+                Text(value, format: .currency(code: "GBP")).font(isLarge ? .title : .title3).bold().foregroundColor(.primary).minimumScaleFactor(0.8)
             } else {
-                if value.truncatingRemainder(dividingBy: 1) == 0 {
-                    Text("\(Int(value))")
-                        .font(isLarge ? .title : .title3).bold()
-                        .foregroundColor(.primary)
-                } else {
-                    Text(String(format: "%.1f", value))
-                        .font(isLarge ? .title : .title3).bold()
-                        .foregroundColor(.primary)
-                }
+                Text(value.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(value))" : String(format: "%.1f", value)).font(isLarge ? .title : .title3).bold().foregroundColor(.primary)
             }
-            
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Text(title).font(.caption).foregroundColor(.secondary)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -513,72 +751,17 @@ struct AnalyticsStatCard: View {
     }
 }
 
-struct ChartView: View {
-    let data: [InstructorAnalyticsView.MonthlyFinancial]
-    
-    var maxAmount: Double {
-        let maxInc = data.map { $0.income }.max() ?? 0
-        let maxExp = data.map { $0.expense }.max() ?? 0
-        return max(maxInc, maxExp, 1.0)
-    }
-    
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 0) {
-            ForEach(data) { item in
-                VStack(spacing: 6) {
-                    HStack(alignment: .bottom, spacing: 2) {
-                        VStack {
-                            Spacer()
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.accentGreen.gradient)
-                                .frame(width: 8, height: barHeight(for: item.income))
-                        }
-                        
-                        VStack {
-                            Spacer()
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.warningRed.gradient)
-                                .frame(width: 8, height: barHeight(for: item.expense))
-                        }
-                    }
-                    .frame(height: 150)
-                    
-                    Text(item.month.prefix(1))
-                        .font(.caption2).bold()
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
-    }
-    
-    func barHeight(for amount: Double) -> CGFloat {
-        return CGFloat((amount / maxAmount) * 140)
-    }
-}
-
 struct StatRow: View {
     let label: String
     let value: String
     let icon: String
     let color: Color
-    
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundColor(color)
-                .frame(width: 24)
-            
+            Image(systemName: icon).foregroundColor(color).frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
-                Text(value)
-                    .font(.headline)
-                Text(label)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Text(value).font(.headline)
+                Text(label).font(.caption).foregroundColor(.secondary)
             }
         }
     }

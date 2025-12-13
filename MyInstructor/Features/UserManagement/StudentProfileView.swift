@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
-// --- UPDATED: Made stats clickable (NavigationLink to UserListView) ---
+// --- UPDATED: Renamed "Remove Student" to "Complete Student" in menu and alert ---
 
 import SwiftUI
 
@@ -29,7 +29,7 @@ struct StudentProfileView: View {
     @State private var isFollowing = false
     
     // Alert states
-    @State private var isShowingRemoveAlert = false
+    @State private var isShowingCompleteAlert = false // Renamed from Remove
     @State private var isShowingBlockAlert = false
     @State private var isShowingUnblockAlert = false
     @State private var isShowingDeleteAlert = false
@@ -126,8 +126,10 @@ struct StudentProfileView: View {
                         if studentStatus == .completed {
                             Button { Task { await reactivateStudent() } } label: { Label("Reactivate Student", systemImage: "person.badge.plus") }
                         } else {
-                            Button(role: .destructive) { isShowingRemoveAlert = true } label: { Label("Remove Student", systemImage: "person.badge.minus") }
+                            // --- UPDATED: "Complete Student" instead of "Remove" ---
+                            Button { isShowingCompleteAlert = true } label: { Label("Complete Student", systemImage: "checkmark.circle") }
                         }
+                        
                         if studentStatus == .blocked {
                             Button { isShowingUnblockAlert = true } label: { Label("Unblock Student", systemImage: "hand.raised.slash.fill") }
                         } else {
@@ -182,9 +184,10 @@ struct StudentProfileView: View {
         
         .alert("Error", isPresented: $isShowingErrorAlert) { Button("OK", role: .cancel) { } } message: { Text(errorMessage) }
         
-        .alert("Remove Student?", isPresented: $isShowingRemoveAlert) {
+        // --- UPDATED ALERT ---
+        .alert("Complete Student?", isPresented: $isShowingCompleteAlert) {
             Button("Cancel", role: .cancel) { }
-            Button("Remove", role: .destructive) { Task { await removeStudent() } }
+            Button("Complete", role: .none) { Task { await completeStudent() } }
         } message: { Text("This will move the student to the Completed list.") }
         
         .alert("Block Student?", isPresented: $isShowingBlockAlert) {
@@ -309,7 +312,8 @@ struct StudentProfileView: View {
         }
     }
     
-    func removeStudent() async {
+    // Renamed from removeStudent to completeStudent for clarity
+    func completeStudent() async {
         self.studentStatus = .completed
         try? await communityManager.removeStudent(studentID: student.id!, instructorID: authManager.user!.id!)
         dismiss()

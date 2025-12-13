@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Student/MyInstructorsView.swift
-// --- UPDATED: Wired up "Find Instructor" button to navigate to directory ---
+// --- UPDATED: Added "Add" (+) button to the toolbar to find instructors ---
 
 import SwiftUI
 
@@ -16,7 +16,7 @@ struct MyInstructorsView: View {
     
     @State private var selectedStatus: MyInstructorsFilter = .approved
     
-    // --- NEW: State to trigger navigation ---
+    // --- Navigation State ---
     @State private var showDirectory = false
     
     // "My Instructors" now includes active AND student-blocked instructors
@@ -53,7 +53,7 @@ struct MyInstructorsView: View {
                 Color(.systemGroupedBackground) // Light gray background
                     .ignoresSafeArea()
                 
-                // --- NEW: Invisible Navigation Link triggered by the Empty State button ---
+                // --- Invisible Navigation Link triggered by toolbar button ---
                 NavigationLink(isActive: $showDirectory, destination: {
                     InstructorDirectoryView()
                 }, label: { EmptyView() })
@@ -84,7 +84,6 @@ struct MyInstructorsView: View {
                                     message: "You haven't connected with any instructors yet.",
                                     actionTitle: "Find an Instructor",
                                     action: {
-                                        // Trigger navigation
                                         showDirectory = true
                                     }
                                 )
@@ -193,6 +192,18 @@ struct MyInstructorsView: View {
             }
             .navigationTitle("My Instructors")
             .navigationBarTitleDisplayMode(.inline)
+            // --- ADDED: Toolbar with Add Button ---
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showDirectory = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.headline)
+                            .foregroundColor(.primaryBlue)
+                    }
+                }
+            }
             .task {
                 await loadRequests()
             }

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorDirectoryView.swift
-// --- UPDATED: Robust Navigation handling for List and Map ---
+// --- UPDATED: Optimized loading to show data immediately before geocoding ---
 
 import SwiftUI
 import Combine
@@ -178,45 +178,64 @@ struct InstructorDirectoryView: View {
     // MARK: - Data Helpers
     func loadData() async {
         isLoading = true
-        var instructors: [Student] = []
         do {
-            instructors = try await communityManager.fetchInstructorDirectory(filters: [:])
-        } catch { print("Failed to fetch: \(error)") }
-        
-        instructors = await geocodeInstructors(instructors)
-        
-        if let userLocation = locationManager.location {
-            instructors = sortInstructorsByDistance(instructors, from: userLocation)
-            withAnimation {
-                mapRegion.center = userLocation.coordinate
-                mapRegion.span = MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+            // 1. Fetch raw list first
+            var instructors = try await communityManager.fetchInstructorDirectory(filters: [:])
+            
+            // 2. Show the data immediately (fixes infinite loading perception)
+            self.allInstructors = instructors
+            isLoading = false
+            
+            // 3. Perform heavy geocoding in the background
+            instructors = await geocodeInstructors(instructors)
+            
+            // 4. Sort if location is available
+            if let userLocation = locationManager.location {
+                instructors = sortInstructorsByDistance(instructors, from: userLocation)
+                // Center map on user
+                withAnimation {
+                    mapRegion.center = userLocation.coordinate
+                    mapRegion.span = MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+                }
+            } else if let first = instructors.first(where: { $0.coordinate != nil })?.coordinate {
+                // Or center map on first result
+                withAnimation { mapRegion.center = first }
             }
-        } else if let first = instructors.first(where: { $0.coordinate != nil })?.coordinate {
-            withAnimation { mapRegion.center = first }
+            
+            // 5. Update the UI again with the enriched (geocoded) data
+            self.allInstructors = instructors
+            
+        } catch {
+            print("Failed to fetch: \(error)")
+            isLoading = false
         }
-        
-        self.allInstructors = instructors
-        isLoading = false
     }
 
     func geocodeInstructors(_ instructors: [Student]) async -> [Student] {
         let geocoder = CLGeocoder()
         var geocodedInstructors: [Student] = []
+        
+        // Use TaskGroup to process in parallel, but handle carefully
         await withTaskGroup(of: Student.self) { group in
             for var instructor in instructors {
                 group.addTask {
                     if let address = instructor.address, !address.isEmpty {
                         do {
+                            // Attempt geocode
                             let placemarks = try await geocoder.geocodeAddressString(address)
                             if let location = placemarks.first?.location {
                                 instructor.coordinate = location.coordinate
                             }
-                        } catch { }
+                        } catch {
+                            // Ignore geocoding errors, keep instructor as is
+                        }
                     }
                     return instructor
                 }
             }
-            for await instructor in group { geocodedInstructors.append(instructor) }
+            for await instructor in group {
+                geocodedInstructors.append(instructor)
+            }
         }
         return geocodedInstructors
     }
@@ -229,7 +248,12 @@ struct InstructorDirectoryView: View {
                 sorted[i].distance = userLocation.distance(from: loc)
             }
         }
-        sorted.sort { ($0.distance ?? Double.greatestFiniteMagnitude) < ($1.distance ?? Double.greatestFiniteMagnitude) }
+        // Sort: Instructors with distance first, then by distance value
+        sorted.sort {
+            let dist1 = $0.distance ?? Double.greatestFiniteMagnitude
+            let dist2 = $1.distance ?? Double.greatestFiniteMagnitude
+            return dist1 < dist2
+        }
         return sorted
     }
 }
@@ -284,10 +308,18 @@ struct InstructorDirectoryCard: View {
                     Image(systemName: "mappin.and.ellipse")
                         .font(.caption)
                         .foregroundColor(.gray)
-                    Text(instructor.address ?? "Location hidden")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .lineLimit(1)
+                    
+                    if let dist = instructor.distance {
+                        Text(String(format: "%.1f km away", dist / 1000))
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .bold()
+                    } else {
+                        Text(instructor.address ?? "Location hidden")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .lineLimit(1)
+                    }
                 }
             }
         }

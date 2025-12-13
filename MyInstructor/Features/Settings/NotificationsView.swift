@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/NotificationsView.swift
-// --- UPDATED: Added "exam" notification type ---
+// --- UPDATED: Navigate to Follower Profile on "follow" notification ---
 
 import SwiftUI
 
@@ -45,8 +45,21 @@ struct NotificationsView: View {
                 // List of Notifications
                 Section(header: Text("Recent Updates")) {
                     ForEach(notificationManager.notifications) { item in
-                        AppNotificationRow(item: item)
-                            .listRowBackground(item.isRead ? Color(.systemBackground) : Color.blue.opacity(0.05))
+                        // --- NAVIGATION LOGIC ---
+                        if item.type == "follow", let targetID = item.relatedID {
+                            // Navigate to Profile for "Follow"
+                            NavigationLink(destination: InstructorPublicProfileView(instructorID: targetID)) {
+                                AppNotificationRow(item: item)
+                            }
+                        } else if item.type == "message", let relatedID = item.relatedID {
+                            // Message notifications are handled via deep link usually, but here we can just show the row
+                            // or link to chat view if we had a convenient way to init it with just ID (ChatView needs Conversation obj)
+                            // For now, keep as row or link to MessagingView
+                            AppNotificationRow(item: item)
+                        } else {
+                            // Default behavior
+                            AppNotificationRow(item: item)
+                        }
                     }
                 }
             }
@@ -90,7 +103,7 @@ struct AppNotificationRow: View {
     var iconName: String {
         switch item.type {
         case "lesson": return "calendar"
-        case "exam": return "flag.checkered" // --- NEW ---
+        case "exam": return "flag.checkered"
         case "progress": return "chart.bar.fill"
         case "note": return "note.text"
         case "reaction": return "heart.fill"
@@ -107,7 +120,7 @@ struct AppNotificationRow: View {
     var iconColor: Color {
         switch item.type {
         case "lesson": return .accentGreen
-        case "exam": return .indigo // --- NEW ---
+        case "exam": return .indigo
         case "progress": return .primaryBlue
         case "note": return .orange
         case "reaction": return .red

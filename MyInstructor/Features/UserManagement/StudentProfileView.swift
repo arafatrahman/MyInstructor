@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentProfileView.swift
-// --- UPDATED: Refactored Follow logic to parent view to sync with AuthManager/Community Hub ---
+// --- UPDATED: Made stats clickable (NavigationLink to UserListView) ---
 
 import SwiftUI
 
@@ -212,7 +212,6 @@ struct StudentProfileView: View {
             if let status = try? await communityManager.fetchRelationshipStatus(instructorID: instructorID, studentID: studentID) {
                 self.studentStatus = status
             }
-            // --- NEW: Check Follow Status ---
             if let myID = authManager.user?.id, let followers = studentAsAppUser?.followers {
                 self.isFollowing = followers.contains(myID)
             }
@@ -235,23 +234,18 @@ struct StudentProfileView: View {
         self.payments = (try? await paymentManager.fetchStudentPayments(for: studentID)) ?? []
     }
     
-    // --- NEW: Handle Follow Toggle ---
     func handleFollowToggle() {
         Task {
             guard let myID = authManager.user?.id, let name = authManager.user?.name, let studentID = student.id else { return }
             do {
                 if isFollowing {
-                    // --- UNFOLLOW ---
                     try await communityManager.unfollowUser(currentUserID: myID, targetUserID: studentID)
                     isFollowing = false
                     
-                    // 1. Update Local Student User
                     if var followers = studentAsAppUser?.followers {
                         if let index = followers.firstIndex(of: myID) { followers.remove(at: index) }
                         studentAsAppUser?.followers = followers
                     }
-                    
-                    // 2. Update AuthManager (Community Hub sync)
                     if var myFollowing = authManager.user?.following {
                         if let index = myFollowing.firstIndex(of: studentID) {
                             myFollowing.remove(at: index)
@@ -259,15 +253,12 @@ struct StudentProfileView: View {
                         }
                     }
                 } else {
-                    // --- FOLLOW ---
                     try await communityManager.followUser(currentUserID: myID, targetUserID: studentID, currentUserName: name)
                     isFollowing = true
                     
-                    // 1. Update Local Student User
                     if studentAsAppUser?.followers == nil { studentAsAppUser?.followers = [] }
                     studentAsAppUser?.followers?.append(myID)
                     
-                    // 2. Update AuthManager
                     if authManager.user?.following == nil { authManager.user?.following = [] }
                     if authManager.user?.following?.contains(studentID) == false {
                         authManager.user?.following?.append(studentID)
@@ -356,13 +347,15 @@ private struct StudentProfileHeaderCard: View {
     let student: Student
     var studentAsAppUser: AppUser?
     
-    // --- NEW: Props for Follow Logic ---
     let isFollowing: Bool
     let onEdit: () -> Void
     let onFollowTap: () -> Void
     
     private var followersCount: Int { studentAsAppUser?.followers?.count ?? 0 }
     private var followingCount: Int { studentAsAppUser?.following?.count ?? 0 }
+    
+    private var followerIDs: [String] { studentAsAppUser?.followers ?? [] }
+    private var followingIDs: [String] { studentAsAppUser?.following ?? [] }
     
     private var showStats: Bool {
         guard let user = studentAsAppUser else { return false }
@@ -400,21 +393,28 @@ private struct StudentProfileHeaderCard: View {
             Text(student.isOffline ? "Offline Student" : "Active Student").font(.system(size: 15)).foregroundColor(.secondary).padding(.bottom, 4)
             
             if !student.isOffline && showStats {
+                // --- UPDATED STATS with Navigation ---
                 HStack(spacing: 40) {
-                    VStack(spacing: 2) {
-                        Text("\(followersCount)").font(.headline).bold().foregroundColor(.primary)
-                        Text("Followers").font(.caption).foregroundColor(.secondary)
+                    NavigationLink(destination: UserListView(title: "Followers", userIDs: followerIDs)) {
+                        VStack(spacing: 2) {
+                            Text("\(followersCount)").font(.headline).bold().foregroundColor(.primary)
+                            Text("Followers").font(.caption).foregroundColor(.secondary)
+                        }
                     }
+                    .buttonStyle(.plain)
                     
-                    VStack(spacing: 2) {
-                        Text("\(followingCount)").font(.headline).bold().foregroundColor(.primary)
-                        Text("Following").font(.caption).foregroundColor(.secondary)
+                    NavigationLink(destination: UserListView(title: "Following", userIDs: followingIDs)) {
+                        VStack(spacing: 2) {
+                            Text("\(followingCount)").font(.headline).bold().foregroundColor(.primary)
+                            Text("Following").font(.caption).foregroundColor(.secondary)
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
                 .padding(.vertical, 8)
+                // -------------------------------------
                 
                 if let myID = authManager.user?.id, let studentID = student.id, myID != studentID {
-                    // --- UPDATED BUTTON ---
                     Button(action: onFollowTap) {
                         Text(isFollowing ? "Unfollow" : "Follow")
                             .font(.subheadline).bold()

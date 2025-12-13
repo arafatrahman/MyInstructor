@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: handleFollowTap now updates AuthManager to sync follow state with Community Hub ---
+// --- UPDATED: Made stats clickable (NavigationLink to UserListView) ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -245,8 +245,10 @@ private struct ProfileHeaderCard: View {
     private var followersCount: Int { user.followers?.count ?? 0 }
     private var followingCount: Int { user.following?.count ?? 0 }
     
-    // --- CHECK: Should stats be visible? ---
-    // Visible if: It's MY profile OR the user hasn't hidden them.
+    // Arrays for navigation
+    private var followerIDs: [String] { user.followers ?? [] }
+    private var followingIDs: [String] { user.following ?? [] }
+    
     private var showStats: Bool {
         return isMe || !(user.hideFollowers ?? false)
     }
@@ -281,30 +283,36 @@ private struct ProfileHeaderCard: View {
                 Text(locationString)
             }.font(.system(size: 14)).foregroundColor(Color.primaryBlue)
             
-            // --- UPDATED STATS DISPLAY ---
+            // --- UPDATED STATS with Navigation ---
             if showStats {
                 HStack(spacing: 40) {
-                    VStack(spacing: 2) {
-                        Text("\(followersCount)")
-                            .font(.headline).bold()
-                            .foregroundColor(.primary)
-                        Text("Followers")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    NavigationLink(destination: UserListView(title: "Followers", userIDs: followerIDs)) {
+                        VStack(spacing: 2) {
+                            Text("\(followersCount)")
+                                .font(.headline).bold()
+                                .foregroundColor(.primary)
+                            Text("Followers")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
+                    .buttonStyle(.plain)
                     
-                    VStack(spacing: 2) {
-                        Text("\(followingCount)")
-                            .font(.headline).bold()
-                            .foregroundColor(.primary)
-                        Text("Following")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    NavigationLink(destination: UserListView(title: "Following", userIDs: followingIDs)) {
+                        VStack(spacing: 2) {
+                            Text("\(followingCount)")
+                                .font(.headline).bold()
+                                .foregroundColor(.primary)
+                            Text("Following")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
                 .padding(.vertical, 8)
             }
-            // -----------------------------
+            // -------------------------------------
             
             if !isMe {
                 HStack(spacing: 12) {
@@ -342,9 +350,8 @@ private struct ProfileHeaderCard: View {
 
 private struct ContactCard: View {
     let user: AppUser
-    let isMe: Bool // passed from parent
+    let isMe: Bool
     
-    // Check if email should be shown
     private var showEmail: Bool {
         return isMe || !(user.hideEmail ?? false)
     }
@@ -354,12 +361,8 @@ private struct ContactCard: View {
             Text("CONTACT").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
             
-            // Conditionally show email row
             if showEmail {
                 ContactRow(icon: "envelope.fill", label: "Email", value: user.email)
-            } else {
-                // Optional: Show "Hidden" or skip entirely. Skipping looks cleaner.
-                // ContactRow(icon: "envelope.fill", label: "Email", value: "Hidden")
             }
             
             ContactRow(icon: "phone.fill", label: "Phone", value: user.phone ?? "Not provided")
@@ -368,7 +371,6 @@ private struct ContactCard: View {
     }
 }
 
-// ... (Other cards remain unchanged: RateHighlightCard, EducationCard, EduRow, AboutCard, ExpertiseCard)
 private struct RateHighlightCard: View {
     let user: AppUser
     var body: some View {

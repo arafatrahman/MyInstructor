@@ -1,6 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/UserProfileView.swift
-// --- UPDATED: Removed 'private' from ContactRow to fix redeclaration error ---
-// --- UPDATED: Removed the private FlowLayout struct at the end ---
+// --- UPDATED: Added clickable Followers/Following stats to ProfileHeaderCard ---
 
 import SwiftUI
 
@@ -72,6 +71,12 @@ private struct ProfileHeaderCard: View {
         }
         return "Location N/A"
     }
+    
+    // --- Stats ---
+    private var followersCount: Int { authManager.user?.followers?.count ?? 0 }
+    private var followingCount: Int { authManager.user?.following?.count ?? 0 }
+    private var followerIDs: [String] { authManager.user?.followers ?? [] }
+    private var followingIDs: [String] { authManager.user?.following ?? [] }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -106,7 +111,37 @@ private struct ProfileHeaderCard: View {
             }
             .font(.system(size: 14))
             .foregroundColor(Color.primaryBlue)
-            .padding(.bottom, 12)
+            
+            // --- NEW: Clickable Stats ---
+            HStack(spacing: 40) {
+                NavigationLink(destination: UserListView(title: "Followers", userIDs: followerIDs)) {
+                    VStack(spacing: 2) {
+                        Text("\(followersCount)")
+                            .font(.headline).bold()
+                            .foregroundColor(.primary)
+                        Text("Followers")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                
+                NavigationLink(destination: UserListView(title: "Following", userIDs: followingIDs)) {
+                    VStack(spacing: 2) {
+                        Text("\(followingCount)")
+                            .font(.headline).bold()
+                            .foregroundColor(.primary)
+                        Text("Following")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.vertical, 8)
+            // ---------------------------
+            
+            Spacer().frame(height: 4)
         }
         .frame(maxWidth: .infinity)
         .background(Color(.systemBackground))
@@ -313,7 +348,6 @@ private struct ExpertiseCard: View {
             Divider().padding(.horizontal, 16)
 
             if let skills = skills, !skills.isEmpty {
-                // This will now use the central FlowLayout
                 FlowLayout(alignment: .leading, spacing: 8) {
                     ForEach(skills, id: \.self) { skill in
                         Text(skill)
@@ -339,5 +373,3 @@ private struct ExpertiseCard: View {
         .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
-
-// --- *** DELETED THE private struct FlowLayout FROM HERE *** ---

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Payments/PaymentsView.swift
-// --- UPDATED: Added Back button to upper left corner ---
+// --- UPDATED: Pending payments are now editable and deletable ---
 
 import SwiftUI
 
@@ -58,7 +58,7 @@ struct PaymentsView: View {
     @State private var isAddPaymentModalPresented = false
     @State private var paymentToEdit: Payment? = nil
     
-    // Read-only state for pending payments
+    // Read-only state for pending payments (Kept but unused for tap now)
     @State private var paymentToView: Payment? = nil
     
     @State private var isLoading = true
@@ -250,10 +250,10 @@ struct PaymentsView: View {
                                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                             }
                             
-                            // 3. PENDING RECORD (View Only)
+                            // 3. PENDING RECORD (Editable & Mark Paid)
                             else if item.type == .paymentRecord, let payment = item.originalPayment {
                                 Button {
-                                    paymentToView = payment // View Mode (Read Only)
+                                    paymentToEdit = payment // Edit Mode
                                 } label: {
                                     IncomeItemCard(item: item)
                                 }
@@ -261,11 +261,27 @@ struct PaymentsView: View {
                                 .listRowSeparator(.hidden)
                                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                                 .swipeActions(edge: .leading) {
-                                    // Mark Paid
+                                    // Mark Paid (Leading Swipe)
                                     Button("Mark Paid") {
                                         Task { await markPaymentAsPaid(payment.id!) }
                                     }
                                     .tint(.accentGreen)
+                                }
+                                .swipeActions(edge: .trailing) {
+                                    // Delete Action
+                                    Button(role: .destructive) {
+                                        Task { await deletePayment(payment.id!) }
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                    
+                                    // Edit Action (Backup for tap)
+                                    Button {
+                                        paymentToEdit = payment
+                                    } label: {
+                                        Label("Edit", systemImage: "pencil")
+                                    }
+                                    .tint(.orange)
                                 }
                             }
                         }
@@ -276,7 +292,7 @@ struct PaymentsView: View {
             .navigationTitle("Track Income")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // --- NEW: Back Button ---
+                // --- Back Button ---
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
                         HStack(spacing: 5) {
@@ -302,14 +318,14 @@ struct PaymentsView: View {
             .sheet(isPresented: $isAddPaymentModalPresented) {
                 AddPaymentFormView(onPaymentAdded: { Task { await fetchData() } })
             }
-            // Sheet for Editing (Received)
+            // Sheet for Editing (Received & Pending)
             .sheet(item: $paymentToEdit) { payment in
                 AddPaymentFormView(paymentToEdit: payment, onPaymentAdded: {
                     paymentToEdit = nil
                     Task { await fetchData() }
                 })
             }
-            // Sheet for Viewing (Pending) - Read Only
+            // Sheet for Viewing (Legacy/Cleanup) - Read Only
             .sheet(item: $paymentToView) { payment in
                 AddPaymentFormView(
                     paymentToEdit: payment,

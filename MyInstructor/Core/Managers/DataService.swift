@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/DataService.swift
-// --- UPDATED: 'resolveStudentName' returns "Deleted Account" if user doc is missing ---
+// --- UPDATED: Safe handling of empty IDs to prevent crash ---
 
 import Foundation
 import Combine
@@ -223,13 +223,21 @@ class DataService: ObservableObject {
     
     // Standard fetch user
     func fetchUser(withId userID: String) async throws -> AppUser? {
+        // --- FIX: Guard against empty ID ---
+        guard !userID.isEmpty else { return nil }
+        
         let doc = try await usersCollection.document(userID).getDocument()
         if !doc.exists { return nil }
         return try doc.data(as: AppUser.self)
     }
     
-    // --- UPDATED: Resolves name to "Deleted Account" if doc is missing ---
+    // --- UPDATED: Resolves name to "Deleted Account" if doc is missing OR if ID is empty ---
     func resolveStudentName(studentID: String) async -> String {
+        // --- FIX: Handle empty ID (e.g., Personal / Custom Payment) ---
+        if studentID.isEmpty {
+            return "Personal / Other"
+        }
+        
         if let user = try? await fetchUser(withId: studentID) {
             return user.name ?? "Student"
         }

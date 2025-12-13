@@ -1,4 +1,6 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/UserListView.swift
+// --- UPDATED: Enhanced UserListRow to display profile picture if available ---
+
 import SwiftUI
 
 struct UserListView: View {
@@ -64,23 +66,40 @@ struct UserListRow: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            AsyncImage(url: URL(string: user.photoURL ?? "")) { phase in
-                if let image = phase.image {
-                    image.resizable().scaledToFill()
-                } else {
-                    Image(systemName: "person.circle.fill")
-                        .resizable()
-                        .foregroundColor(.gray)
+            // Profile Picture Logic
+            if let photoURLString = user.photoURL, let url = URL(string: photoURLString) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } else if phase.error != nil {
+                        // Error loading image, show fallback
+                        Image(systemName: "person.circle.fill")
+                            .resizable()
+                            .foregroundColor(.gray)
+                    } else {
+                        // Loading state
+                        ProgressView()
+                            .scaleEffect(0.5)
+                    }
                 }
+                .frame(width: 40, height: 40)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.gray.opacity(0.2), lineWidth: 1))
+            } else {
+                // Fallback / No URL provided
+                Image(systemName: "person.circle.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(.gray)
+                    .frame(width: 40, height: 40)
             }
-            .frame(width: 40, height: 40)
-            .clipShape(Circle())
             
             VStack(alignment: .leading) {
                 Text(user.name ?? "User")
                     .font(.headline)
                 
-                // FIXED: Removed 'if let' because 'role' is not optional
                 Text(user.role.rawValue.capitalized)
                     .font(.caption)
                     .foregroundColor(.secondary)

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Payments/AddPaymentFormView.swift
-// --- UPDATED: Moved Save button to the top right toolbar ---
+// --- UPDATED: Made Student selection optional; Added Note field for custom income ---
 
 import SwiftUI
 
@@ -22,6 +22,7 @@ struct AddPaymentFormView: View {
     @State private var date = Date()
     @State private var isPaid = false
     @State private var selectedMethod: PaymentMethod = .cash // Default
+    @State private var note: String = "" // Added Note field
     
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -34,12 +35,12 @@ struct AddPaymentFormView: View {
                 // MARK: - Transaction Details
                 Section("Transaction Details") {
                     Picker("Student", selection: $selectedStudent) {
-                        Text("Select Student").tag(nil as Student?)
+                        Text("None (Personal/Other)").tag(nil as Student?) // Made optional
                         ForEach(availableStudents) { student in
                             Text(student.name).tag(student as Student?)
                         }
                     }
-                    .disabled(isReadOnly) // Disable in read-only
+                    .disabled(isReadOnly)
                     
                     HStack {
                         Text("Amount (£)")
@@ -47,15 +48,15 @@ struct AddPaymentFormView: View {
                         TextField("Amount", text: $amount)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
-                            .disabled(isReadOnly) // Disable in read-only
+                            .disabled(isReadOnly)
                     }
                     
                     DatePicker("Date", selection: $date, displayedComponents: .date)
-                        .disabled(isReadOnly) // Disable in read-only
+                        .disabled(isReadOnly)
                     
                     Toggle("Mark as Paid", isOn: $isPaid)
                         .tint(.accentGreen)
-                        .disabled(isReadOnly) // Disable in read-only
+                        .disabled(isReadOnly)
                     
                     // Conditionally show Payment Method Picker
                     if isPaid {
@@ -65,8 +66,14 @@ struct AddPaymentFormView: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        .disabled(isReadOnly) // Disable in read-only
+                        .disabled(isReadOnly)
                     }
+                }
+                
+                // MARK: - Notes (Added)
+                Section("Notes") {
+                    TextField("Description (Optional)", text: $note)
+                        .disabled(isReadOnly)
                 }
                 
                 // Show Error Message
@@ -106,9 +113,15 @@ struct AddPaymentFormView: View {
                     if let method = payment.paymentMethod {
                         self.selectedMethod = method
                     }
+                    self.note = payment.note ?? "" // Populate note
+                    
                     // Find the student object that matches the ID
-                    if let foundStudent = availableStudents.first(where: { $0.id == payment.studentID }) {
-                        self.selectedStudent = foundStudent
+                    if !payment.studentID.isEmpty {
+                        if let foundStudent = availableStudents.first(where: { $0.id == payment.studentID }) {
+                            self.selectedStudent = foundStudent
+                        }
+                    } else {
+                        self.selectedStudent = nil
                     }
                 }
             }
@@ -118,7 +131,8 @@ struct AddPaymentFormView: View {
     // MARK: - Validation & Actions
     
     private var isFormValid: Bool {
-        selectedStudent != nil && (Double(amount) ?? 0 > 0)
+        // Validation: Amount must be valid. Student is now optional.
+        (Double(amount) ?? 0 > 0)
     }
     
     private func fetchStudents() async {
@@ -130,7 +144,8 @@ struct AddPaymentFormView: View {
         do {
             availableStudents = try await dataService.fetchAllStudents(for: instructorID)
             
-            if let payment = paymentToEdit, selectedStudent == nil {
+            // Re-bind selected student if editing and student list wasn't ready
+            if let payment = paymentToEdit, selectedStudent == nil, !payment.studentID.isEmpty {
                  if let foundStudent = availableStudents.first(where: { $0.id == payment.studentID }) {
                     self.selectedStudent = foundStudent
                 }
@@ -142,7 +157,7 @@ struct AddPaymentFormView: View {
     }
     
     private func savePayment() {
-        guard let student = selectedStudent, let finalAmount = Double(amount) else { return }
+        guard let finalAmount = Double(amount) else { return }
         guard let instructorID = authManager.user?.id else {
             errorMessage = "Instructor not identified."
             return
@@ -154,11 +169,12 @@ struct AddPaymentFormView: View {
         let payment = Payment(
             id: paymentToEdit?.id,
             instructorID: instructorID,
-            studentID: student.id ?? "unknown",
+            studentID: selectedStudent?.id ?? "", // Handle optional student
             amount: finalAmount,
             date: date,
             isPaid: isPaid,
-            paymentMethod: isPaid ? selectedMethod : nil
+            paymentMethod: isPaid ? selectedMethod : nil,
+            note: note.isEmpty ? nil : note // Save note
         )
         
         Task {

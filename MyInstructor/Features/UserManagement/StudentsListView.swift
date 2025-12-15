@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
-// --- UPDATED: Passing 'onProgressUpdate' closure to ensure instant UI updates ---
+// --- UPDATED: Default filter is .active, and Offline students are included in the Active list ---
 
 import SwiftUI
 
@@ -20,7 +20,9 @@ struct StudentsListView: View {
     
     @State private var isLoading = true
     @State private var searchText = ""
-    @State private var filterMode: StudentFilter = .allCategories
+    
+    // --- UPDATED: Default to .active ---
+    @State private var filterMode: StudentFilter = .active
     
     @State private var conversationToPush: Conversation? = nil
     @State private var chatErrorAlert: (isPresented: Bool, message: String) = (false, "")
@@ -31,10 +33,22 @@ struct StudentsListView: View {
     
     // --- COMPUTED PROPERTIES ---
     
-    var activeStudents: [Student] {
+    var activeOnlineStudents: [Student] {
         let list = approvedStudents
         if searchText.isEmpty { return list }
         return list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+    
+    var filteredOfflineStudents: [OfflineStudent] {
+        if searchText.isEmpty { return offlineStudents }
+        return offlineStudents.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+    
+    // --- UPDATED: Merge Online Active + Offline for the "Active" view ---
+    var combinedActiveStudents: [Student] {
+        let online = activeOnlineStudents
+        let offlineConverted = filteredOfflineStudents.map { convertToStudent($0) }
+        return (online + offlineConverted).sorted { $0.name < $1.name }
     }
     
     var completedStudents: [Student] {
@@ -56,11 +70,6 @@ struct StudentsListView: View {
     var filteredBlockedRequests: [StudentRequest] {
         if searchText.isEmpty { return blockedRequests }
         return blockedRequests.filter { $0.studentName.localizedCaseInsensitiveContains(searchText) }
-    }
-    
-    var filteredOfflineStudents: [OfflineStudent] {
-        if searchText.isEmpty { return offlineStudents }
-        return offlineStudents.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
     
     func convertToStudent(_ offline: OfflineStudent) -> Student {
@@ -148,20 +157,35 @@ struct StudentsListView: View {
                             .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                         }
 
-                        // Active
+                        // Active (NOW INCLUDES OFFLINE)
                         if filterMode == .allCategories || filterMode == .active {
-                            Section(header: Text("Active Students (\(activeStudents.count))").font(.headline)) {
-                                if activeStudents.isEmpty { Text("No active students.").foregroundColor(.textLight) }
-                                ForEach(activeStudents) { student in
+                            Section(header: Text("Active Students (\(combinedActiveStudents.count))").font(.headline)) {
+                                if combinedActiveStudents.isEmpty { Text("No active students.").foregroundColor(.textLight) }
+                                
+                                ForEach(combinedActiveStudents) { student in
                                     StudentListCard(student: student)
                                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                        Button { Task { await startChat(with: student) } } label: { Label("Message", systemImage: "message.fill") }.tint(.primaryBlue)
+                                        // Only show Message for Online Students
+                                        if !student.isOffline {
+                                            Button { Task { await startChat(with: student) } } label: { Label("Message", systemImage: "message.fill") }.tint(.primaryBlue)
+                                        }
                                     }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                        Button(role: .destructive) { Task { await removeStudent(student) } } label: { Label("Complete", systemImage: "checkmark.circle") }
+                                        if student.isOffline {
+                                            // Offline: Delete
+                                            Button(role: .destructive) {
+                                                // Find original offline object to delete
+                                                if let original = offlineStudents.first(where: { $0.id == student.id }) {
+                                                    self.studentToDelete = original
+                                                    self.isShowingDeleteAlert = true
+                                                }
+                                            } label: { Label("Delete", systemImage: "trash.fill") }
+                                        } else {
+                                            // Online: Complete
+                                            Button(role: .destructive) { Task { await removeStudent(student) } } label: { Label("Complete", systemImage: "checkmark.circle") }
+                                        }
                                     }
                                     .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-                                    // --- UPDATED NAVIGATION ---
                                     .background(NavigationLink {
                                         StudentProfileView(student: student, onProgressUpdate: { id, progress in
                                             updateLocalStudentProgress(id: id, progress: progress)
@@ -181,7 +205,6 @@ struct StudentsListView: View {
                                         Button { Task { await reactivateStudent(student) } } label: { Label("Add Again", systemImage: "person.badge.plus") }.tint(.accentGreen)
                                     }
                                     .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-                                    // --- UPDATED NAVIGATION ---
                                     .background(NavigationLink {
                                         StudentProfileView(student: student, onProgressUpdate: { id, progress in
                                             updateLocalStudentProgress(id: id, progress: progress)
@@ -205,8 +228,13 @@ struct StudentsListView: View {
                             .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
                         }
                         
-                        // Offline
-                        if filterMode == .allCategories || filterMode == .offline {
+                        // Offline (Specific Category)
+                        // Only show if specifically selected, or if 'All' is selected (to avoid duplication if user wants to see *just* offline)
+                        // However, user requested offline in Active.
+                        // Typically, if they are in Active, we might not need a separate Offline section in 'Active' mode,
+                        // but if filterMode == .offline we show them.
+                        // If filterMode == .allCategories, they will appear in Active.
+                        if filterMode == .offline {
                             Section(header: Text("Offline Students (\(filteredOfflineStudents.count))").font(.headline).foregroundColor(.gray)) {
                                 if filteredOfflineStudents.isEmpty { Text("No offline students.").foregroundColor(.textLight) }
                                 ForEach(filteredOfflineStudents) { offlineStudent in
@@ -219,7 +247,6 @@ struct StudentsListView: View {
                                             } label: { Label("Delete", systemImage: "trash.fill") }
                                         }
                                         .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-                                        // --- UPDATED NAVIGATION ---
                                         .background(NavigationLink {
                                             StudentProfileView(student: convertedStudent, onProgressUpdate: { id, progress in
                                                 updateLocalStudentProgress(id: id, progress: progress)
@@ -236,7 +263,6 @@ struct StudentsListView: View {
             .navigationBarHidden(true)
             .task { await fetchData() }
             .refreshable { await fetchData() }
-            // --- FIX: Force refresh on appear to catch updates from ProfileView ---
             .onAppear {
                 Task { await fetchData() }
             }

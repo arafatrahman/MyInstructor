@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/SettingsView.swift
-// --- UPDATED: Removed "Public Progress" setting ---
+// --- UPDATED: Removed "Auto-Share Pickup" and "Public Progress" settings ---
 
 import SwiftUI
 
@@ -38,10 +38,7 @@ struct SettingsView: View {
                             if newValue { isPrivacyConsentShowing = true }
                         }
                     
-                    if isInstructor {
-                        Toggle("Auto-Share Pickup", isOn: .constant(true)).tint(.primaryBlue)
-                    }
-                    
+                    // --- REMOVED: Auto-Share Pickup Toggle ---
                     // --- REMOVED: Public Progress Toggle ---
                     
                     Toggle("Lesson Reminders", isOn: $receiveLessonReminders).tint(.primaryBlue)

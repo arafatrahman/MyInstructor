@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/UserManagement/StudentsListView.swift
-// --- UPDATED: Default filter is .active, and Offline students are included in the Active list ---
+// --- UPDATED: Default filter is .active, Offline students are in Active list, and Instructor cannot unblock student-initiated blocks ---
 
 import SwiftUI
 
@@ -10,7 +10,7 @@ struct StudentsListView: View {
     @EnvironmentObject var chatManager: ChatManager
     
     // --- STATE ---
-    @State private var approvedStudents: [Student] = []   // Stores Active
+    @State private var approvedStudents: [Student] = []   // Stores Active Online
     @State private var completedStudentsList: [Student] = [] // Stores Completed
     
     @State private var pendingRequests: [StudentRequest] = []
@@ -229,11 +229,7 @@ struct StudentsListView: View {
                         }
                         
                         // Offline (Specific Category)
-                        // Only show if specifically selected, or if 'All' is selected (to avoid duplication if user wants to see *just* offline)
-                        // However, user requested offline in Active.
-                        // Typically, if they are in Active, we might not need a separate Offline section in 'Active' mode,
-                        // but if filterMode == .offline we show them.
-                        // If filterMode == .allCategories, they will appear in Active.
+                        // If user specifically selects 'Offline', we show them again here (though they are already in Active)
                         if filterMode == .offline {
                             Section(header: Text("Offline Students (\(filteredOfflineStudents.count))").font(.headline).foregroundColor(.gray)) {
                                 if filteredOfflineStudents.isEmpty { Text("No offline students.").foregroundColor(.textLight) }
@@ -298,7 +294,6 @@ struct StudentsListView: View {
             let completedIDs = allRequests.filter { $0.status == .completed }.map { $0.studentID }
             
             // 2. Fetch User Profiles & Progress
-            // dataService.fetchStudents now gets the latest progress via student_records
             let allProfileIDs = activeIDs + completedIDs
             let profiles = try await dataService.fetchStudents(fromIDs: allProfileIDs, instructorID: instructorID)
             
@@ -306,7 +301,7 @@ struct StudentsListView: View {
             self.approvedStudents = profiles.filter { activeIDs.contains($0.id ?? "") }
             self.completedStudentsList = profiles.filter { completedIDs.contains($0.id ?? "") }
             
-            // 4. Offline Students (Fetches fresh documents with latest progress)
+            // 4. Offline Students
             self.offlineStudents = try await dataService.fetchOfflineStudents(for: instructorID)
             
         } catch {
@@ -374,7 +369,7 @@ struct CompactRequestRow: View {
     
     var body: some View {
         HStack {
-            // Updated Avatar using DefaultAvatar logic inlined
+            // Avatar
             if let urlString = request.studentPhotoURL, let url = URL(string: urlString) {
                 AsyncImage(url: url) { phase in
                     if let image = phase.image { image.resizable().scaledToFill() }
@@ -405,7 +400,26 @@ struct CompactRequestRow: View {
                     Button(action: onApprove) { Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(.accentGreen) }.buttonStyle(BorderlessButtonStyle())
                 }
             case .blocked:
-                Button(action: onUnblock) { Text("Unblock").font(.caption).bold().padding(6).background(Color.accentGreen.opacity(0.15)).foregroundColor(.accentGreen).cornerRadius(8) }.buttonStyle(BorderlessButtonStyle())
+                // --- UPDATED LOGIC: Disable unblock if blocked by student ---
+                if request.blockedBy == "student" {
+                    Text("Blocked by Student")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.1))
+                        .foregroundColor(.secondary)
+                        .cornerRadius(8)
+                } else {
+                    Button(action: onUnblock) {
+                        Text("Unblock")
+                            .font(.caption).bold()
+                            .padding(6)
+                            .background(Color.accentGreen.opacity(0.15))
+                            .foregroundColor(.accentGreen)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+                }
             case .denied:
                 Button(action: onApprove) { Text("Approve").font(.caption).bold().padding(6).background(Color.accentGreen.opacity(0.15)).foregroundColor(.accentGreen).cornerRadius(8) }.buttonStyle(BorderlessButtonStyle())
             default: EmptyView()

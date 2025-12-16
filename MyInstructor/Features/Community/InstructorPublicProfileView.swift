@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/InstructorPublicProfileView.swift
-// --- UPDATED: Made stats clickable (NavigationLink to UserListView) ---
+// --- UPDATED: Students can now UNBLOCK instructors they previously blocked ---
 
 import SwiftUI
 import FirebaseFirestore
@@ -10,7 +10,7 @@ enum RequestButtonState {
     case approved
     case denied
     case blocked // Blocked by INSTRUCTOR
-    case blockedByStudent // Blocked by STUDENT
+    case blockedByStudent // Blocked by STUDENT (Active User)
     case completed
 }
 
@@ -81,11 +81,21 @@ struct InstructorPublicProfileView: View {
                                 Image(systemName: "message.circle.fill").font(.title3).foregroundColor(appBlue)
                             }
                         }
+                        
                         Menu {
-                            Button(role: .destructive) {
-                                Task { await blockUser() }
-                            } label: {
-                                Label("Block User", systemImage: "hand.raised.fill")
+                            // --- UPDATED MENU LOGIC ---
+                            if requestState == .blockedByStudent {
+                                Button {
+                                    Task { await unblockUser() }
+                                } label: {
+                                    Label("Unblock User", systemImage: "hand.raised.slash.fill")
+                                }
+                            } else {
+                                Button(role: .destructive) {
+                                    Task { await blockUser() }
+                                } label: {
+                                    Label("Block User", systemImage: "hand.raised.fill")
+                                }
                             }
                         } label: {
                             Image(systemName: "ellipsis.circle").font(.title3).foregroundColor(.textLight)
@@ -110,6 +120,7 @@ struct InstructorPublicProfileView: View {
             switch requestState {
             case .idle, .denied, .completed: await sendRequest()
             case .pending: await cancelRequest()
+            case .blockedByStudent: await unblockUser() // Tap button to Unblock
             default: break
             }
             isLoading = false
@@ -125,30 +136,24 @@ struct InstructorPublicProfileView: View {
                     try await communityManager.unfollowUser(currentUserID: currentID, targetUserID: instructorID)
                     isFollowing = false
                     
-                    // 1. Update Local Instructor Object (for UI count on this screen)
                     if var followers = instructor?.followers {
                         if let index = followers.firstIndex(of: currentID) { followers.remove(at: index) }
                         instructor?.followers = followers
                     }
-                    
-                    // 2. Update AuthManager (so Community Hub & Feed knows instantly)
                     if var myFollowing = authManager.user?.following {
                         if let index = myFollowing.firstIndex(of: instructorID) {
                             myFollowing.remove(at: index)
                             authManager.user?.following = myFollowing
                         }
                     }
-                    
                 } else {
                     // --- FOLLOW ---
                     try await communityManager.followUser(currentUserID: currentID, targetUserID: instructorID, currentUserName: name)
                     isFollowing = true
                     
-                    // 1. Update Local Instructor Object
                     if instructor?.followers == nil { instructor?.followers = [] }
                     instructor?.followers?.append(currentID)
                     
-                    // 2. Update AuthManager
                     if authManager.user?.following == nil { authManager.user?.following = [] }
                     if authManager.user?.following?.contains(instructorID) == false {
                         authManager.user?.following?.append(instructorID)
@@ -164,6 +169,8 @@ struct InstructorPublicProfileView: View {
             try await communityManager.blockUserGeneric(blockerID: currentID, targetID: instructorID)
             alertMessage = "User blocked."
             showSuccessAlert = true
+            
+            // If student, also block the request relationship
             if authManager.role == .student {
                 if let user = authManager.user {
                     try await communityManager.blockInstructor(instructorID: instructorID, student: user)
@@ -171,6 +178,26 @@ struct InstructorPublicProfileView: View {
             }
             await loadData()
         } catch { alertMessage = "Error blocking: \(error.localizedDescription)" }
+    }
+    
+    // --- NEW: Unblock Logic ---
+    func unblockUser() async {
+        guard let currentID = authManager.user?.id else { return }
+        do {
+            // 1. Generic Unblock (Social)
+            try await communityManager.unblockUserGeneric(blockerID: currentID, targetID: instructorID)
+            
+            // 2. Relationship Unblock (Student Request)
+            if authManager.role == .student {
+                try await communityManager.unblockInstructor(instructorID: instructorID, studentID: currentID)
+            }
+            
+            alertMessage = "User unblocked."
+            showSuccessAlert = true
+            await loadData()
+        } catch {
+            alertMessage = "Error unblocking: \(error.localizedDescription)"
+        }
     }
     
     func loadData() async {
@@ -193,6 +220,7 @@ struct InstructorPublicProfileView: View {
                     case .approved: self.requestState = .approved
                     case .denied: self.requestState = .denied
                     case .completed: self.requestState = .completed
+                    // Check WHO blocked
                     case .blocked: self.requestState = (existing.blockedBy == "student") ? .blockedByStudent : .blocked
                     }
                 } else {
@@ -244,15 +272,12 @@ private struct ProfileHeaderCard: View {
     
     private var followersCount: Int { user.followers?.count ?? 0 }
     private var followingCount: Int { user.following?.count ?? 0 }
-    
-    // Arrays for navigation
     private var followerIDs: [String] { user.followers ?? [] }
     private var followingIDs: [String] { user.following ?? [] }
     
-    private var showStats: Bool {
-        return isMe || !(user.hideFollowers ?? false)
-    }
+    private var showStats: Bool { return isMe || !(user.hideFollowers ?? false) }
     
+    // --- UPDATED BUTTON CONFIG ---
     var buttonConfig: (text: String, color: Color, isDisabled: Bool) {
         switch requestState {
         case .idle: return ("Become a Student", .primaryBlue, false)
@@ -260,7 +285,7 @@ private struct ProfileHeaderCard: View {
         case .approved: return ("Approved Student", .accentGreen, true)
         case .denied: return ("Request Denied", .orange, false)
         case .blocked: return ("Blocked by Instructor", .red, true)
-        case .blockedByStudent: return ("Blocked", .gray, true)
+        case .blockedByStudent: return ("Unblock", .warningRed, false) // Active button
         case .completed: return ("Reconnect", .primaryBlue, false)
         }
     }
@@ -283,44 +308,30 @@ private struct ProfileHeaderCard: View {
                 Text(locationString)
             }.font(.system(size: 14)).foregroundColor(Color.primaryBlue)
             
-            // --- UPDATED STATS with Navigation ---
             if showStats {
                 HStack(spacing: 40) {
                     NavigationLink(destination: UserListView(title: "Followers", userIDs: followerIDs)) {
                         VStack(spacing: 2) {
-                            Text("\(followersCount)")
-                                .font(.headline).bold()
-                                .foregroundColor(.primary)
-                            Text("Followers")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            Text("\(followersCount)").font(.headline).bold().foregroundColor(.primary)
+                            Text("Followers").font(.caption).foregroundColor(.secondary)
                         }
-                    }
-                    .buttonStyle(.plain)
+                    }.buttonStyle(.plain)
                     
                     NavigationLink(destination: UserListView(title: "Following", userIDs: followingIDs)) {
                         VStack(spacing: 2) {
-                            Text("\(followingCount)")
-                                .font(.headline).bold()
-                                .foregroundColor(.primary)
-                            Text("Following")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            Text("\(followingCount)").font(.headline).bold().foregroundColor(.primary)
+                            Text("Following").font(.caption).foregroundColor(.secondary)
                         }
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.vertical, 8)
+                    }.buttonStyle(.plain)
+                }.padding(.vertical, 8)
             }
-            // -------------------------------------
             
             if !isMe {
                 HStack(spacing: 12) {
                     Button(action: onFollowTap) {
                         Text(isFollowing ? "Unfollow" : "Follow")
                             .font(.headline).bold()
-                            .padding(.vertical, 10)
-                            .padding(.horizontal, 24)
+                            .padding(.vertical, 10).padding(.horizontal, 24)
                             .background(isFollowing ? Color.gray.opacity(0.2) : Color.primaryBlue)
                             .foregroundColor(isFollowing ? .primary : .white)
                             .cornerRadius(20)
@@ -330,8 +341,7 @@ private struct ProfileHeaderCard: View {
                         Button(action: onActionTap) {
                             Text(buttonConfig.text)
                                 .font(.headline).bold()
-                                .padding(.vertical, 10)
-                                .padding(.horizontal, 24)
+                                .padding(.vertical, 10).padding(.horizontal, 24)
                                 .background(buttonConfig.color)
                                 .foregroundColor(.white)
                                 .cornerRadius(20)
@@ -348,95 +358,26 @@ private struct ProfileHeaderCard: View {
     }
 }
 
+// ... (Rest of the Cards: ContactCard, RateHighlightCard, etc. remain unchanged) ...
 private struct ContactCard: View {
-    let user: AppUser
-    let isMe: Bool
-    
-    private var showEmail: Bool {
-        return isMe || !(user.hideEmail ?? false)
-    }
-    
+    let user: AppUser; let isMe: Bool
+    private var showEmail: Bool { return isMe || !(user.hideEmail ?? false) }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("CONTACT").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
             Divider().padding(.horizontal, 16)
-            
-            if showEmail {
-                ContactRow(icon: "envelope.fill", label: "Email", value: user.email)
-            }
-            
+            if showEmail { ContactRow(icon: "envelope.fill", label: "Email", value: user.email) }
             ContactRow(icon: "phone.fill", label: "Phone", value: user.phone ?? "Not provided")
             ContactRow(icon: "mappin.and.ellipse", label: "Address", value: user.address ?? "Not provided")
         }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
     }
 }
-
 private struct RateHighlightCard: View {
-    let user: AppUser
-    var body: some View {
-        VStack(spacing: 4) {
-            Text("Hourly Rate").font(.system(size: 15)).foregroundColor(.white.opacity(0.9))
-            Text(user.hourlyRate ?? 0.0, format: .currency(code: "GBP")).font(.system(size: 36, weight: .bold)).foregroundColor(.white)
-            Text("per hour").font(.system(size: 15)).foregroundColor(.white.opacity(0.9))
-        }.padding(20).frame(maxWidth: .infinity).background(LinearGradient(gradient: Gradient(colors: [Color.primaryBlue, Color(red: 0.35, green: 0.34, blue: 0.84)]), startPoint: .topLeading, endPoint: .bottomTrailing)).cornerRadius(16).shadow(color: Color.primaryBlue.opacity(0.4), radius: 8, y: 4)
-    }
+    let user: AppUser; var body: some View { VStack(spacing: 4) { Text("Hourly Rate").font(.system(size: 15)).foregroundColor(.white.opacity(0.9)); Text(user.hourlyRate ?? 0.0, format: .currency(code: "GBP")).font(.system(size: 36, weight: .bold)).foregroundColor(.white); Text("per hour").font(.system(size: 15)).foregroundColor(.white.opacity(0.9)) }.padding(20).frame(maxWidth: .infinity).background(LinearGradient(gradient: Gradient(colors: [Color.primaryBlue, Color(red: 0.35, green: 0.34, blue: 0.84)]), startPoint: .topLeading, endPoint: .bottomTrailing)).cornerRadius(16).shadow(color: Color.primaryBlue.opacity(0.4), radius: 8, y: 4) }
 }
-
 private struct EducationCard: View {
-    let education: [EducationEntry]?
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("EDUCATION OR CERTIFICATION").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
-            Divider().padding(.horizontal, 16)
-            if let education = education, !education.isEmpty {
-                VStack(alignment: .leading, spacing: 14) {
-                    ForEach(education) { entry in
-                        EduRow(title: entry.title, subtitle: entry.subtitle, years: entry.years)
-                        if entry.id != education.last?.id { Divider().padding(.horizontal, 16) }
-                    }
-                }.padding(.vertical, 14)
-            } else { Text("No education or certifications added.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) }
-        }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
-    }
+    let education: [EducationEntry]?; var body: some View { VStack(alignment: .leading, spacing: 0) { Text("EDUCATION OR CERTIFICATION").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8); Divider().padding(.horizontal, 16); if let education = education, !education.isEmpty { VStack(alignment: .leading, spacing: 14) { ForEach(education) { entry in EduRow(title: entry.title, subtitle: entry.subtitle, years: entry.years); if entry.id != education.last?.id { Divider().padding(.horizontal, 16) } } }.padding(.vertical, 14) } else { Text("No education added.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) } }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2) }
 }
-
-private struct EduRow: View {
-    let title: String; let subtitle: String; let years: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 17, weight: .semibold)).foregroundColor(.primary)
-            Text(subtitle).font(.system(size: 15)).foregroundColor(Color.primaryBlue)
-            Text(years).font(.system(size: 13)).foregroundColor(.secondary)
-        }.padding(.horizontal, 16)
-    }
-}
-
-private struct AboutCard: View {
-    let aboutText: String?
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("ABOUT").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
-            Divider().padding(.horizontal, 16)
-            if let text = aboutText, !text.isEmpty {
-                Text(text).font(.system(size: 16)).foregroundColor(.primary).lineSpacing(4).padding(.horizontal, 16).padding(.vertical, 16)
-            } else { Text("No bio added.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) }
-        }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
-    }
-}
-
-private struct ExpertiseCard: View {
-    let skills: [String]?
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("EXPERTISE").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
-            Divider().padding(.horizontal, 16)
-            if let skills = skills, !skills.isEmpty {
-                FlowLayout(alignment: .leading, spacing: 8) {
-                    ForEach(skills, id: \.self) { skill in
-                        Text(skill).font(.system(size: 14, weight: .medium)).padding(.horizontal, 12).padding(.vertical, 6).background(Color(.systemGray5)).cornerRadius(12).foregroundColor(.primary)
-                    }
-                }.padding(.horizontal, 16).padding(.vertical, 16)
-            } else { Text("No skills added.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) }
-        }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
-    }
-}
+private struct EduRow: View { let title: String; let subtitle: String; let years: String; var body: some View { VStack(alignment: .leading, spacing: 4) { Text(title).font(.system(size: 17, weight: .semibold)).foregroundColor(.primary); Text(subtitle).font(.system(size: 15)).foregroundColor(Color.primaryBlue); Text(years).font(.system(size: 13)).foregroundColor(.secondary) }.padding(.horizontal, 16) } }
+private struct AboutCard: View { let aboutText: String?; var body: some View { VStack(alignment: .leading, spacing: 0) { Text("ABOUT").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8); Divider().padding(.horizontal, 16); if let text = aboutText, !text.isEmpty { Text(text).font(.system(size: 16)).foregroundColor(.primary).lineSpacing(4).padding(.horizontal, 16).padding(.vertical, 16) } else { Text("No bio added.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) } }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2) } }
+private struct ExpertiseCard: View { let skills: [String]?; var body: some View { VStack(alignment: .leading, spacing: 0) { Text("EXPERTISE").font(.system(size: 13, weight: .bold)).foregroundColor(.secondary).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8); Divider().padding(.horizontal, 16); if let skills = skills, !skills.isEmpty { FlowLayout(alignment: .leading, spacing: 8) { ForEach(skills, id: \.self) { skill in Text(skill).font(.system(size: 14, weight: .medium)).padding(.horizontal, 12).padding(.vertical, 6).background(Color(.systemGray5)).cornerRadius(12).foregroundColor(.primary) } }.padding(.horizontal, 16).padding(.vertical, 16) } else { Text("No skills added.").font(.system(size: 15)).foregroundColor(.secondary).padding(16) } }.background(Color(.systemBackground)).cornerRadius(16).shadow(color: Color.black.opacity(0.08), radius: 4, y: 2) } }

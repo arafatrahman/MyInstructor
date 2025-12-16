@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/NotificationsView.swift
-// --- UPDATED: Navigate to Follower Profile on "follow" notification ---
+// --- UPDATED: Requests disappear immediately upon action (Accept/Reject) ---
 
 import SwiftUI
 
@@ -53,8 +53,6 @@ struct NotificationsView: View {
                             }
                         } else if item.type == "message", let relatedID = item.relatedID {
                             // Message notifications are handled via deep link usually, but here we can just show the row
-                            // or link to chat view if we had a convenient way to init it with just ID (ChatView needs Conversation obj)
-                            // For now, keep as row or link to MessagingView
                             AppNotificationRow(item: item)
                         } else {
                             // Default behavior
@@ -84,14 +82,27 @@ struct NotificationsView: View {
     }
     
     private func handleRequest(_ request: StudentRequest, approve: Bool) async {
+        // --- OPTIMISTIC UPDATE: Remove immediately from UI ---
+        withAnimation {
+            self.pendingRequests.removeAll { $0.id == request.id }
+        }
+        
         do {
             if approve { try await communityManager.approveRequest(request) }
             else { try await communityManager.denyRequest(request) }
             
+            // Refresh in background to ensure consistency
+            if let uid = authManager.user?.id {
+                let freshRequests = (try? await communityManager.fetchRequests(for: uid)) ?? []
+                self.pendingRequests = freshRequests
+            }
+        } catch {
+            print("Error handling request: \(error)")
+            // Restore list on error
             if let uid = authManager.user?.id {
                 self.pendingRequests = (try? await communityManager.fetchRequests(for: uid)) ?? []
             }
-        } catch { print("Error: \(error)") }
+        }
     }
 }
 

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Student/MyInstructorsView.swift
-// --- UPDATED: Added "Add" (+) button to the toolbar to find instructors ---
+// --- UPDATED: Ensures Student can unblock instructors they blocked ---
 
 import SwiftUI
 
@@ -37,7 +37,7 @@ struct MyInstructorsView: View {
         sentRequests.filter { $0.status == .denied }
     }
     
-    // This list now *only* shows instructors who blocked the student
+    // This list now *only* shows instructors who blocked the student (Student can't do anything here)
     private var instructorBlockedRequests: [StudentRequest] {
         sentRequests.filter { $0.status == .blocked && $0.blockedBy == "instructor" }
     }
@@ -89,7 +89,7 @@ struct MyInstructorsView: View {
                                 )
                             } else {
                                 List {
-                                    // 1. Active Connections
+                                    // 1. Active Connections (Includes Student-Blocked)
                                     if !myInstructorsList.isEmpty {
                                         Section(header: Text("Active Connections")) {
                                             ForEach(myInstructorsList) { request in
@@ -113,6 +113,7 @@ struct MyInstructorsView: View {
                                                             Label("Remove", systemImage: "trash.fill")
                                                         }
                                                     } else if request.status == .blocked && request.blockedBy == "student" {
+                                                        // --- ENABLED UNBLOCK ACTION ---
                                                         Button("Unblock") {
                                                             Task { await unblockInstructor(request) }
                                                         }
@@ -192,7 +193,6 @@ struct MyInstructorsView: View {
             }
             .navigationTitle("My Instructors")
             .navigationBarTitleDisplayMode(.inline)
-            // --- ADDED: Toolbar with Add Button ---
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -340,7 +340,7 @@ struct MyInstructorRow: View {
     }
 }
 
-// Reusing your StatusBadge, tweaked for look
+// Reusing StatusBadge
 struct StatusBadge: View {
     let status: RequestStatus
     let blockedBy: String?

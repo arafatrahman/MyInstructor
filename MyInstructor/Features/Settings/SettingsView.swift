@@ -1,10 +1,12 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/SettingsView.swift
-// --- UPDATED: Removed "Auto-Share Pickup" and "Public Progress" settings ---
+// --- UPDATED: Fixed filename generation to avoid slashes (directory errors) ---
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var authManager: AuthManager
+    // Uses BackupManager.shared directly (Singleton)
     
     // App Preferences
     @State private var isLocationSharingEnabled = true
@@ -20,7 +22,16 @@ struct SettingsView: View {
     // Danger Zone State
     @State private var showDeleteConfirmation = false
     @State private var isDeleting = false
-    @State private var password = "" // For re-authentication
+    @State private var password = ""
+    
+    // Export/Import State
+    @State private var isExporting = false
+    @State private var isImporting = false
+    @State private var showShareSheet = false
+    @State private var exportURL: URL?
+    @State private var showImportPicker = false
+    @State private var alertMessage: String?
+    @State private var showAlert = false
     
     var isInstructor: Bool {
         authManager.role == .instructor
@@ -37,9 +48,6 @@ struct SettingsView: View {
                         .onChange(of: isLocationSharingEnabled) { newValue in
                             if newValue { isPrivacyConsentShowing = true }
                         }
-                    
-                    // --- REMOVED: Auto-Share Pickup Toggle ---
-                    // --- REMOVED: Public Progress Toggle ---
                     
                     Toggle("Lesson Reminders", isOn: $receiveLessonReminders).tint(.primaryBlue)
                     Toggle("Community Alerts", isOn: $receiveCommunityAlerts).tint(.primaryBlue)
@@ -65,16 +73,35 @@ struct SettingsView: View {
                         .onChange(of: hideEmail) { _ in savePrivacySettings() }
                 }
                 
-                // MARK: - Account Actions (Bottom)
-                Section {
+                // MARK: - Data Management
+                Section("Data Management") {
                     Button {
-                        // Export Logic
-                        print("Export Data Requested")
+                        performExport()
                     } label: {
-                        Label("Export My Data", systemImage: "square.and.arrow.up")
+                        HStack {
+                            Label("Export Data", systemImage: "square.and.arrow.up")
+                            Spacer()
+                            if isExporting { ProgressView() }
+                        }
                     }
                     .foregroundColor(.primary)
+                    .disabled(isExporting)
                     
+                    Button {
+                        showImportPicker = true
+                    } label: {
+                        HStack {
+                            Label("Import Data", systemImage: "square.and.arrow.down")
+                            Spacer()
+                            if isImporting { ProgressView() }
+                        }
+                    }
+                    .foregroundColor(.primary)
+                    .disabled(isImporting)
+                }
+                
+                // MARK: - Account Actions (Bottom)
+                Section {
                     Button(role: .destructive) {
                         try? authManager.logout()
                     } label: {
@@ -104,6 +131,21 @@ struct SettingsView: View {
             .sheet(isPresented: $isPrivacyConsentShowing) {
                 PrivacyConsentPopup(isLocationSharingEnabled: $isLocationSharingEnabled)
             }
+            .sheet(isPresented: $showShareSheet) {
+                if let url = exportURL {
+                    ShareSheet(activityItems: [url])
+                }
+            }
+            .fileImporter(
+                isPresented: $showImportPicker,
+                allowedContentTypes: [.json],
+                allowsMultipleSelection: false
+            ) { result in
+                handleImport(result)
+            }
+            .alert(alertMessage ?? "Error", isPresented: $showAlert) {
+                Button("OK", role: .cancel) { }
+            }
             .onAppear {
                 if let user = authManager.user {
                     self.isProfilePrivate = user.isPrivate ?? false
@@ -111,7 +153,6 @@ struct SettingsView: View {
                     self.hideEmail = user.hideEmail ?? false
                 }
             }
-            // --- UPDATED ALERT: Includes Password Field ---
             .alert("Delete Account", isPresented: $showDeleteConfirmation) {
                 SecureField("Enter Password", text: $password)
                 Button("Cancel", role: .cancel) { }
@@ -125,6 +166,78 @@ struct SettingsView: View {
     }
     
     // MARK: - Actions
+    
+    private func performExport() {
+        guard let userID = authManager.user?.id else { return }
+        isExporting = true
+        
+        Task {
+            do {
+                let data = try await BackupManager.shared.createBackupData(for: userID)
+                
+                // --- FIXED: Use a safe DateFormatter to avoid slashes in filename ---
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd_HH-mm"
+                let dateString = formatter.string(from: Date())
+                let fileName = "MyInstructor_Backup_\(dateString).json"
+                
+                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+                try data.write(to: tempURL)
+                
+                await MainActor.run {
+                    self.exportURL = tempURL
+                    self.isExporting = false
+                    self.showShareSheet = true
+                }
+            } catch {
+                await MainActor.run {
+                    self.alertMessage = "Export Failed: \(error.localizedDescription)"
+                    self.showAlert = true
+                    self.isExporting = false
+                }
+            }
+        }
+    }
+    
+    private func handleImport(_ result: Result<[URL], Error>) {
+        guard let userID = authManager.user?.id else { return }
+        
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            
+            // Security: access security scoped resource
+            guard url.startAccessingSecurityScopedResource() else {
+                self.alertMessage = "Permission denied to access the file."
+                self.showAlert = true
+                return
+            }
+            
+            defer { url.stopAccessingSecurityScopedResource() }
+            
+            isImporting = true
+            Task {
+                do {
+                    try await BackupManager.shared.restoreBackup(from: url, for: userID)
+                    await MainActor.run {
+                        self.alertMessage = "Data imported successfully!"
+                        self.showAlert = true
+                        self.isImporting = false
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.alertMessage = "Import Failed: \(error.localizedDescription)"
+                        self.showAlert = true
+                        self.isImporting = false
+                    }
+                }
+            }
+            
+        case .failure(let error):
+            self.alertMessage = "Import error: \(error.localizedDescription)"
+            self.showAlert = true
+        }
+    }
     
     private func savePrivacySettings() {
         Task {
@@ -142,7 +255,6 @@ struct SettingsView: View {
         isDeleting = true
         Task {
             do {
-                // Pass password for immediate re-authentication
                 try await authManager.deleteAccount(password: password)
             } catch {
                 print("Error deleting account: \(error.localizedDescription)")
@@ -150,6 +262,19 @@ struct SettingsView: View {
             }
         }
     }
+}
+
+// Helper for Share Sheet
+struct ShareSheet: UIViewControllerRepresentable {
+    var activityItems: [Any]
+    var applicationActivities: [UIActivity]? = nil
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities)
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 struct PrivacyConsentPopup: View {

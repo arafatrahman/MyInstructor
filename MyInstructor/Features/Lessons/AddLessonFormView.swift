@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/AddLessonFormView.swift
+// --- UPDATED: Conflict error is now a detailed Popup Alert ---
+
 import SwiftUI
 
 struct SelectableStudent: Identifiable, Hashable {
@@ -34,7 +37,6 @@ struct AddLessonFormView: View {
     @State private var selectedTopics: [String] = []
     @State private var customTopic: String = ""
     
-    // --- UPDATED: Use shared model ---
     private var predefinedTopics: [String] {
         DrivingTopics.all
     }
@@ -58,7 +60,11 @@ struct AddLessonFormView: View {
     @State private var fee: String = "45.00"
     
     @State private var isLoading = false
-    @State private var errorMessage: String?
+    @State private var errorMessage: String? // General errors
+    
+    // --- UPDATED: Alert State ---
+    @State private var showConflictAlert = false
+    @State private var conflictAlertMessage = ""
     
     @State private var isEditing: Bool = false
     
@@ -221,7 +227,7 @@ struct AddLessonFormView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
-                        saveLessonAction()
+                        validateAndSaveLesson()
                     } label: {
                         if isLoading {
                             ProgressView()
@@ -232,6 +238,12 @@ struct AddLessonFormView: View {
                     }
                     .disabled(!isFormValid || isLoading)
                 }
+            }
+            // --- UPDATED: Alert Modifier ---
+            .alert("Schedule Conflict", isPresented: $showConflictAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(conflictAlertMessage)
             }
             .task {
                 await fetchAllStudents()
@@ -301,14 +313,85 @@ struct AddLessonFormView: View {
         }
     }
     
-    private func saveLessonAction() {
-        guard let student = selectedStudent, let instructorID = authManager.user?.id else {
-            errorMessage = "Instructor ID or Student not selected."
-            return
-        }
+    // --- UPDATED: Detailed Conflict Validation ---
+    private func validateAndSaveLesson() {
+        guard let instructorID = authManager.user?.id else { return }
         
         isLoading = true
         errorMessage = nil
+        
+        Task {
+            // Check for overlaps
+            // 1. Define start and end of *new* lesson
+            let newStart = startTime
+            let newEnd = startTime.addingTimeInterval(durationSeconds)
+            
+            // 2. Fetch lessons for this day to check conflicts
+            let calendar = Calendar.current
+            let startOfDay = calendar.startOfDay(for: newStart)
+            guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else { return }
+            
+            do {
+                let existingLessons = try await lessonManager.fetchLessons(for: instructorID, start: startOfDay, end: endOfDay)
+                
+                // 3. Filter for overlap
+                let conflict = existingLessons.first { lesson in
+                    // Skip the lesson we are currently editing (if any)
+                    if isEditing, let editID = lessonToEdit?.id, lesson.id == editID {
+                        return false
+                    }
+                    // Skip cancelled lessons
+                    if lesson.status == .cancelled { return false }
+                    
+                    let existingStart = lesson.startTime
+                    let existingEnd = lesson.startTime.addingTimeInterval(lesson.duration ?? 3600)
+                    
+                    // Overlap logic: (StartA < EndB) and (EndA > StartB)
+                    return existingStart < newEnd && existingEnd > newStart
+                }
+                
+                if let conflict = conflict {
+                    // --- UPDATED: Construct Detailed Error Message ---
+                    let formatter = DateFormatter()
+                    formatter.dateStyle = .none
+                    formatter.timeStyle = .short
+                    
+                    let conflictStartStr = formatter.string(from: conflict.startTime)
+                    let conflictEndStr = formatter.string(from: conflict.startTime.addingTimeInterval(conflict.duration ?? 3600))
+                    let conflictDuration = (conflict.duration ?? 3600) / 3600
+                    
+                    // Lookup student name
+                    let studentName = allStudents.first(where: { $0.id == conflict.studentID })?.name ?? "Unknown Student"
+                    
+                    conflictAlertMessage = """
+                    This time overlaps with an existing lesson.
+                    
+                    Student: \(studentName)
+                    Time: \(conflictStartStr) - \(conflictEndStr)
+                    Duration: \(String(format: "%.1f", conflictDuration)) hours
+                    """
+                    
+                    showConflictAlert = true
+                    isLoading = false
+                    return
+                }
+                
+                // No conflict, proceed to save
+                saveLessonAction()
+                
+            } catch {
+                errorMessage = "Failed to check schedule: \(error.localizedDescription)"
+                isLoading = false
+            }
+        }
+    }
+    
+    private func saveLessonAction() {
+        guard let student = selectedStudent, let instructorID = authManager.user?.id else {
+            errorMessage = "Instructor ID or Student not selected."
+            isLoading = false
+            return
+        }
         
         var lessonToSave = Lesson(
             id: lessonToEdit?.id,

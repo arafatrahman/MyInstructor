@@ -1,4 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/CommunityModel.swift
+// --- UPDATED: Added 'selectedStudents' visibility case and targetStudentIDs ---
 
 import Foundation
 import FirebaseFirestore
@@ -20,6 +21,9 @@ struct Post: Identifiable, Codable {
     var commentsCount: Int = 0
     var visibility: PostVisibility = .public
     
+    // --- NEW: For 'Selected Students' Visibility ---
+    var targetStudentIDs: [String]? = nil
+    
     var isEdited: Bool? = false
 }
 
@@ -28,7 +32,7 @@ enum PostType: String, Codable {
 }
 
 enum PostVisibility: String, Codable {
-    case `public`, instructors, students, `private`
+    case `public`, instructors, students, `private`, selectedStudents
 }
 
 struct Comment: Identifiable, Codable, Equatable {

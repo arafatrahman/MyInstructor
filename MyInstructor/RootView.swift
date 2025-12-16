@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/RootView.swift
-// --- UPDATED: Swapped Student Tab 4 to 'Instructors' ---
+// --- UPDATED: Renamed 'Notice' tab to 'Broadcast' and changed icon to 'megaphone.fill' ---
 
 import SwiftUI
 
@@ -103,9 +103,9 @@ struct MainTabView: View {
                 InstructorCalendarView()
                     .tabItem { Label("Calendar", systemImage: "calendar") }
                 
-                // 3. Community
+                // 3. Broadcast (Was Notice)
                 CommunityFeedView()
-                    .tabItem { Label("Community", systemImage: "person.3.fill") }
+                    .tabItem { Label("Broadcast", systemImage: "megaphone.fill") }
                 
                 // 4. Students
                 StudentsListView()
@@ -126,9 +126,9 @@ struct MainTabView: View {
                 StudentCalendarView()
                     .tabItem { Label("Schedule", systemImage: "calendar") }
                 
-                // 3. Community
+                // 3. Broadcast (Was Notice)
                 CommunityFeedView()
-                    .tabItem { Label("Community", systemImage: "person.3.fill") }
+                    .tabItem { Label("Broadcast", systemImage: "megaphone.fill") }
                 
                 // 4. Instructors (Replaced Live Map)
                 MyInstructorsView()

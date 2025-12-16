@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/CommunityManager.swift
-// --- UPDATED: Added 'listenToCommentsForPost' for individual Feed Cards ---
+// --- UPDATED: updatePostDetails now supports targetStudentIDs to fix permission error ---
 
 import Combine
 import Foundation
@@ -128,11 +128,22 @@ class CommunityManager: ObservableObject {
     
     func deletePost(postID: String) async throws { try await postsCollection.document(postID).delete() }
 
-    func updatePostDetails(postID: String, content: String?, location: String?, visibility: PostVisibility, newMediaURLs: [String]?) async throws {
+    // --- UPDATED FUNCTION ---
+    func updatePostDetails(postID: String, content: String?, location: String?, visibility: PostVisibility, newMediaURLs: [String]?, targetStudentIDs: [String]?) async throws {
         var data: [String: Any] = ["visibility": visibility.rawValue, "isEdited": true]
+        
         if let content = content { data["content"] = content }
         if let location = location { data["location"] = location }
         if let urls = newMediaURLs { data["mediaURLs"] = urls }
+        
+        // Handle targetStudentIDs (use NSNull() to clear if nil, or set array)
+        if let targets = targetStudentIDs {
+            data["targetStudentIDs"] = targets
+        } else {
+            // If switching away from 'selectedStudents', we might want to clear this field
+            data["targetStudentIDs"] = FieldValue.delete()
+        }
+        
         try await postsCollection.document(postID).updateData(data)
     }
     

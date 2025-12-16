@@ -1,5 +1,5 @@
-// File: MyInstructor/Features/Community/CommunityFeedView.swift
-// --- UPDATED: Replies are now nested, collapsed by default, and expandable ---
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Community/CommunityFeedView.swift
+// --- UPDATED: Implemented Privacy Filtering (Private, Student-Only, Selected-Students) ---
 
 import SwiftUI
 import PhotosUI
@@ -26,12 +26,46 @@ struct CommunityFeedView: View {
     @State private var loadedDataForSheet: PhotoSelection? = nil
     @State private var isInitialLoading = true
     
+    // --- UPDATED: Privacy Filtering Logic ---
     var filteredPosts: [Post] {
-        let sourcePosts = communityManager.posts
+        let allPosts = communityManager.posts
+        
+        // 1. Filter by Privacy Rules
+        let privacyFilteredPosts = allPosts.filter { post in
+            // Rule 1: Author always sees their own posts
+            if let currentUserID = authManager.user?.id, post.authorID == currentUserID {
+                return true
+            }
+            
+            switch post.visibility {
+            case .public:
+                // Visible to everyone
+                return true
+                
+            case .private:
+                // Only visible to author (handled above), so hide for everyone else
+                return false
+                
+            case .students:
+                // Visible only if the viewer is a student of the author
+                // We check if the viewer's 'instructorIDs' list contains the post author's ID
+                return authManager.user?.instructorIDs?.contains(post.authorID) ?? false
+                
+            case .selectedStudents:
+                // Visible only if the viewer's ID is specifically in the target list
+                return post.targetStudentIDs?.contains(authManager.user?.id ?? "") ?? false
+                
+            case .instructors:
+                // Visible to all instructors (assuming this use case)
+                return authManager.role == .instructor
+            }
+        }
+        
+        // 2. Filter by Search Text
         if searchText.isEmpty {
-            return sourcePosts
+            return privacyFilteredPosts
         } else {
-            return sourcePosts.filter {
+            return privacyFilteredPosts.filter {
                 ($0.content?.localizedCaseInsensitiveContains(searchText) ?? false) ||
                 $0.authorName.localizedCaseInsensitiveContains(searchText)
             }
@@ -44,7 +78,8 @@ struct CommunityFeedView: View {
                 
                 // MARK: - 1. Main Header
                 HStack {
-                    Text("Community Hub")
+                    // --- TITLE UPDATED to Broadcast Hub ---
+                    Text("Broadcast Hub")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundColor(.primary)
                     
@@ -73,7 +108,7 @@ struct CommunityFeedView: View {
                 if isSearchVisible {
                     HStack {
                         Image(systemName: "magnifyingglass").foregroundColor(.gray)
-                        TextField("Search posts or users...", text: $searchText)
+                        TextField("Search broadcasts...", text: $searchText)
                             .textFieldStyle(PlainTextFieldStyle())
                         if !searchText.isEmpty {
                             Button(action: { searchText = "" }) {
@@ -151,14 +186,15 @@ struct CommunityFeedView: View {
                         
                         // MARK: - 3. Feed List
                         if isInitialLoading && communityManager.posts.isEmpty {
-                            ProgressView("Loading Community...").padding(.top, 50)
+                            ProgressView("Loading Broadcasts...").padding(.top, 50)
                         } else if communityManager.posts.isEmpty {
-                            EmptyStateView(icon: "message.circle", message: "No posts yet. Start a conversation now!")
+                            EmptyStateView(icon: "message.circle", message: "No broadcasts yet. Start a conversation now!")
                         } else if filteredPosts.isEmpty {
-                            EmptyStateView(icon: "magnifyingglass", message: "No posts match your search.")
+                            EmptyStateView(icon: "magnifyingglass", message: "No broadcasts match your search (or privacy settings).")
                         } else {
                             LazyVStack(spacing: 15) {
                                 ForEach(filteredPosts) { post in
+                                    // Use the index from the main array to ensure binding works correctly
                                     if let mainIndex = communityManager.posts.firstIndex(where: { $0.id == post.id }) {
                                         PostCard(
                                             post: $communityManager.posts[mainIndex],
@@ -192,7 +228,7 @@ struct CommunityFeedView: View {
     }
 }
 
-// MARK: - PostCard Component
+// MARK: - PostCard Component (Unchanged logic, just context)
 struct PostCard: View {
     @Binding var post: Post
     let onDelete: (String) -> Void
@@ -209,14 +245,12 @@ struct PostCard: View {
     @State private var fetchedComments: [Comment]? = nil
     @State private var commentsListener: ListenerRegistration?
     
-    // --- NEW: Track Expanded Replies ---
     @State private var expandedReplyIDs: Set<String> = []
     
     @State private var isFollowing = false
     @State private var isShowingEditSheet = false
     @State private var isShowingDeleteAlert = false
     
-    // Reply/Edit State
     @State private var replyingToComment: Comment? = nil
     @State private var editingComment: Comment? = nil
     
@@ -271,10 +305,10 @@ struct PostCard: View {
                 }
             )
         }
-        .alert("Delete Post?", isPresented: $isShowingDeleteAlert) {
+        .alert("Delete Broadcast?", isPresented: $isShowingDeleteAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) { Task { await deletePost() } }
-        } message: { Text("Are you sure you want to delete this post?") }
+        } message: { Text("Are you sure you want to delete this broadcast?") }
         .task {
             updateFollowingState()
         }
@@ -303,6 +337,16 @@ struct PostCard: View {
                 }
                 HStack(spacing: 4) {
                     Text(post.timestamp.timeAgoDisplay())
+                    
+                    // --- Privacy Indicator ---
+                    if post.visibility == .private {
+                        Image(systemName: "lock.fill").font(.caption2).foregroundColor(.secondary)
+                    } else if post.visibility == .students {
+                        Image(systemName: "person.2.fill").font(.caption2).foregroundColor(.secondary)
+                    } else if post.visibility == .selectedStudents {
+                        Image(systemName: "person.crop.circle.badge.checkmark").font(.caption2).foregroundColor(.secondary)
+                    }
+                    
                     if post.isEdited == true { Text("• (edited)") }
                 }.font(.caption).foregroundColor(.textLight)
             }
@@ -376,7 +420,6 @@ struct PostCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 Divider()
                 
-                // Indicators for Edit/Reply
                 if let replying = replyingToComment {
                     HStack {
                         Text("Replying to \(replying.authorName)").font(.caption).foregroundColor(.secondary)
@@ -393,16 +436,13 @@ struct PostCard: View {
                 }
                 
                 if fetchedComments == nil {
-                    // Initial loading state
                     HStack { Spacer(); ProgressView(); Spacer() }
                 } else if let comments = fetchedComments, !comments.isEmpty {
                     
-                    // --- Hierarchical & Collapsible Comments Display ---
                     let parents = comments.filter { $0.parentCommentID == nil }
                     let visibleParents = parents.prefix(3)
                     
                     ForEach(visibleParents) { parent in
-                        // --- 1. Render Parent ---
                         let isExpanded = expandedReplyIDs.contains(parent.id ?? "")
                         
                         CommentRow(
@@ -416,7 +456,6 @@ struct PostCard: View {
                                 commentText = "@\(parent.authorName) "
                             },
                             onToggleReplies: {
-                                // Toggle local state
                                 withAnimation {
                                     if isExpanded { expandedReplyIDs.remove(parent.id ?? "") }
                                     else { expandedReplyIDs.insert(parent.id ?? "") }
@@ -432,7 +471,6 @@ struct PostCard: View {
                             }
                         )
                         
-                        // --- 2. Render Replies (Collapsible & Indented) ---
                         if isExpanded {
                             let replies = comments.filter { $0.parentCommentID == parent.id }
                             ForEach(replies) { reply in
@@ -455,7 +493,7 @@ struct PostCard: View {
                                         Task { await deleteComment(reply) }
                                     }
                                 )
-                                .padding(.leading, 30) // Indentation
+                                .padding(.leading, 30)
                             }
                         }
                     }
@@ -476,8 +514,6 @@ struct PostCard: View {
             }
         }
     }
-    
-    // MARK: - Logic
     
     private func startListeningToComments() {
         guard let postID = post.id else { return }
@@ -531,13 +567,10 @@ struct PostCard: View {
         
         let content = commentText
         
-        // --- EDIT ---
         if let editing = editingComment, let cid = editing.id {
             try? await communityManager.updateComment(postID: postID, commentID: cid, newContent: content)
             editingComment = nil
-        }
-        // --- CREATE ---
-        else {
+        } else {
             let parentID = replyingToComment?.id
             try? await communityManager.addComment(postID: postID, authorID: authorID, authorName: author.name ?? "User", authorRole: author.role, authorPhotoURL: author.photoURL, content: content, parentCommentID: parentID)
             replyingToComment = nil

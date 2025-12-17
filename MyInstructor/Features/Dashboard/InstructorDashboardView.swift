@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: Replaced Financial Trend Chart with "Recent Activity" list ---
+// --- UPDATED: Added "Digital Vault" Quick Action ---
 
 import SwiftUI
 
@@ -10,6 +10,7 @@ enum DashboardSheet: Identifiable {
     case liveMap
     case analytics
     case allLessons
+    case digitalVault // Added Digital Vault
     
     var id: Int { self.hashValue }
 }
@@ -96,10 +97,13 @@ struct InstructorDashboardView: View {
                                 // 9. My Vehicles
                                 QuickActionButton(title: "My Vehicles", icon: "car.circle.fill", color: .primaryBlue, action: { activeSheet = .myVehicles })
                                 
-                                // 10. Notes
+                                // 10. Digital Vault (NEW)
+                                QuickActionButton(title: "Digital Vault", icon: "lock.shield.fill", color: .gray, action: { activeSheet = .digitalVault })
+                                
+                                // 11. Notes
                                 QuickActionButton(title: "Notes", icon: "note.text", color: .pink, action: { activeSheet = .notes })
                                 
-                                // 11. Contacts
+                                // 12. Contacts
                                 QuickActionButton(title: "Contacts", icon: "phone.circle.fill", color: .indigo, action: { activeSheet = .contacts })
                                 
                             }.padding(.horizontal)
@@ -136,6 +140,7 @@ struct InstructorDashboardView: View {
                 case .trackExpense: ExpensesView()
                 case .serviceBook: ServiceBookView()
                 case .myVehicles: MyVehiclesView()
+                case .digitalVault: DigitalVaultView() // Present new view
                 case .notes: NotesListView()
                 case .trackExam: ExamListView()
                 case .analytics: InstructorAnalyticsView()

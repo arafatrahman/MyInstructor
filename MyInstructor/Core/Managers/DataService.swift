@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/DataService.swift
-// --- UPDATED: Safe handling of empty IDs to prevent crash ---
+// --- UPDATED: Added Vault Methods ---
 
 import Foundation
 import Combine
@@ -250,4 +250,19 @@ class DataService: ObservableObject {
     }
     
     func getStudentName(for studentID: String) -> String { return "Loading..." }
+    
+    // MARK: - Digital Vault
+    
+    func addVaultDocument(_ doc: VaultDocument) async throws {
+        try usersCollection.document(doc.userID).collection("vault_documents").addDocument(from: doc)
+    }
+
+    func fetchVaultDocuments(for userID: String) async throws -> [VaultDocument] {
+        let snapshot = try await usersCollection.document(userID).collection("vault_documents").order(by: "date", descending: true).getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: VaultDocument.self) }
+    }
+    
+    func deleteVaultDocument(userID: String, docID: String) async throws {
+        try await usersCollection.document(userID).collection("vault_documents").document(docID).delete()
+    }
 }

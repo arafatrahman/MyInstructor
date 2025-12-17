@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/Model.swift
-// --- UPDATED: Fixed Student equality check to include averageProgress ---
+// --- UPDATED: Added VaultDocument model ---
 
 import Foundation
 import FirebaseFirestore
@@ -188,4 +188,16 @@ struct PracticeSession: Identifiable, Codable {
     var durationHours: Double {
         return duration / 3600.0
     }
+}
+
+// MARK: - Digital Vault Model
+struct VaultDocument: Identifiable, Codable, Hashable {
+    @DocumentID var id: String?
+    let userID: String
+    var title: String
+    var date: Date
+    var url: String
+    var notes: String?
+    var fileType: String // e.g., "image", "pdf"
+    var isEncrypted: Bool = true // Placeholder for secure status
 }

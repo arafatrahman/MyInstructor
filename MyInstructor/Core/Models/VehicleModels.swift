@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/VehicleModels.swift
-// --- UPDATED: Added insuranceExpiry and motExpiry fields ---
+// --- UPDATED: Added MileageLog model ---
 
 import Foundation
 import FirebaseFirestore
@@ -35,4 +35,20 @@ struct ServiceRecord: Identifiable, Codable {
     var cost: Double
     var notes: String?
     var nextServiceDate: Date?
+}
+
+// --- NEW MODEL ---
+struct MileageLog: Identifiable, Codable {
+    @DocumentID var id: String?
+    let instructorID: String
+    var vehicleID: String
+    var date: Date
+    var startReading: Int
+    var endReading: Int
+    var purpose: String // e.g., "Lesson", "Personal", "Commute"
+    var notes: String?
+    
+    var distance: Int {
+        return endReading - startReading
+    }
 }

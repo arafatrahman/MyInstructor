@@ -1,6 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- UPDATED: Added "Digital Vault" Quick Action ---
-
 import SwiftUI
 
 enum DashboardSheet: Identifiable {
@@ -10,7 +7,8 @@ enum DashboardSheet: Identifiable {
     case liveMap
     case analytics
     case allLessons
-    case digitalVault // Added Digital Vault
+    case digitalVault
+    case mileageLog // Added Mileage Log
     
     var id: Int { self.hashValue }
 }
@@ -23,6 +21,8 @@ struct InstructorDashboardView: View {
     @EnvironmentObject var notificationManager: NotificationManager
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var locationManager: LocationManager
+    // Note: Pass vehicleManager via environment in RootView if not already there,
+    // or ensure it's available for the MileageLogView.
     
     @State private var activeSheet: DashboardSheet?
     @State private var nextLesson: Lesson?
@@ -97,13 +97,16 @@ struct InstructorDashboardView: View {
                                 // 9. My Vehicles
                                 QuickActionButton(title: "My Vehicles", icon: "car.circle.fill", color: .primaryBlue, action: { activeSheet = .myVehicles })
                                 
-                                // 10. Digital Vault (NEW)
+                                // 10. Mileage Log (NEW)
+                                QuickActionButton(title: "Mileage Log", icon: "speedometer", color: .cyan, action: { activeSheet = .mileageLog })
+                                
+                                // 11. Digital Vault
                                 QuickActionButton(title: "Digital Vault", icon: "lock.shield.fill", color: .gray, action: { activeSheet = .digitalVault })
                                 
-                                // 11. Notes
+                                // 12. Notes
                                 QuickActionButton(title: "Notes", icon: "note.text", color: .pink, action: { activeSheet = .notes })
                                 
-                                // 12. Contacts
+                                // 13. Contacts
                                 QuickActionButton(title: "Contacts", icon: "phone.circle.fill", color: .indigo, action: { activeSheet = .contacts })
                                 
                             }.padding(.horizontal)
@@ -140,11 +143,14 @@ struct InstructorDashboardView: View {
                 case .trackExpense: ExpensesView()
                 case .serviceBook: ServiceBookView()
                 case .myVehicles: MyVehiclesView()
-                case .digitalVault: DigitalVaultView() // Present new view
+                case .digitalVault: DigitalVaultView()
                 case .notes: NotesListView()
                 case .trackExam: ExamListView()
                 case .analytics: InstructorAnalyticsView()
                 case .allLessons: InstructorLessonsListView()
+                
+                case .mileageLog: // NEW Case
+                    MileageLogView()
                 }
             }
         }

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/VehicleManager.swift
-// --- UPDATED: Suppressed Firestore warning by setting id to nil before setData ---
+// --- UPDATED: Added Mileage Log CRUD ---
 
 import Foundation
 import FirebaseFirestore
@@ -14,6 +14,11 @@ class VehicleManager: ObservableObject {
     
     private var vehiclesCollection: CollectionReference {
         db.collection("vehicles")
+    }
+    
+    // --- NEW COLLECTION ---
+    private var mileageCollection: CollectionReference {
+        db.collection("mileage_logs")
     }
     
     // MARK: - Vehicle CRUD
@@ -74,5 +79,25 @@ class VehicleManager: ObservableObject {
             .order(by: "date", descending: true)
             .getDocuments()
         return snapshot.documents.compactMap { try? $0.data(as: ServiceRecord.self) }
+    }
+    
+    // MARK: - Mileage Log CRUD (NEW)
+    
+    func addMileageLog(_ log: MileageLog) async throws {
+        var logToSave = log
+        logToSave.id = nil
+        try mileageCollection.addDocument(from: logToSave)
+    }
+    
+    func deleteMileageLog(id: String) async throws {
+        try await mileageCollection.document(id).delete()
+    }
+    
+    func fetchMileageLogs(for instructorID: String) async throws -> [MileageLog] {
+        let snapshot = try await mileageCollection
+            .whereField("instructorID", isEqualTo: instructorID)
+            .order(by: "date", descending: true)
+            .getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: MileageLog.self) }
     }
 }

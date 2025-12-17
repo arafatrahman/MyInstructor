@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/VehicleManager.swift
-// --- UPDATED: Added Mileage Log CRUD ---
+// --- UPDATED: Added full Mileage Log CRUD including Update ---
 
 import Foundation
 import FirebaseFirestore
@@ -16,7 +16,6 @@ class VehicleManager: ObservableObject {
         db.collection("vehicles")
     }
     
-    // --- NEW COLLECTION ---
     private var mileageCollection: CollectionReference {
         db.collection("mileage_logs")
     }
@@ -24,7 +23,6 @@ class VehicleManager: ObservableObject {
     // MARK: - Vehicle CRUD
     
     func addVehicle(_ vehicle: Vehicle) async throws {
-        // When adding, id is usually nil, but we enforce it just in case
         var vehicleToSave = vehicle
         vehicleToSave.id = nil
         try vehiclesCollection.addDocument(from: vehicleToSave)
@@ -32,11 +30,8 @@ class VehicleManager: ObservableObject {
     
     func updateVehicle(_ vehicle: Vehicle) async throws {
         guard let id = vehicle.id else { return }
-        
-        // Create a copy and set id to nil to avoid [I-FST000002] warning
         var vehicleToSave = vehicle
         vehicleToSave.id = nil
-        
         try vehiclesCollection.document(id).setData(from: vehicleToSave)
     }
     
@@ -61,11 +56,8 @@ class VehicleManager: ObservableObject {
     
     func updateServiceRecord(_ record: ServiceRecord) async throws {
         guard let id = record.id else { return }
-        
-        // Create a copy and set id to nil to avoid [I-FST000002] warning
         var recordToSave = record
         recordToSave.id = nil
-        
         try servicesCollection.document(id).setData(from: recordToSave)
     }
     
@@ -81,12 +73,20 @@ class VehicleManager: ObservableObject {
         return snapshot.documents.compactMap { try? $0.data(as: ServiceRecord.self) }
     }
     
-    // MARK: - Mileage Log CRUD (NEW)
+    // MARK: - Mileage Log CRUD
     
     func addMileageLog(_ log: MileageLog) async throws {
         var logToSave = log
         logToSave.id = nil
         try mileageCollection.addDocument(from: logToSave)
+    }
+    
+    // --- NEW: Update Function ---
+    func updateMileageLog(_ log: MileageLog) async throws {
+        guard let id = log.id else { return }
+        var logToSave = log
+        logToSave.id = nil
+        try mileageCollection.document(id).setData(from: logToSave)
     }
     
     func deleteMileageLog(id: String) async throws {

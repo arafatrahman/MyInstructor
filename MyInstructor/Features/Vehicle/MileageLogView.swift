@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Vehicle/MileageLogView.swift
-// --- NEW FILE: Mileage Log Feature ---
+// --- UPDATED: Added Edit Capabilities ---
 
 import SwiftUI
 
@@ -10,7 +10,10 @@ struct MileageLogView: View {
     
     @State private var logs: [MileageLog] = []
     @State private var isLoading = true
+    
+    // Sheets
     @State private var isAddSheetPresented = false
+    @State private var logToEdit: MileageLog? = nil
     
     var totalMiles: Int {
         logs.reduce(0) { $0 + $1.distance }
@@ -35,7 +38,7 @@ struct MileageLogView: View {
                         .foregroundColor(.white.opacity(0.3))
                 }
                 .padding()
-                .background(Color.cyan) // Matches the button color
+                .background(Color.cyan)
                 .cornerRadius(16)
                 .padding()
                 .shadow(color: Color.cyan.opacity(0.3), radius: 8, x: 0, y: 4)
@@ -57,16 +60,21 @@ struct MileageLogView: View {
                 } else {
                     List {
                         ForEach(logs) { log in
-                            MileageLogRow(log: log)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                                .swipeActions(edge: .trailing) {
-                                    Button(role: .destructive) {
-                                        Task { await deleteLog(log.id!) }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
+                            Button {
+                                logToEdit = log
+                            } label: {
+                                MileageLogRow(log: log)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    Task { await deleteLog(log.id!) }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
+                            }
                         }
                     }
                     .listStyle(.plain)
@@ -84,8 +92,16 @@ struct MileageLogView: View {
                     }
                 }
             }
+            // Add Sheet
             .sheet(isPresented: $isAddSheetPresented) {
-                AddMileageLogView(onSave: { Task { await fetchData() } })
+                MileageLogFormView(onSave: { Task { await fetchData() } })
+            }
+            // Edit Sheet
+            .sheet(item: $logToEdit) { log in
+                MileageLogFormView(logToEdit: log, onSave: {
+                    logToEdit = nil
+                    Task { await fetchData() }
+                })
             }
             .task { await fetchData() }
         }
@@ -148,11 +164,13 @@ struct MileageLogRow: View {
     }
 }
 
-struct AddMileageLogView: View {
+// MARK: - Form View (Add & Edit)
+struct MileageLogFormView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var vehicleManager: VehicleManager
     @EnvironmentObject var authManager: AuthManager
     
+    var logToEdit: MileageLog?
     var onSave: () -> Void
     
     @State private var date = Date()
@@ -164,8 +182,11 @@ struct AddMileageLogView: View {
     
     @State private var availableVehicles: [Vehicle] = []
     @State private var isLoading = false
+    @State private var isDataLoaded = false
     
     let purposes = ["Lesson", "Commute", "Personal", "Fuel Run", "Maintenance", "Other"]
+    
+    var isEditing: Bool { logToEdit != nil }
     
     var isValid: Bool {
         !selectedVehicleID.isEmpty &&
@@ -198,6 +219,10 @@ struct AddMileageLogView: View {
                             Text(p).tag(p)
                         }
                     }
+                    // Custom purpose input
+                    if !purposes.contains(purpose) {
+                        TextField("Custom Purpose", text: $purpose)
+                    }
                     
                     HStack {
                         Text("Start Odometer")
@@ -220,6 +245,7 @@ struct AddMileageLogView: View {
                             Text("Distance")
                             Spacer()
                             Text("\(end - start) mi").bold()
+                                .foregroundColor(end >= start ? .primary : .red)
                         }
                     }
                 }
@@ -228,7 +254,7 @@ struct AddMileageLogView: View {
                     TextField("Optional notes...", text: $notes)
                 }
             }
-            .navigationTitle("Log Trip")
+            .navigationTitle(isEditing ? "Edit Trip" : "Log Trip")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -240,15 +266,35 @@ struct AddMileageLogView: View {
                 }
             }
             .task {
-                guard let id = authManager.user?.id else { return }
-                do {
-                    availableVehicles = try await vehicleManager.fetchVehicles(for: id)
-                    if let first = availableVehicles.first {
-                        selectedVehicleID = first.id ?? ""
-                    }
-                } catch { print(error) }
+                await loadData()
             }
         }
+    }
+    
+    private func loadData() async {
+        guard !isDataLoaded else { return }
+        guard let id = authManager.user?.id else { return }
+        
+        do {
+            // 1. Fetch vehicles
+            availableVehicles = try await vehicleManager.fetchVehicles(for: id)
+            
+            // 2. Populate fields if editing
+            if let log = logToEdit {
+                date = log.date
+                selectedVehicleID = log.vehicleID
+                startReadingString = String(log.startReading)
+                endReadingString = String(log.endReading)
+                purpose = log.purpose
+                notes = log.notes ?? ""
+            } else {
+                // Default to first vehicle
+                if let first = availableVehicles.first {
+                    selectedVehicleID = first.id ?? ""
+                }
+            }
+            isDataLoaded = true
+        } catch { print(error) }
     }
     
     func save() {
@@ -257,7 +303,9 @@ struct AddMileageLogView: View {
               let end = Int(endReadingString) else { return }
         
         isLoading = true
+        
         let log = MileageLog(
+            id: logToEdit?.id, // Preserve ID if editing
             instructorID: instructorID,
             vehicleID: selectedVehicleID,
             date: date,
@@ -268,10 +316,18 @@ struct AddMileageLogView: View {
         )
         
         Task {
-            try? await vehicleManager.addMileageLog(log)
-            onSave()
+            do {
+                if isEditing {
+                    try await vehicleManager.updateMileageLog(log)
+                } else {
+                    try await vehicleManager.addMileageLog(log)
+                }
+                onSave()
+                dismiss()
+            } catch {
+                print("Error saving log: \(error)")
+            }
             isLoading = false
-            dismiss()
         }
     }
 }

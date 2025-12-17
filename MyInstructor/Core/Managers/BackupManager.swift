@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/BackupManager.swift
-// --- UPDATED: Uses Plain DTOs to fix FirestoreEncodingError ---
+// --- FULLY UPDATED: Includes MileageLog and VaultDocument support ---
 
 import Foundation
 import FirebaseFirestore
@@ -16,6 +16,9 @@ struct BackupData: Codable {
     let serviceRecords: [BackupServiceRecord]
     let payments: [BackupPayment]
     let offlineStudents: [BackupOfflineStudent]
+    // --- NEW FIELDS ---
+    let mileageLogs: [BackupMileageLog]
+    let vaultDocuments: [BackupVaultDocument]
 }
 
 struct BackupUser: Codable {
@@ -212,6 +215,49 @@ struct BackupOfflineStudent: Codable {
     }
 }
 
+struct BackupMileageLog: Codable {
+    let id: String?
+    let instructorID: String
+    let vehicleID: String
+    let date: Date
+    let startReading: Int
+    let endReading: Int
+    let purpose: String
+    let notes: String?
+    
+    init(from log: MileageLog) {
+        self.id = log.id
+        self.instructorID = log.instructorID
+        self.vehicleID = log.vehicleID
+        self.date = log.date
+        self.startReading = log.startReading
+        self.endReading = log.endReading
+        self.purpose = log.purpose
+        self.notes = log.notes
+    }
+}
+
+struct BackupVaultDocument: Codable {
+    let id: String?
+    let userID: String
+    let title: String
+    let date: Date
+    let url: String
+    let notes: String?
+    let fileType: String
+    let isEncrypted: Bool
+    
+    init(from doc: VaultDocument) {
+        self.id = doc.id
+        self.userID = doc.userID
+        self.title = doc.title
+        self.date = doc.date
+        self.url = doc.url
+        self.notes = doc.notes
+        self.fileType = doc.fileType
+        self.isEncrypted = doc.isEncrypted
+    }
+}
 
 // MARK: - Manager Class
 
@@ -253,9 +299,17 @@ class BackupManager {
         let offlineSnapshot = try await db.collection("offline_students").whereField("instructorID", isEqualTo: userID).getDocuments()
         let offlineStudents = offlineSnapshot.documents.compactMap { try? $0.data(as: OfflineStudent.self) }.map { BackupOfflineStudent(from: $0) }
         
+        // 8. Fetch Mileage Logs
+        let mileageSnapshot = try await db.collection("mileage_logs").whereField("instructorID", isEqualTo: userID).getDocuments()
+        let mileageLogs = mileageSnapshot.documents.compactMap { try? $0.data(as: MileageLog.self) }.map { BackupMileageLog(from: $0) }
+        
+        // 9. Fetch Vault Documents
+        let vaultSnapshot = try await db.collection("vault_documents").whereField("userID", isEqualTo: userID).getDocuments()
+        let vaultDocuments = vaultSnapshot.documents.compactMap { try? $0.data(as: VaultDocument.self) }.map { BackupVaultDocument(from: $0) }
+        
         // Bundle
         let backup = BackupData(
-            version: "1.0",
+            version: "1.1",
             timestamp: Date(),
             userProfile: backupProfile,
             lessons: lessons,
@@ -263,7 +317,9 @@ class BackupManager {
             vehicles: vehicles,
             serviceRecords: serviceRecords,
             payments: payments,
-            offlineStudents: offlineStudents
+            offlineStudents: offlineStudents,
+            mileageLogs: mileageLogs,
+            vaultDocuments: vaultDocuments
         )
         
         // Encode
@@ -322,6 +378,20 @@ class BackupManager {
         for item in backup.offlineStudents {
             if item.instructorID == userID {
                 try saveData(item, collection: "offline_students", id: item.id)
+            }
+        }
+        
+        // Mileage Logs
+        for item in backup.mileageLogs {
+            if item.instructorID == userID {
+                try saveData(item, collection: "mileage_logs", id: item.id)
+            }
+        }
+        
+        // Vault Documents
+        for item in backup.vaultDocuments {
+            if item.userID == userID {
+                try saveData(item, collection: "vault_documents", id: item.id)
             }
         }
         

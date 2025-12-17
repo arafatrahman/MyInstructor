@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
+// --- FULLY UPDATED: Includes Mileage Log & Vault Actions + Analytics Integration ---
+
 import SwiftUI
 
 enum DashboardSheet: Identifiable {
@@ -8,7 +11,7 @@ enum DashboardSheet: Identifiable {
     case analytics
     case allLessons
     case digitalVault
-    case mileageLog // Added Mileage Log
+    case mileageLog
     
     var id: Int { self.hashValue }
 }
@@ -21,8 +24,8 @@ struct InstructorDashboardView: View {
     @EnvironmentObject var notificationManager: NotificationManager
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var locationManager: LocationManager
-    // Note: Pass vehicleManager via environment in RootView if not already there,
-    // or ensure it's available for the MileageLogView.
+    // Ensure VehicleManager is available in the environment for MileageLogView
+    @EnvironmentObject var vehicleManager: VehicleManager
     
     @State private var activeSheet: DashboardSheet?
     @State private var nextLesson: Lesson?
@@ -148,9 +151,7 @@ struct InstructorDashboardView: View {
                 case .trackExam: ExamListView()
                 case .analytics: InstructorAnalyticsView()
                 case .allLessons: InstructorLessonsListView()
-                
-                case .mileageLog: // NEW Case
-                    MileageLogView()
+                case .mileageLog: MileageLogView()
                 }
             }
         }
@@ -305,6 +306,8 @@ struct InstructorAnalyticsView: View {
     @EnvironmentObject var expenseManager: ExpenseManager
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var authManager: AuthManager
+    // --- NEW: Inject VehicleManager for Mileage ---
+    @EnvironmentObject var vehicleManager: VehicleManager
     
     // --- Filters ---
     @State private var selectedFilter: AnalyticsFilter = .monthly
@@ -322,6 +325,10 @@ struct InstructorAnalyticsView: View {
     @State private var passRate: Double = 0.0
     @State private var totalExams: Int = 0
     @State private var passedExams: Int = 0
+    
+    // --- NEW: Mileage Stats ---
+    @State private var totalMiles: Int = 0
+    @State private var businessMiles: Int = 0
     
     // --- Breakdown Data ---
     @State private var expensesByCategory: [(label: String, amount: Double, color: Color)] = []
@@ -363,6 +370,10 @@ struct InstructorAnalyticsView: View {
                     } else {
                         VStack(spacing: 24) {
                             financialOverview
+                            
+                            // --- NEW: Mileage Stats Card ---
+                            mileageStats
+                            
                             performanceStats
                             financialBreakdown
                             recentActivitySection
@@ -438,6 +449,40 @@ struct InstructorAnalyticsView: View {
                 .buttonStyle(.plain)
             }
             AnalyticsStatCard(title: "Net Profit", value: netProfit, type: .currency, color: .primaryBlue, icon: "banknote.fill", isLarge: true)
+        }
+        .padding(.horizontal)
+    }
+    
+    // --- NEW: Mileage Stats View ---
+    private var mileageStats: some View {
+        HStack(spacing: 15) {
+            VStack(alignment: .leading, spacing: 15) {
+                Text("Mileage Log").font(.headline)
+                
+                HStack(spacing: 20) {
+                    VStack(alignment: .leading) {
+                        Text("\(totalMiles)").font(.title).bold().foregroundColor(.primary)
+                        Text("Total Miles").font(.caption).foregroundColor(.secondary)
+                    }
+                    
+                    Divider().frame(height: 30)
+                    
+                    VStack(alignment: .leading) {
+                        Text("\(businessMiles)").font(.title).bold().foregroundColor(.cyan)
+                        Text("Business").font(.caption).foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "car.circle.fill")
+                        .font(.largeTitle)
+                        .foregroundColor(.cyan.opacity(0.3))
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
         }
         .padding(.horizontal)
     }
@@ -618,15 +663,19 @@ struct InstructorAnalyticsView: View {
             async let expensesTask = expenseManager.fetchExpenses(for: instructorID)
             async let examsTask = lessonManager.fetchExamsForInstructor(instructorID: instructorID)
             async let lessonsTask = lessonManager.fetchLessons(for: instructorID, start: range.start, end: range.end)
+            // --- NEW: Fetch Mileage Logs ---
+            async let mileageTask = vehicleManager.fetchMileageLogs(for: instructorID)
             
             let allPayments = try await paymentsTask
             let allExpenses = try await expensesTask
             let allExams = try await examsTask
             let rangeLessons = try await lessonsTask
+            let allMileage = try await mileageTask
             
             let rangePayments = allPayments.filter { $0.date >= range.start && $0.date < range.end }
             let rangeExpenses = allExpenses.filter { $0.date >= range.start && $0.date < range.end }
             let rangeExams = allExams.filter { $0.date >= range.start && $0.date < range.end }
+            let rangeMileage = allMileage.filter { $0.date >= range.start && $0.date < range.end }
             
             self.totalIncome = rangePayments.reduce(0) { $0 + $1.amount }
             self.totalExpenses = rangeExpenses.reduce(0) { $0 + $1.amount }
@@ -637,6 +686,12 @@ struct InstructorAnalyticsView: View {
             self.totalExams = completedExams.count
             self.passedExams = completedExams.filter { $0.isPass == true }.count
             self.passRate = totalExams > 0 ? (Double(passedExams) / Double(totalExams)) * 100.0 : 0.0
+            
+            // --- NEW: Calculate Mileage Stats ---
+            self.totalMiles = rangeMileage.reduce(0) { $0 + $1.distance }
+            self.businessMiles = rangeMileage
+                .filter { $0.purpose == "Lesson" || $0.purpose == "Commute" || $0.purpose == "Fuel Run" }
+                .reduce(0) { $0 + $1.distance }
             
             generateBreakdowns(payments: rangePayments, expenses: rangeExpenses)
             prepareRecentActivity(payments: rangePayments, expenses: rangeExpenses)
@@ -778,7 +833,6 @@ struct StatRow: View {
     }
 }
 
-// ... (Existing Subviews remain unchanged)
 struct StudentQuickOverviewSheet: View {
     @EnvironmentObject var dataService: DataService; @EnvironmentObject var authManager: AuthManager; @Environment(\.dismiss) var dismiss
     @State private var onlineStudents: [Student] = []; @State private var offlineStudents: [OfflineStudent] = []; @State private var isLoading = true; @State private var searchText = ""; @State private var isAddingStudent = false
@@ -809,6 +863,7 @@ struct StudentQuickOverviewSheet: View {
     private func loadStudents() async { guard let id = authManager.user?.id else { return }; isLoading = true; do { async let online = dataService.fetchStudents(for: id); async let offline = dataService.fetchOfflineStudents(for: id); self.onlineStudents = try await online; self.offlineStudents = try await offline } catch { print("Error: \(error)") }; isLoading = false }
     private func convertToStudent(_ o: OfflineStudent) -> Student { Student(id: o.id, userID: o.id ?? UUID().uuidString, name: o.name, email: o.email ?? "", phone: o.phone, address: o.address, isOffline: true, averageProgress: o.progress ?? 0.0) }
 }
+
 struct StudentCardRow: View { let student: Student; let isOffline: Bool; var body: some View { HStack(spacing: 15) { AsyncImage(url: URL(string: student.photoURL ?? "")) { p in if let i = p.image { i.resizable().scaledToFill() } else { Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(isOffline ? .gray : .primaryBlue) } }.frame(width: 50, height: 50).clipShape(Circle()).overlay(Circle().stroke(Color.secondary.opacity(0.1), lineWidth: 1)); VStack(alignment: .leading, spacing: 4) { Text(student.name).font(.headline).foregroundColor(.primary); HStack(spacing: 6) { Circle().fill(isOffline ? Color.gray : Color.accentGreen).frame(width: 8, height: 8); Text(isOffline ? "Offline Student" : "Active Student").font(.subheadline).foregroundColor(.secondary) } }; Spacer(); ZStack { Circle().stroke(lineWidth: 4).opacity(0.15).foregroundColor(isOffline ? .gray : .primaryBlue); Circle().trim(from: 0.0, to: CGFloat(min(student.averageProgress, 1.0))).stroke(style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)).foregroundColor(isOffline ? .gray : .primaryBlue).rotationEffect(Angle(degrees: 270.0)); Text("\(Int(student.averageProgress * 100))%").font(.system(size: 10, weight: .bold)).minimumScaleFactor(0.5).foregroundColor(.primary).padding(2) }.frame(width: 50, height: 50); Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary.opacity(0.5)) }.padding(16).background(Color(.secondarySystemGroupedBackground)).cornerRadius(16).padding(.horizontal).shadow(color: Color.black.opacity(0.03), radius: 5, x: 0, y: 2) } }
 struct NextLessonContent: View { let lesson: Lesson?; var body: some View { VStack(alignment: .leading, spacing: 8) { if let l = lesson { Text(l.topic).font(.subheadline).bold().lineLimit(1); HStack { Image(systemName: "clock"); Text("\(l.startTime, style: .time)") }.font(.callout).foregroundColor(.textLight); HStack { Image(systemName: "map.pin.circle.fill"); Text("Pickup: \(l.pickupLocation)").lineLimit(1) }.font(.callout).foregroundColor(.textLight) } else { Text("No Upcoming Lessons").font(.subheadline).bold().foregroundColor(.textLight) } } } }
 struct EarningsSummaryContent: View { let earnings: Double; var body: some View { VStack(alignment: .leading, spacing: 4) { Text("£\(earnings, specifier: "%.2f")").font(.title2).bold().foregroundColor(.accentGreen); Text("This Week").font(.subheadline).foregroundColor(.textLight); Rectangle().fill(Color.accentGreen.opacity(0.3)).frame(height: 10).cornerRadius(5) } } }

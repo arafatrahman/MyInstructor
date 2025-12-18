@@ -4,7 +4,6 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var locationManager: LocationManager
-    // --- ADDED: Subscription Manager ---
     @EnvironmentObject var subscriptionManager: SubscriptionManager
     
     @State private var showSplash = true
@@ -54,16 +53,13 @@ struct RootView: View {
         }
         // 2. Instructors Check
         else if authManager.role == .instructor {
-            // Check if they have purchased Pro
+            // PRODUCTION LOGIC:
+            // Only allow access if 'isPro' is true.
+            // 'isPro' becomes true if they buy a subscription OR start an Apple Free Trial.
             if subscriptionManager.isPro {
                 MainTabView()
-            }
-            // Check for 3-Day Free Trial (Grace Period)
-            else if isWithinGracePeriod() {
-                MainTabView()
-            }
-            // Trial Over & No Subscription -> PAYWALL
-            else {
+            } else {
+                // If they haven't paid or started a trial via Apple, show Paywall immediately.
                 PaywallView()
             }
         }
@@ -73,12 +69,8 @@ struct RootView: View {
         }
     }
     
-    func isWithinGracePeriod() -> Bool {
-        guard let signupDate = authManager.user?.signupDate else { return true }
-        // 3 days in seconds = 3 * 24 * 60 * 60 = 259,200
-        let timeElapsed = Date().timeIntervalSince(signupDate)
-        return timeElapsed < 259200
-    }
+    // REMOVED: isWithinGracePeriod()
+    // Reason: In production, you rely on Apple's 'Introductory Offer' (Free Trial) configured in App Store Connect.
 }
 
 // ----------------------------------------------------------------------
@@ -138,7 +130,7 @@ struct MainTabView: View {
                 InstructorCalendarView()
                     .tabItem { Label("Calendar", systemImage: "calendar") }
                 
-                // 3. Broadcast (Was Notice)
+                // 3. Broadcast
                 CommunityFeedView()
                     .tabItem { Label("Broadcast", systemImage: "megaphone.fill") }
                 
@@ -161,11 +153,11 @@ struct MainTabView: View {
                 StudentCalendarView()
                     .tabItem { Label("Schedule", systemImage: "calendar") }
                 
-                // 3. Broadcast (Was Notice)
+                // 3. Broadcast
                 CommunityFeedView()
                     .tabItem { Label("Broadcast", systemImage: "megaphone.fill") }
                 
-                // 4. Instructors (Replaced Live Map)
+                // 4. Instructors
                 MyInstructorsView()
                     .tabItem { Label("Instructors", systemImage: "person.2.fill") }
 

@@ -1,9 +1,11 @@
 import SwiftUI
 import FirebaseAuth
+import AuthenticationServices
 
 struct LoginForm: View {
     @EnvironmentObject var authManager: AuthManager
     @Binding var selection: Int // Binding for switching tabs
+    @Environment(\.colorScheme) var colorScheme
     
     // Form fields
     @State private var email = ""
@@ -11,6 +13,9 @@ struct LoginForm: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var successMessage: String? // ADDED: To show success for password reset
+    
+    // Apple Sign In
+    @State private var currentNonce: String?
 
     var body: some View {
         ScrollView {
@@ -80,6 +85,47 @@ struct LoginForm: View {
                 .buttonStyle(.primaryDrivingApp)
                 .disabled(email.isEmpty || password.isEmpty || isLoading)
                 .padding(.horizontal, 30)
+                
+                // --- Divider for Social Login ---
+                HStack {
+                    Rectangle().frame(height: 1).foregroundColor(.secondaryGray)
+                    Text("OR").font(.caption).foregroundColor(.textLight)
+                    Rectangle().frame(height: 1).foregroundColor(.secondaryGray)
+                }
+                .padding(.horizontal, 30)
+                .padding(.vertical, 5)
+
+                // --- Apple Sign In Button ---
+                SignInWithAppleButton(
+                    onRequest: { request in
+                        let nonce = AuthManager.randomNonceString()
+                        currentNonce = nonce
+                        request.requestedScopes = [.fullName, .email]
+                        request.nonce = AuthManager.sha256(nonce)
+                    },
+                    onCompletion: { result in
+                        switch result {
+                        case .success(let authorization):
+                            if let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential {
+                                guard let nonce = currentNonce else {
+                                    errorMessage = "Invalid state: Missing nonce."
+                                    return
+                                }
+                                signInWithAppleAction(credential: appleIDCredential, nonce: nonce)
+                            }
+                        case .failure(let error):
+                            print("Apple Sign In Error: \(error.localizedDescription)")
+                            // Usually, we don't show an error if the user just cancelled
+                            if (error as NSError).code != ASAuthorizationError.canceled.rawValue {
+                                errorMessage = "Apple Sign In failed."
+                            }
+                        }
+                    }
+                )
+                .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                .frame(height: 50)
+                .cornerRadius(10)
+                .padding(.horizontal, 30)
 
                 // Modern Register link (switches the parent TabView selection)
                 Button("Don't have an account? Sign Up") {
@@ -89,6 +135,7 @@ struct LoginForm: View {
                 }
                 .font(.subheadline).bold()
                 .foregroundColor(.textLight)
+                .padding(.top, 10)
             }
             .padding(.bottom, 40)
         }
@@ -118,6 +165,21 @@ struct LoginForm: View {
                 }
             }
             isLoading = false
+        }
+    }
+    
+    private func signInWithAppleAction(credential: ASAuthorizationAppleIDCredential, nonce: String) {
+        isLoading = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                try await authManager.signInWithApple(credential: credential, nonce: nonce)
+                // Success is handled by AuthStateListener in AuthManager
+            } catch {
+                errorMessage = error.localizedDescription
+                isLoading = false
+            }
         }
     }
     

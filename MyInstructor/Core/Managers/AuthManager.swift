@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/AuthManager.swift
-// --- UPDATED: 'deleteAccount' includes Re-auth & Community Post Cleanup ---
+// --- UPDATED: Fixed 'credential' call to use modern 'providerID: .apple' syntax ---
 
 import Combine
 import Foundation
@@ -7,6 +7,8 @@ import FirebaseAuth
 import FirebaseFirestore
 import FirebaseStorage
 import UIKit
+import AuthenticationServices
+import CryptoKit
 
 @MainActor
 class AuthManager: ObservableObject {
@@ -85,6 +87,52 @@ class AuthManager: ObservableObject {
             _ = try await Auth.auth().signIn(withEmail: email, password: password)
         } catch {
             print("Login failed: \(error.localizedDescription)")
+            resetState()
+            throw error
+        }
+    }
+    
+    // MARK: - Sign In with Apple
+    
+    func signInWithApple(credential: ASAuthorizationAppleIDCredential, nonce: String) async throws {
+        self.isLoading = true
+        
+        guard let appleIDToken = credential.identityToken else {
+            throw NSError(domain: "AuthManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unable to fetch identity token"])
+        }
+        guard let idTokenString = String(data: appleIDToken, encoding: .utf8) else {
+             throw NSError(domain: "AuthManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unable to serialize token string from data"])
+        }
+
+        // --- FIX: Use 'providerID: .apple' (modern syntax) ---
+        let firebaseCredential = OAuthProvider.credential(
+            providerID: .apple,
+            idToken: idTokenString,
+            rawNonce: nonce
+        )
+        
+        do {
+            let result = try await Auth.auth().signIn(with: firebaseCredential)
+            
+            // Handle Name (Apple only provides this on the very first sign-in)
+            if let fullName = credential.fullName {
+                let given = fullName.givenName ?? ""
+                let family = fullName.familyName ?? ""
+                let name = "\(given) \(family)".trimmingCharacters(in: .whitespaces)
+                
+                if !name.isEmpty {
+                    // Update Firebase Profile
+                    let changeRequest = result.user.createProfileChangeRequest()
+                    changeRequest.displayName = name
+                    try? await changeRequest.commitChanges()
+                    
+                    // Update Firestore
+                    let data: [String: Any] = ["name": name]
+                    try? await db.collection(usersCollection).document(result.user.uid).setData(data, merge: true)
+                }
+            }
+        } catch {
+            print("Apple Sign In failed: \(error.localizedDescription)")
             resetState()
             throw error
         }
@@ -219,22 +267,18 @@ class AuthManager: ObservableObject {
         try Auth.auth().signOut()
     }
     
-    // --- UPDATED: 'deleteAccount' with One-Step Re-authentication ---
     func deleteAccount(password: String) async throws {
         guard let user = Auth.auth().currentUser else { return }
         guard let uid = self.user?.id, let email = user.email else { return }
         
         print("AuthManager: Starting deletion for \(uid)")
         
-        // 1. RE-AUTHENTICATE (Solve "Requires Recent Login")
         let credential = EmailAuthProvider.credential(withEmail: email, password: password)
         try await user.reauthenticate(with: credential)
         print("AuthManager: Re-authentication successful.")
         
-        // 2. DELETE COMMUNITY POSTS
         await deleteUserCommunityPosts(uid: uid)
         
-        // 3. DELETE USER DOC
         do {
             try await db.collection(usersCollection).document(uid).delete()
             print("AuthManager: Firestore user doc deleted.")
@@ -242,14 +286,12 @@ class AuthManager: ObservableObject {
             print("AuthManager Warning: Failed to delete user doc: \(error.localizedDescription)")
         }
         
-        // 4. DELETE AUTH ACCOUNT
         try await user.delete()
         print("AuthManager: Auth account deleted.")
         
         await resetState()
     }
     
-    // Helper to delete posts
     private func deleteUserCommunityPosts(uid: String) async {
         do {
             let postsSnapshot = try await db.collection("community_posts")
@@ -275,5 +317,46 @@ class AuthManager: ObservableObject {
         if let handle = authHandle {
             Auth.auth().removeStateDidChangeListener(handle)
         }
+    }
+}
+
+// MARK: - Crypto Helpers for Apple Sign In
+extension AuthManager {
+    static func randomNonceString(length: Int = 32) -> String {
+        precondition(length > 0)
+        let charset: [Character] =
+            Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+        var result = ""
+        var remainingLength = length
+        
+        while remainingLength > 0 {
+            let randoms: [UInt8] = (0 ..< 16).map { _ in
+                var random: UInt8 = 0
+                let errorCode = SecRandomCopyBytes(kSecRandomDefault, 1, &random)
+                if errorCode != errSecSuccess {
+                    fatalError("Unable to generate nonce. SecRandomCopyBytes failed with OSStatus \(errorCode)")
+                }
+                return random
+            }
+            
+            randoms.forEach { random in
+                if remainingLength == 0 { return }
+                
+                if random < charset.count {
+                    result.append(charset[Int(random)])
+                    remainingLength -= 1
+                }
+            }
+        }
+        return result
+    }
+    
+    static func sha256(_ input: String) -> String {
+        let inputData = Data(input.utf8)
+        let hashedData = SHA256.hash(data: inputData)
+        let hashString = hashedData.compactMap {
+            return String(format: "%02x", $0)
+        }.joined()
+        return hashString
     }
 }

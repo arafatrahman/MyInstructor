@@ -1,4 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/MyInstructor.swift
 import SwiftUI
 import FirebaseCore
 import Combine
@@ -32,9 +31,10 @@ struct DrivingApp: App {
     @StateObject var vehicleManager = VehicleManager()
     @StateObject var contactManager = ContactManager()
     @StateObject var notificationManager = NotificationManager()
-    
-    // --- ADDED: PersonalEventManager ---
     @StateObject var personalEventManager = PersonalEventManager()
+    
+    // --- ADDED: Subscription Manager ---
+    @StateObject var subscriptionManager = SubscriptionManager()
 
     var body: some Scene {
         WindowGroup {
@@ -51,9 +51,10 @@ struct DrivingApp: App {
                 .environmentObject(vehicleManager)
                 .environmentObject(contactManager)
                 .environmentObject(notificationManager)
-                
-                // --- INJECT PersonalEventManager ---
                 .environmentObject(personalEventManager)
+                
+                // --- INJECT Subscription Manager ---
+                .environmentObject(subscriptionManager)
                 
                 // Apply the custom theme globally
                 .applyAppTheme()

@@ -11,6 +11,7 @@
 		701BD5112EAC225C00B37A22 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 701BD5102EAC225C00B37A22 /* FirebaseCore */; };
 		701BD5132EAC225C00B37A22 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 701BD5122EAC225C00B37A22 /* FirebaseFirestore */; };
 		701BD5152EAC225C00B37A22 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 701BD5142EAC225C00B37A22 /* FirebaseStorage */; };
+		7024BD972EF4B87200A3470A /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7024BD962EF4B87200A3470A /* StoreKit.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -34,6 +35,7 @@
 		701BD4E12EAC219A00B37A22 /* MyInstructor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyInstructor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		701BD4F02EAC219B00B37A22 /* MyInstructorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MyInstructorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		701BD4FA2EAC219B00B37A22 /* MyInstructorUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MyInstructorUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7024BD962EF4B87200A3470A /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -74,6 +76,7 @@
 			files = (
 				701BD5112EAC225C00B37A22 /* FirebaseCore in Frameworks */,
 				701BD5152EAC225C00B37A22 /* FirebaseStorage in Frameworks */,
+				7024BD972EF4B87200A3470A /* StoreKit.framework in Frameworks */,
 				701BD50F2EAC225C00B37A22 /* FirebaseAuth in Frameworks */,
 				701BD5132EAC225C00B37A22 /* FirebaseFirestore in Frameworks */,
 			);
@@ -102,6 +105,7 @@
 				701BD4E32EAC219A00B37A22 /* MyInstructor */,
 				701BD4F32EAC219B00B37A22 /* MyInstructorTests */,
 				701BD4FD2EAC219B00B37A22 /* MyInstructorUITests */,
+				7024BD8F2EF4879100A3470A /* Frameworks */,
 				701BD4E22EAC219A00B37A22 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -114,6 +118,14 @@
 				701BD4FA2EAC219B00B37A22 /* MyInstructorUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		7024BD8F2EF4879100A3470A /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				7024BD962EF4B87200A3470A /* StoreKit.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

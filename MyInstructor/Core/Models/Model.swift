@@ -1,6 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/Model.swift
-// --- UPDATED: Added VaultDocument model ---
-
 import Foundation
 import FirebaseFirestore
 import CoreLocation
@@ -29,6 +26,9 @@ struct AppUser: Identifiable, Codable {
     var education: [EducationEntry]?
     var expertise: [String]?
     
+    // --- ADDED: Trial Tracking ---
+    var signupDate: Date? // Used to calculate the 3-day free trial limit
+    
     // Request/Lesson relationships
     var studentIDs: [String]?
     var instructorIDs: [String]?
@@ -45,6 +45,7 @@ struct AppUser: Identifiable, Codable {
 
     init(id: String, email: String, name: String? = nil, role: UserRole = .unselected) {
         self.id = id; self.email = email; self.name = name; self.role = role
+        self.signupDate = Date() // Default to now for new instances
     }
 }
 
@@ -69,7 +70,6 @@ struct Student: Identifiable, Codable, Hashable {
         case id, userID, name, photoURL, email, drivingSchool, phone, address, averageProgress, nextLessonTime, nextLessonTopic, isOffline
     }
     
-    // --- FIX: Compare progress and name to ensure UI updates ---
     static func == (lhs: Student, rhs: Student) -> Bool {
         return lhs.id == rhs.id &&
                lhs.averageProgress == rhs.averageProgress &&

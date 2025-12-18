@@ -1,6 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/AuthManager.swift
-// --- UPDATED: Fixed 'credential' call to use modern 'providerID: .apple' syntax ---
-
 import Combine
 import Foundation
 import FirebaseAuth
@@ -50,6 +47,13 @@ class AuthManager: ObservableObject {
         do {
             let document = try await db.collection(usersCollection).document(id).getDocument()
             if document.exists, var appUser = try? document.data(as: AppUser.self) {
+                // --- MIGRATION CHECK: Ensure signupDate exists ---
+                if appUser.signupDate == nil {
+                    let now = Date()
+                    appUser.signupDate = now
+                    try? await db.collection(usersCollection).document(id).updateData(["signupDate": now])
+                }
+                
                 self.user = appUser
                 self.role = appUser.role
             } else {
@@ -58,6 +62,8 @@ class AuthManager: ObservableObject {
                 newUser.aboutMe = ""
                 newUser.education = []
                 newUser.expertise = []
+                newUser.signupDate = Date() // Set signup date for new user
+                
                 try await db.collection(self.usersCollection).document(id).setData(from: newUser)
                 self.user = newUser
                 self.role = newUser.role
@@ -104,7 +110,6 @@ class AuthManager: ObservableObject {
              throw NSError(domain: "AuthManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unable to serialize token string from data"])
         }
 
-        // --- FIX: Use 'providerID: .apple' (modern syntax) ---
         let firebaseCredential = OAuthProvider.credential(
             providerID: .apple,
             idToken: idTokenString,
@@ -114,19 +119,16 @@ class AuthManager: ObservableObject {
         do {
             let result = try await Auth.auth().signIn(with: firebaseCredential)
             
-            // Handle Name (Apple only provides this on the very first sign-in)
             if let fullName = credential.fullName {
                 let given = fullName.givenName ?? ""
                 let family = fullName.familyName ?? ""
                 let name = "\(given) \(family)".trimmingCharacters(in: .whitespaces)
                 
                 if !name.isEmpty {
-                    // Update Firebase Profile
                     let changeRequest = result.user.createProfileChangeRequest()
                     changeRequest.displayName = name
                     try? await changeRequest.commitChanges()
                     
-                    // Update Firestore
                     let data: [String: Any] = ["name": name]
                     try? await db.collection(usersCollection).document(result.user.uid).setData(data, merge: true)
                 }
@@ -160,6 +162,8 @@ class AuthManager: ObservableObject {
             newUser.hourlyRate = hourlyRate
             newUser.aboutMe = ""
             newUser.education = []
+            newUser.signupDate = Date() // Initialize trial start date
+            
             if role == .instructor { newUser.expertise = [] }
             try await db.collection(usersCollection).document(uid).setData(from: newUser)
             self.user = newUser
@@ -359,4 +363,6 @@ extension AuthManager {
         }.joined()
         return hashString
     }
+    
+    
 }

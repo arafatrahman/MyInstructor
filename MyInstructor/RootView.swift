@@ -1,12 +1,11 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/RootView.swift
-// --- UPDATED: Renamed 'Notice' tab to 'Broadcast' and changed icon to 'megaphone.fill' ---
-
 import SwiftUI
 
 // MARK: - Root View Router
 struct RootView: View {
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var locationManager: LocationManager
+    // --- ADDED: Subscription Manager ---
+    @EnvironmentObject var subscriptionManager: SubscriptionManager
     
     @State private var showSplash = true
     @State private var hasSeenOnboarding: Bool = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
@@ -32,7 +31,8 @@ struct RootView: View {
                 ProgressView()
 
             } else {
-                MainTabView()
+                // --- Subscription Logic Check ---
+                checkSubscriptionAndRoute()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
@@ -43,6 +43,41 @@ struct RootView: View {
         .task {
             await locationManager.requestLocation()
         }
+    }
+    
+    // MARK: - Routing Logic
+    @ViewBuilder
+    func checkSubscriptionAndRoute() -> some View {
+        // 1. Students are always Free
+        if authManager.role == .student {
+            MainTabView()
+        }
+        // 2. Instructors Check
+        else if authManager.role == .instructor {
+            // Check if they have purchased Pro
+            if subscriptionManager.isPro {
+                MainTabView()
+            }
+            // Check for 3-Day Free Trial (Grace Period)
+            else if isWithinGracePeriod() {
+                MainTabView()
+            }
+            // Trial Over & No Subscription -> PAYWALL
+            else {
+                PaywallView()
+            }
+        }
+        // 3. Unselected or Error
+        else {
+             MainTabView()
+        }
+    }
+    
+    func isWithinGracePeriod() -> Bool {
+        guard let signupDate = authManager.user?.signupDate else { return true }
+        // 3 days in seconds = 3 * 24 * 60 * 60 = 259,200
+        let timeElapsed = Date().timeIntervalSince(signupDate)
+        return timeElapsed < 259200
     }
 }
 

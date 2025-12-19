@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- FULLY UPDATED: Includes Mileage Log & Vault Actions + Analytics Integration ---
+// --- FULLY UPDATED: Includes Accurate Weekly Earnings, Redesigned Next Lesson Card (Icon Only) & Full Analytics ---
 
 import SwiftUI
 
@@ -26,9 +26,12 @@ struct InstructorDashboardView: View {
     @EnvironmentObject var locationManager: LocationManager
     // Ensure VehicleManager is available in the environment for MileageLogView
     @EnvironmentObject var vehicleManager: VehicleManager
+    // Added PaymentManager for accurate earnings calculation
+    @EnvironmentObject var paymentManager: PaymentManager
     
     @State private var activeSheet: DashboardSheet?
     @State private var nextLesson: Lesson?
+    @State private var nextLessonStudentName: String = "Loading..." // Store resolved student name
     @State private var weeklyEarnings: Double = 0
     @State private var avgStudentProgress: Double = 0
     @State private var isLoading = true
@@ -51,15 +54,39 @@ struct InstructorDashboardView: View {
                     } else {
                         // Main Cards
                         HStack(spacing: 15) {
+                            // 1. Next Lesson Card (Redesigned)
                             if let lesson = nextLesson {
                                 NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
-                                    DashboardCard(title: "Next Lesson", systemIcon: "calendar.badge.clock", accentColor: .primaryBlue, fixedHeight: 150, content: { NextLessonContent(lesson: lesson) })
+                                    DashboardCard(
+                                        title: "Next Lesson",
+                                        systemIcon: "calendar.badge.clock",
+                                        accentColor: .primaryBlue,
+                                        fixedHeight: 150,
+                                        content: { NextLessonContent(lesson: lesson, studentName: nextLessonStudentName) }
+                                    )
                                 }.buttonStyle(.plain).frame(maxWidth: .infinity)
                             } else {
-                                DashboardCard(title: "Next Lesson", systemIcon: "calendar.badge.clock", accentColor: .primaryBlue, fixedHeight: 150, content: { NextLessonContent(lesson: nextLesson) }).frame(maxWidth: .infinity)
+                                DashboardCard(
+                                    title: "Next Lesson",
+                                    systemIcon: "calendar.badge.clock",
+                                    accentColor: .primaryBlue,
+                                    fixedHeight: 150,
+                                    content: { NextLessonContent(lesson: nil, studentName: nil) }
+                                ).frame(maxWidth: .infinity)
                             }
                             
-                            DashboardCard(title: "Weekly Earnings", systemIcon: "dollarsign.circle.fill", accentColor: .accentGreen, fixedHeight: 150, content: { EarningsSummaryContent(earnings: weeklyEarnings) }).frame(maxWidth: .infinity)
+                            // 2. Weekly Earnings Card (Clickable & Accurate)
+                            NavigationLink(destination: PaymentsView()) {
+                                DashboardCard(
+                                    title: "Weekly Earnings",
+                                    systemIcon: "dollarsign.circle.fill",
+                                    accentColor: .accentGreen,
+                                    fixedHeight: 150,
+                                    content: { EarningsSummaryContent(earnings: weeklyEarnings) }
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity)
                         }
                         .padding(.horizontal)
 
@@ -160,14 +187,33 @@ struct InstructorDashboardView: View {
     func fetchData() async {
         guard let instructorID = authManager.user?.id else { isLoading = false; return }
         isLoading = true
+        
         async let dashboardDataTask = dataService.fetchInstructorDashboardData(for: instructorID)
         async let requestsTask = communityManager.fetchRequests(for: instructorID)
+        // Fetch payments for accurate weekly calculation
+        async let paymentsTask = paymentManager.fetchInstructorPayments(for: instructorID)
 
         do {
             let data = try await dashboardDataTask
             self.nextLesson = data.nextLesson
-            self.weeklyEarnings = data.earnings
             self.avgStudentProgress = data.avgProgress
+            
+            // Calculate Weekly Earnings (Current Week)
+            let allPayments = try await paymentsTask
+            let calendar = Calendar.current
+            if let weekInterval = calendar.dateInterval(of: .weekOfYear, for: Date()) {
+                let weeklyPayments = allPayments.filter { $0.date >= weekInterval.start && $0.date < weekInterval.end }
+                self.weeklyEarnings = weeklyPayments.reduce(0) { $0 + $1.amount }
+            } else {
+                self.weeklyEarnings = 0.0
+            }
+            
+            // Resolve Next Lesson Student Name
+            if let lesson = self.nextLesson {
+                self.nextLessonStudentName = await dataService.resolveStudentName(studentID: lesson.studentID)
+            } else {
+                self.nextLessonStudentName = "Unknown"
+            }
             
             let requests = try await requestsTask
             self.pendingRequestCount = requests.count
@@ -865,8 +911,50 @@ struct StudentQuickOverviewSheet: View {
 }
 
 struct StudentCardRow: View { let student: Student; let isOffline: Bool; var body: some View { HStack(spacing: 15) { AsyncImage(url: URL(string: student.photoURL ?? "")) { p in if let i = p.image { i.resizable().scaledToFill() } else { Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(isOffline ? .gray : .primaryBlue) } }.frame(width: 50, height: 50).clipShape(Circle()).overlay(Circle().stroke(Color.secondary.opacity(0.1), lineWidth: 1)); VStack(alignment: .leading, spacing: 4) { Text(student.name).font(.headline).foregroundColor(.primary); HStack(spacing: 6) { Circle().fill(isOffline ? Color.gray : Color.accentGreen).frame(width: 8, height: 8); Text(isOffline ? "Offline Student" : "Active Student").font(.subheadline).foregroundColor(.secondary) } }; Spacer(); ZStack { Circle().stroke(lineWidth: 4).opacity(0.15).foregroundColor(isOffline ? .gray : .primaryBlue); Circle().trim(from: 0.0, to: CGFloat(min(student.averageProgress, 1.0))).stroke(style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)).foregroundColor(isOffline ? .gray : .primaryBlue).rotationEffect(Angle(degrees: 270.0)); Text("\(Int(student.averageProgress * 100))%").font(.system(size: 10, weight: .bold)).minimumScaleFactor(0.5).foregroundColor(.primary).padding(2) }.frame(width: 50, height: 50); Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary.opacity(0.5)) }.padding(16).background(Color(.secondarySystemGroupedBackground)).cornerRadius(16).padding(.horizontal).shadow(color: Color.black.opacity(0.03), radius: 5, x: 0, y: 2) } }
-struct NextLessonContent: View { let lesson: Lesson?; var body: some View { VStack(alignment: .leading, spacing: 8) { if let l = lesson { Text(l.topic).font(.subheadline).bold().lineLimit(1); HStack { Image(systemName: "clock"); Text("\(l.startTime, style: .time)") }.font(.callout).foregroundColor(.textLight); HStack { Image(systemName: "map.pin.circle.fill"); Text("Pickup: \(l.pickupLocation)").lineLimit(1) }.font(.callout).foregroundColor(.textLight) } else { Text("No Upcoming Lessons").font(.subheadline).bold().foregroundColor(.textLight) } } } }
-struct EarningsSummaryContent: View { let earnings: Double; var body: some View { VStack(alignment: .leading, spacing: 4) { Text("£\(earnings, specifier: "%.2f")").font(.title2).bold().foregroundColor(.accentGreen); Text("This Week").font(.subheadline).foregroundColor(.textLight); Rectangle().fill(Color.accentGreen.opacity(0.3)).frame(height: 10).cornerRadius(5) } } }
-struct StudentsOverviewContent: View { let progress: Double; var body: some View { HStack { CircularProgressView(progress: progress, color: .orange, size: 60).padding(.trailing, 10); VStack(alignment: .leading) { Text("Average Student Progress").font(.subheadline).foregroundColor(.textLight); Text("\(Int(progress * 100))% Mastery").font(.headline) }; Spacer(); Image(systemName: "chevron.right").foregroundColor(.textLight) } } }
-struct DashboardCard<Content: View>: View { let title: String; let systemIcon: String; var accentColor: Color = .primaryBlue; var fixedHeight: CGFloat? = nil; @ViewBuilder let content: Content; var body: some View { VStack(alignment: .leading, spacing: 10) { HStack { Label(title, systemImage: systemIcon).font(.subheadline).bold().foregroundColor(accentColor); Spacer() }; Divider().opacity(0.5); content.frame(maxWidth: .infinity, alignment: .leading); if fixedHeight != nil { Spacer(minLength: 0) } }.padding(15).frame(height: fixedHeight).background(Color(.systemBackground)).cornerRadius(15).shadow(color: Color.textDark.opacity(0.05), radius: 8, x: 0, y: 4) } }
+
+// MARK: - Redesigned Next Lesson Content
+struct NextLessonContent: View {
+    let lesson: Lesson?
+    var studentName: String? // Added student name parameter
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let l = lesson {
+                // Name (Prominent)
+                HStack {
+                    Image(systemName: "person.fill").foregroundColor(.primaryBlue)
+                    Text(studentName ?? "Loading...")
+                        .font(.headline)
+                        .lineLimit(1)
+                }
+                
+                // Time
+                HStack {
+                    Image(systemName: "clock.fill").foregroundColor(.secondary)
+                    Text(l.startTime.formatted(date: .omitted, time: .shortened))
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                
+                // Pickup Location (Icon only, text removed)
+                HStack {
+                    Image(systemName: "location.fill").foregroundColor(.secondary)
+                    Text(l.pickupLocation) // Removed "Pickup: " prefix
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            } else {
+                Text("No Upcoming Lessons")
+                    .font(.subheadline)
+                    .bold()
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+}
+
+struct EarningsSummaryContent: View { let earnings: Double; var body: some View { VStack(alignment: .leading, spacing: 4) { Text("£\(earnings, specifier: "%.2f")").font(.title2).bold().foregroundColor(.accentGreen); Text("This Week").font(.subheadline).foregroundColor(.secondary); Rectangle().fill(Color.accentGreen.opacity(0.3)).frame(height: 10).cornerRadius(5) } } }
+struct StudentsOverviewContent: View { let progress: Double; var body: some View { HStack { CircularProgressView(progress: progress, color: .orange, size: 60).padding(.trailing, 10); VStack(alignment: .leading) { Text("Average Student Progress").font(.subheadline).foregroundColor(.secondary); Text("\(Int(progress * 100))% Mastery").font(.headline) }; Spacer(); Image(systemName: "chevron.right").foregroundColor(.secondary) } } }
+struct DashboardCard<Content: View>: View { let title: String; let systemIcon: String; var accentColor: Color = .primaryBlue; var fixedHeight: CGFloat? = nil; @ViewBuilder let content: Content; var body: some View { VStack(alignment: .leading, spacing: 10) { HStack { Label(title, systemImage: systemIcon).font(.subheadline).bold().foregroundColor(accentColor); Spacer() }; Divider().opacity(0.5); content.frame(maxWidth: .infinity, alignment: .leading); if fixedHeight != nil { Spacer(minLength: 0) } }.padding(15).frame(height: fixedHeight).background(Color(.systemBackground)).cornerRadius(15).shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4) } }
 struct QuickActionButton: View { let title: String; let icon: String; let color: Color; let action: () -> Void; var body: some View { Button(action: action) { VStack(spacing: 5) { Image(systemName: icon).font(.title2); Text(title).font(.caption).bold().lineLimit(1) }.frame(maxWidth: .infinity).padding(.vertical, 15).background(color.opacity(0.15)).foregroundColor(color).cornerRadius(12) } } }

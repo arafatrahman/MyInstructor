@@ -1,7 +1,28 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/LessonDetailsView.swift
-// --- UPDATED: Displays Student Name correctly & links to StudentProfileView ---
+// --- UPDATED: Fixed Combine import and non-optional binding error ---
 
 import SwiftUI
+import Combine // Added to support ObservableObject and @Published
+
+// MARK: - View Model
+@MainActor
+class LessonDetailsViewModel: ObservableObject {
+    @Published var student: Student?
+    
+    func loadStudent(id: String, dataService: DataService) async {
+        // If we already have the correct student loaded, we don't need to set it to nil
+        // or re-fetch immediately unless necessary. This stability prevents UI glitches.
+        if let current = student, current.id == id {
+            return
+        }
+        
+        let fetchedStudent = await dataService.fetchStudent(withID: id)
+        // Only update if we got a valid result
+        if let validStudent = fetchedStudent {
+            self.student = validStudent
+        }
+    }
+}
 
 // Flow Item 8: Lesson Details View
 struct LessonDetailsView: View {
@@ -13,8 +34,12 @@ struct LessonDetailsView: View {
     
     @State var lesson: Lesson
     
+    // CHANGED: Use StateObject instead of @State to persist student data across parent updates
+    @StateObject private var viewModel = LessonDetailsViewModel()
+    
     // Changed to Student model to support both Online and Offline students
-    @State private var student: Student? = nil
+    // We use a computed property to maintain compatibility with existing code
+    private var student: Student? { viewModel.student }
     
     @State private var isShowingEditSheet = false
     @State private var isShowingCancelAlert = false
@@ -171,11 +196,9 @@ struct LessonDetailsView: View {
         .sheet(isPresented: $isShowingFinishSheet) {
             FinishLessonSheet(lesson: lesson, onComplete: { self.lesson.status = .completed; isShowingFinishSheet = false; dismiss() })
         }
-        .task {
-            // Fetch unified Student object
-            if self.student == nil {
-                self.student = await dataService.fetchStudent(withID: lesson.studentID)
-            }
+        // CHANGED: Removed 'if let' because studentID is already a String (not Optional)
+        .task(id: lesson.studentID) {
+            await viewModel.loadStudent(id: lesson.studentID, dataService: dataService)
         }
     }
     

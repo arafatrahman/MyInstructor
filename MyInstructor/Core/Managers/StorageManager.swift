@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/StorageManager.swift
-// --- UPDATED: Added uploadVaultDocument ---
+// --- UPDATED: Added contentType support for Vault documents (PDF/Image) ---
 
 import Foundation
 import FirebaseStorage
@@ -30,11 +30,11 @@ class StorageManager: ObservableObject {
         return storageReference.child("vehicle_photos").child(userID).child("\(mediaID).jpg")
     }
     
-    // --- NEW REFERENCE ---
-    private func vaultDocumentsReference(userID: String) -> StorageReference {
+    // --- UPDATED REFERENCE HELPER ---
+    private func vaultDocumentsReference(userID: String, extension: String) -> StorageReference {
         let docID = UUID().uuidString
         // "vault" folder implies secure storage logic in Security Rules
-        return storageReference.child("vault").child(userID).child("\(docID).jpg")
+        return storageReference.child("vault").child(userID).child("\(docID).\(`extension`)")
     }
 
     // ... (Existing uploadPostMedia function) ...
@@ -71,20 +71,24 @@ class StorageManager: ObservableObject {
         return downloadURL.absoluteString
     }
     
-    // --- NEW FUNCTION: Upload Vault Document ---
-    func uploadVaultDocument(photoData: Data, userID: String) async throws -> String {
-        print("StorageManager: Uploading to Vault...")
-        guard let image = UIImage(data: photoData),
-              let compressedJPEGData = image.jpegData(compressionQuality: 0.8) else {
-            throw NSError(domain: "StorageManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Could not compress image."])
+    // --- UPDATED FUNCTION: Upload Vault Document (supports PDF & Image) ---
+    func uploadVaultDocument(fileData: Data, userID: String, contentType: String) async throws -> String {
+        print("StorageManager: Uploading to Vault (\(contentType))...")
+        
+        // Determine extension
+        let fileExtension: String
+        if contentType == "application/pdf" {
+            fileExtension = "pdf"
+        } else {
+            fileExtension = "jpg"
         }
 
-        let docRef = vaultDocumentsReference(userID: userID)
+        let docRef = vaultDocumentsReference(userID: userID, extension: fileExtension)
         let metadata = StorageMetadata()
-        metadata.contentType = "image/jpeg"
+        metadata.contentType = contentType
         metadata.customMetadata = ["secured": "true"] // Metadata flag for security rules
         
-        _ = try await docRef.putDataAsync(compressedJPEGData, metadata: metadata)
+        _ = try await docRef.putDataAsync(fileData, metadata: metadata)
         let downloadURL = try await docRef.downloadURL()
         return downloadURL.absoluteString
     }

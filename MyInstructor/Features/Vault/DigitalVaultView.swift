@@ -1,8 +1,10 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Vault/DigitalVaultView.swift
-// --- NEW FILE: Digital Vault for Secure Documents ---
+// --- UPDATED FILE: Added PDF Support & Viewer ---
 
 import SwiftUI
 import UIKit
+import PDFKit
+import UniformTypeIdentifiers
 
 struct DigitalVaultView: View {
     @EnvironmentObject var authManager: AuthManager
@@ -11,11 +13,22 @@ struct DigitalVaultView: View {
 
     @State private var documents: [VaultDocument] = []
     @State private var isLoading = true
+    
+    // Picker States
+    @State private var showActionSheet = false
     @State private var showImagePicker = false
+    @State private var showDocumentPicker = false
+    
     @State private var uploadStatus = ""
     @State private var isUploading = false
     
-    // To present the selected image fullscreen
+    // Naming States
+    @State private var showNamePrompt = false
+    @State private var newDocumentName = ""
+    @State private var tempFileData: Data?
+    @State private var tempMimeType: String = ""
+    
+    // Viewer State
     @State private var selectedDocument: VaultDocument?
 
     var body: some View {
@@ -34,7 +47,7 @@ struct DigitalVaultView: View {
                             icon: "lock.shield",
                             message: "Your Vault is Empty.",
                             actionTitle: "Upload Document",
-                            action: { showImagePicker = true }
+                            action: { showActionSheet = true }
                         )
                         Spacer()
                     } else {
@@ -80,9 +93,9 @@ struct DigitalVaultView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        showImagePicker = true
+                        showActionSheet = true
                     } label: {
-                        Image(systemName: "plus.shield.fill")
+                        Image(systemName: "plus")
                             .font(.headline)
                             .foregroundColor(.primaryBlue)
                     }
@@ -91,41 +104,98 @@ struct DigitalVaultView: View {
             .task {
                 await fetchData()
             }
+            // --- Selection Menu ---
+            .confirmationDialog("Upload Document", isPresented: $showActionSheet) {
+                Button("Photo Library") { showImagePicker = true }
+                Button("Files (PDF)") { showDocumentPicker = true }
+                Button("Cancel", role: .cancel) { }
+            }
+            // --- Image Picker ---
             .sheet(isPresented: $showImagePicker) {
                 VaultImagePicker { image in
-                    Task { await uploadImage(image) }
+                    if let data = image.jpegData(compressionQuality: 0.8) {
+                        self.tempFileData = data
+                        self.tempMimeType = "image/jpeg"
+                        self.newDocumentName = ""
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self.showNamePrompt = true
+                        }
+                    }
                 }
             }
-            // Simple overlay for viewing the document
+            // --- Document Picker (PDF) ---
+            .sheet(isPresented: $showDocumentPicker) {
+                VaultDocumentPicker { url in
+                    if let data = try? Data(contentsOf: url) {
+                        self.tempFileData = data
+                        self.tempMimeType = "application/pdf"
+                        // Pre-fill name with filename
+                        self.newDocumentName = url.deletingPathExtension().lastPathComponent
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self.showNamePrompt = true
+                        }
+                    }
+                }
+            }
+            // --- Name Alert ---
+            .alert("Name Document", isPresented: $showNamePrompt) {
+                TextField("Document Name", text: $newDocumentName)
+                Button("Upload") {
+                    if let data = tempFileData {
+                        let finalName = newDocumentName.isEmpty ? "Document \(Date().formatted(date: .numeric, time: .omitted))" : newDocumentName
+                        Task { await uploadFile(data: data, mimeType: tempMimeType, title: finalName) }
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    tempFileData = nil
+                }
+            } message: {
+                Text("Enter a name for this secure document.")
+            }
+            // --- Viewer Sheet ---
             .sheet(item: $selectedDocument) { doc in
                 NavigationView {
                     VStack {
-                        AsyncImage(url: URL(string: doc.url)) { phase in
-                            switch phase {
-                            case .empty: ProgressView()
-                            case .success(let image): image.resizable().scaledToFit()
-                            case .failure: Image(systemName: "exclamationmark.triangle").font(.largeTitle)
-                            @unknown default: EmptyView()
+                        if doc.fileType == "pdf" {
+                            // PDF Viewer
+                            if let url = URL(string: doc.url) {
+                                PDFKitView(url: url)
+                                    .edgesIgnoringSafeArea(.bottom)
+                            } else {
+                                Text("Invalid URL").foregroundColor(.secondary)
                             }
+                        } else {
+                            // Image Viewer
+                            AsyncImage(url: URL(string: doc.url)) { phase in
+                                switch phase {
+                                case .empty: ProgressView()
+                                case .success(let image): image.resizable().scaledToFit()
+                                case .failure: Image(systemName: "exclamationmark.triangle").font(.largeTitle)
+                                @unknown default: EmptyView()
+                                }
+                            }
+                            .padding()
                         }
-                        .padding()
                         
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(doc.title).font(.headline)
-                            Text("Added: \(doc.date.formatted())").font(.caption).foregroundColor(.secondary)
-                            if doc.isEncrypted {
-                                Label("End-to-End Secure", systemImage: "lock.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.accentGreen)
-                                    .padding(6)
-                                    .background(Color.accentGreen.opacity(0.1))
-                                    .cornerRadius(6)
+                        // Metadata Footer
+                        if doc.fileType != "pdf" { // For PDF, we might want full screen, so hide this or overlay it
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(doc.title).font(.headline)
+                                Text("Added: \(doc.date.formatted())").font(.caption).foregroundColor(.secondary)
+                                if doc.isEncrypted {
+                                    Label("End-to-End Secure", systemImage: "lock.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.accentGreen)
+                                        .padding(6)
+                                        .background(Color.accentGreen.opacity(0.1))
+                                        .cornerRadius(6)
+                                }
                             }
+                            .padding()
+                            Spacer()
                         }
-                        .padding()
-                        Spacer()
                     }
-                    .navigationTitle("Secure Viewer")
+                    .navigationTitle(doc.title)
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .navigationBarLeading) {
@@ -148,23 +218,25 @@ struct DigitalVaultView: View {
         isLoading = false
     }
     
-    private func uploadImage(_ image: UIImage) async {
-        guard let id = authManager.user?.id,
-              let data = image.jpegData(compressionQuality: 0.8) else { return }
+    // Updated to handle generic file data
+    private func uploadFile(data: Data, mimeType: String, title: String) async {
+        guard let id = authManager.user?.id else { return }
         
         isUploading = true
         do {
             // 1. Upload to Storage
-            let url = try await StorageManager.shared.uploadVaultDocument(photoData: data, userID: id)
+            let url = try await StorageManager.shared.uploadVaultDocument(fileData: data, userID: id, contentType: mimeType)
             
             // 2. Create Metadata Record
+            let fileType = mimeType == "application/pdf" ? "pdf" : "image"
+            
             let newDoc = VaultDocument(
                 userID: id,
-                title: "Receipt \(Date().formatted(date: .numeric, time: .omitted))",
+                title: title,
                 date: Date(),
                 url: url,
                 notes: nil,
-                fileType: "image",
+                fileType: fileType,
                 isEncrypted: true
             )
             
@@ -176,17 +248,15 @@ struct DigitalVaultView: View {
             print("Upload failed: \(error)")
         }
         isUploading = false
+        // Cleanup
+        tempFileData = nil
     }
     
     private func deleteDocument(_ doc: VaultDocument) async {
         guard let id = authManager.user?.id, let docID = doc.id else { return }
         do {
-            // Delete from Firestore
             try await dataService.deleteVaultDocument(userID: id, docID: docID)
-            
-            // Delete from Storage
             try await StorageManager.shared.deleteMedia(from: doc.url)
-            
             await fetchData()
         } catch {
             print("Delete failed: \(error)")
@@ -198,12 +268,16 @@ struct DigitalVaultView: View {
 struct VaultDocumentRow: View {
     let doc: VaultDocument
     
+    var isPdf: Bool { doc.fileType == "pdf" }
+    
     var body: some View {
         HStack(spacing: 15) {
             ZStack {
                 Rectangle().fill(Color(.systemGray6)).frame(width: 50, height: 60).cornerRadius(8)
-                Image(systemName: "doc.text.image.fill")
-                    .foregroundColor(.secondary)
+                // Different Icon for PDF
+                Image(systemName: isPdf ? "doc.text.fill" : "doc.text.image.fill")
+                    .foregroundColor(isPdf ? .red : .secondary)
+                    .font(.title2)
             }
             
             VStack(alignment: .leading, spacing: 4) {
@@ -238,7 +312,7 @@ struct VaultImagePicker: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.delegate = context.coordinator
-        picker.sourceType = .photoLibrary // or .camera
+        picker.sourceType = .photoLibrary
         return picker
     }
     
@@ -257,6 +331,50 @@ struct VaultImagePicker: UIViewControllerRepresentable {
                 parent.onImagePicked(image)
             }
             parent.presentationMode.wrappedValue.dismiss()
+        }
+    }
+}
+
+// MARK: - Helper: Document Picker (PDF)
+struct VaultDocumentPicker: UIViewControllerRepresentable {
+    @Environment(\.presentationMode) var presentationMode
+    let onPick: (URL) -> Void
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.pdf], asCopy: true)
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let parent: VaultDocumentPicker
+        init(_ parent: VaultDocumentPicker) { self.parent = parent }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            if let url = urls.first {
+                parent.onPick(url)
+            }
+        }
+    }
+}
+
+// MARK: - Helper: PDF Viewer
+struct PDFKitView: UIViewRepresentable {
+    let url: URL
+    
+    func makeUIView(context: Context) -> PDFView {
+        let pdfView = PDFView()
+        pdfView.autoScales = true
+        return pdfView
+    }
+    
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        if uiView.document?.documentURL != url {
+            uiView.document = PDFDocument(url: url)
         }
     }
 }

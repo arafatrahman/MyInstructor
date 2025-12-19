@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Common/AddNoteView.swift
-// --- UPDATED: Separated Title and Content Logic ---
+// --- UPDATED: Added Priority Picker with Color Indicators ---
 
 import SwiftUI
 
@@ -16,6 +16,7 @@ struct AddNoteView: View {
     @State private var date = Date()
     @State private var noteTitle = ""
     @State private var noteContent = ""
+    @State private var priority: NotePriority = .low // Default priority
     @State private var isLoading = false
     @State private var errorMessage: String?
     
@@ -31,6 +32,20 @@ struct AddNoteView: View {
                 Section("Note Details") {
                     DatePicker("Date", selection: $date, displayedComponents: [.date, .hourAndMinute])
                     TextField("Title (Optional)", text: $noteTitle)
+                    
+                    // --- ADDED: Priority Picker ---
+                    Picker("Priority", selection: $priority) {
+                        ForEach(NotePriority.allCases, id: \.self) { p in
+                            HStack {
+                                Text(p.rawValue)
+                                Spacer()
+                                Circle()
+                                    .fill(priorityColor(p))
+                                    .frame(width: 10, height: 10)
+                            }
+                            .tag(p)
+                        }
+                    }
                 }
                 
                 Section("Content") {
@@ -69,6 +84,8 @@ struct AddNoteView: View {
                     // Load title and content separately
                     noteTitle = note.title ?? ""
                     noteContent = note.notes ?? ""
+                    // Load priority
+                    priority = note.priority ?? .low
                 }
             }
         }
@@ -87,7 +104,8 @@ struct AddNoteView: View {
             topic: nil,
             // Save fields separately
             title: noteTitle.isEmpty ? nil : noteTitle,
-            notes: noteContent.isEmpty ? nil : noteContent
+            notes: noteContent.isEmpty ? nil : noteContent,
+            priority: priority // Save Priority
         )
         
         Task {
@@ -103,6 +121,15 @@ struct AddNoteView: View {
                 errorMessage = "Failed to save: \(error.localizedDescription)"
             }
             isLoading = false
+        }
+    }
+    
+    // Helper for priority color
+    private func priorityColor(_ p: NotePriority) -> Color {
+        switch p {
+        case .low: return .green
+        case .medium: return .orange
+        case .high: return .red
         }
     }
 }

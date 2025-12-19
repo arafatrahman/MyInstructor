@@ -1,3 +1,6 @@
+// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Models/Model.swift
+// --- UPDATED: Added NotePriority and priority field to PracticeSession ---
+
 import Foundation
 import FirebaseFirestore
 import CoreLocation
@@ -175,6 +178,14 @@ struct AppNotification: Identifiable, Codable {
 }
 
 // MARK: - Practice Session Model (Student Log)
+
+// --- ADDED: Note Priority Enum ---
+enum NotePriority: String, Codable, CaseIterable {
+    case low = "Low"
+    case medium = "Medium"
+    case high = "High"
+}
+
 struct PracticeSession: Identifiable, Codable {
     @DocumentID var id: String?
     let studentID: String
@@ -184,6 +195,9 @@ struct PracticeSession: Identifiable, Codable {
     var topic: String?
     var title: String?
     var notes: String?
+    
+    // --- ADDED: Priority Field ---
+    var priority: NotePriority?
     
     var durationHours: Double {
         return duration / 3600.0

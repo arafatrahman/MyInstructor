@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Common/NotesListView.swift
-// --- UPDATED: Displays Title and Content separately in list row ---
+// --- UPDATED: Displays Priority Color Indicator ---
 
 import SwiftUI
 
@@ -34,26 +34,49 @@ struct NotesListView: View {
                                 // Tap to Edit
                                 noteToEdit = note
                             } label: {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    // Display Title if available
-                                    if let title = note.title, !title.isEmpty {
-                                        Text(title)
-                                            .font(.headline)
-                                            .foregroundColor(.primary)
+                                HStack(alignment: .top, spacing: 12) {
+                                    
+                                    // --- ADDED: Priority Indicator ---
+                                    if let priority = note.priority {
+                                        RoundedRectangle(cornerRadius: 2)
+                                            .fill(priorityColor(priority))
+                                            .frame(width: 4)
+                                            .padding(.vertical, 2)
                                     }
                                     
-                                    // Display Content
-                                    Text(note.notes ?? "No Content")
-                                        .font(.body)
-                                        .foregroundColor(note.title?.isEmpty == false ? .secondary : .primary)
-                                        .lineLimit(4)
-                                    
-                                    // Date Footer
-                                    HStack {
-                                        Text(note.date.formatted(date: .abbreviated, time: .shortened))
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                        Spacer()
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        // Display Title if available
+                                        if let title = note.title, !title.isEmpty {
+                                            Text(title)
+                                                .font(.headline)
+                                                .foregroundColor(.primary)
+                                        }
+                                        
+                                        // Display Content
+                                        Text(note.notes ?? "No Content")
+                                            .font(.body)
+                                            .foregroundColor(note.title?.isEmpty == false ? .secondary : .primary)
+                                            .lineLimit(4)
+                                        
+                                        // Date Footer
+                                        HStack {
+                                            Text(note.date.formatted(date: .abbreviated, time: .shortened))
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                            Spacer()
+                                            
+                                            // Optional: Display Priority Text as well
+                                            if let priority = note.priority {
+                                                Text(priority.rawValue)
+                                                    .font(.caption2)
+                                                    .fontWeight(.bold)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(priorityColor(priority).opacity(0.1))
+                                                    .foregroundColor(priorityColor(priority))
+                                                    .cornerRadius(4)
+                                            }
+                                        }
                                     }
                                 }
                                 .padding(.vertical, 4)
@@ -135,6 +158,15 @@ struct NotesListView: View {
         Task {
             try? await lessonManager.deletePracticeSession(id: id)
             await fetchNotes()
+        }
+    }
+    
+    // Helper for priority color
+    private func priorityColor(_ p: NotePriority) -> Color {
+        switch p {
+        case .low: return .green
+        case .medium: return .orange
+        case .high: return .red
         }
     }
 }

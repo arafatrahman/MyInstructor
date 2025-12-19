@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Common/NotesListView.swift
-// --- UPDATED: Displays Priority Color Indicator ---
+// --- UPDATED: Added Context Menu (Quick Actions) for Edit/Delete ---
 
 import SwiftUI
 
@@ -82,6 +82,20 @@ struct NotesListView: View {
                                 .padding(.vertical, 4)
                             }
                             .buttonStyle(.plain) // Standard list behavior
+                            // --- ADDED: Context Menu (Quick Actions) ---
+                            .contextMenu {
+                                Button {
+                                    noteToEdit = note
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                
+                                Button(role: .destructive) {
+                                    deleteNote(note)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                             .swipeActions(edge: .trailing) {
                                 // Delete Action
                                 Button(role: .destructive) {

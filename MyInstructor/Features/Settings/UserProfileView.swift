@@ -1,11 +1,14 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/UserProfileView.swift
-// --- UPDATED: Added clickable Followers/Following stats to ProfileHeaderCard ---
+// --- UPDATED: Switched 'Edit Profile' to a Sheet to fix navigation 'pop back' bug ---
 
 import SwiftUI
 
 struct UserProfileView: View {
     @EnvironmentObject var authManager: AuthManager
     @Environment(\.colorScheme) var colorScheme
+    
+    // State to control the presentation of the Edit Sheet
+    @State private var showEditProfile = false
 
     private var appBlue: Color {
         return Color.primaryBlue
@@ -46,11 +49,28 @@ struct UserProfileView: View {
         .background(Color(.systemBackground))
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                NavigationLink(destination: ProfileView()) {
+                // Button simply toggles the state for the sheet
+                Button {
+                    showEditProfile = true
+                } label: {
                     Text("Edit Profile")
                         .bold()
                         .foregroundColor(appBlue)
                 }
+            }
+        }
+        // --- ADDED: Present ProfileView as a Sheet ---
+        .sheet(isPresented: $showEditProfile) {
+            NavigationView {
+                ProfileView()
+                    // Add a Cancel button since it's now a modal sheet
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                showEditProfile = false
+                            }
+                        }
+                    }
             }
         }
     }
@@ -112,7 +132,7 @@ private struct ProfileHeaderCard: View {
             .font(.system(size: 14))
             .foregroundColor(Color.primaryBlue)
             
-            // --- NEW: Clickable Stats ---
+            // --- Stats Links ---
             HStack(spacing: 40) {
                 NavigationLink(destination: UserListView(title: "Followers", userIDs: followerIDs)) {
                     VStack(spacing: 2) {
@@ -139,7 +159,6 @@ private struct ProfileHeaderCard: View {
                 .buttonStyle(.plain)
             }
             .padding(.vertical, 8)
-            // ---------------------------
             
             Spacer().frame(height: 4)
         }

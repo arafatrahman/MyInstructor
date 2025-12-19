@@ -124,26 +124,25 @@ struct InstructorDashboardView: View {
                                     // 6. Record Payment
                                     QuickActionButton(title: "Record Payment", icon: "creditcard.fill", color: .purple, action: { activeSheet = .recordPayment })
                                     
-                                    // 7. Live Map
-                                    QuickActionButton(title: "Live Map", icon: "map.fill", color: .teal, action: { activeSheet = .liveMap })
-                                    
+                                    // 7. My Vehicles
+                                    QuickActionButton(title: "My Vehicles", icon: "car.circle.fill", color: .primaryBlue, action: { activeSheet = .myVehicles })
                                     // 8. Service Book
                                     QuickActionButton(title: "Service Book", icon: "wrench.and.screwdriver.fill", color: .yellow, action: { activeSheet = .serviceBook })
                                     
-                                    // 9. My Vehicles
-                                    QuickActionButton(title: "My Vehicles", icon: "car.circle.fill", color: .primaryBlue, action: { activeSheet = .myVehicles })
-                                    
-                                    // 10. Mileage Log (NEW)
+                                    // 9. Mileage Log (NEW)
                                     QuickActionButton(title: "Mileage Log", icon: "speedometer", color: .cyan, action: { activeSheet = .mileageLog })
                                     
-                                    // 11. Digital Vault
-                                    QuickActionButton(title: "Digital Vault", icon: "lock.shield.fill", color: .gray, action: { activeSheet = .digitalVault })
+                                    // 10. Digital Vault
+                                    QuickActionButton(title: "Digital Vault", icon: "lock.shield.fill", color: .accentGreen, action: { activeSheet = .digitalVault })
                                     
-                                    // 12. Notes
+                                    // 11. Notes
                                     QuickActionButton(title: "Notes", icon: "note.text", color: .pink, action: { activeSheet = .notes })
-                                    
-                                    // 13. Contacts
+                                    // 12. Contacts
                                     QuickActionButton(title: "Contacts", icon: "phone.circle.fill", color: .indigo, action: { activeSheet = .contacts })
+                                    
+                                    // 13. Live Map
+                                    QuickActionButton(title: "Live Map", icon: "map.fill", color: .teal, action: { activeSheet = .liveMap })
+                                    
                                     
                                 }.padding(.horizontal)
                             }.padding(.top, 15)

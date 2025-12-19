@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- FULLY UPDATED: Includes Accurate Weekly Earnings, Redesigned Next Lesson Card (Icon Only) & Full Analytics ---
+// --- FULLY UPDATED: Fixed Top Header (Sticky) & Full Content Preserved ---
 
 import SwiftUI
 
@@ -45,104 +45,111 @@ struct InstructorDashboardView: View {
 
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
-                    DashboardHeader(notificationCount: notificationCount)
-                    
-                    if isLoading {
-                        ProgressView("Loading Dashboard...").padding(.top, 50).frame(maxWidth: .infinity)
-                    } else {
-                        // Main Cards
-                        HStack(spacing: 15) {
-                            // 1. Next Lesson Card (Redesigned)
-                            if let lesson = nextLesson {
-                                NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
+            VStack(spacing: 0) {
+                // MARK: - Fixed Header
+                // Placed outside the ScrollView to remain stationary
+                DashboardHeader(notificationCount: notificationCount)
+                    .padding(.bottom, 10) // Small spacing between header and scrollable content
+                
+                // MARK: - Scrollable Content
+                ScrollView {
+                    VStack(spacing: 20) {
+                        
+                        if isLoading {
+                            ProgressView("Loading Dashboard...").padding(.top, 50).frame(maxWidth: .infinity)
+                        } else {
+                            // Main Cards
+                            HStack(spacing: 15) {
+                                // 1. Next Lesson Card (Redesigned)
+                                if let lesson = nextLesson {
+                                    NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
+                                        DashboardCard(
+                                            title: "Next Lesson",
+                                            systemIcon: "calendar.badge.clock",
+                                            accentColor: .primaryBlue,
+                                            fixedHeight: 150,
+                                            content: { NextLessonContent(lesson: lesson, studentName: nextLessonStudentName) }
+                                        )
+                                    }.buttonStyle(.plain).frame(maxWidth: .infinity)
+                                } else {
                                     DashboardCard(
                                         title: "Next Lesson",
                                         systemIcon: "calendar.badge.clock",
                                         accentColor: .primaryBlue,
                                         fixedHeight: 150,
-                                        content: { NextLessonContent(lesson: lesson, studentName: nextLessonStudentName) }
+                                        content: { NextLessonContent(lesson: nil, studentName: nil) }
+                                    ).frame(maxWidth: .infinity)
+                                }
+                                
+                                // 2. Weekly Earnings Card (Clickable & Accurate)
+                                NavigationLink(destination: PaymentsView()) {
+                                    DashboardCard(
+                                        title: "Weekly Earnings",
+                                        systemIcon: "dollarsign.circle.fill",
+                                        accentColor: .accentGreen,
+                                        fixedHeight: 150,
+                                        content: { EarningsSummaryContent(earnings: weeklyEarnings) }
                                     )
-                                }.buttonStyle(.plain).frame(maxWidth: .infinity)
-                            } else {
-                                DashboardCard(
-                                    title: "Next Lesson",
-                                    systemIcon: "calendar.badge.clock",
-                                    accentColor: .primaryBlue,
-                                    fixedHeight: 150,
-                                    content: { NextLessonContent(lesson: nil, studentName: nil) }
-                                ).frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.plain)
+                                .frame(maxWidth: .infinity)
                             }
-                            
-                            // 2. Weekly Earnings Card (Clickable & Accurate)
-                            NavigationLink(destination: PaymentsView()) {
-                                DashboardCard(
-                                    title: "Weekly Earnings",
-                                    systemIcon: "dollarsign.circle.fill",
-                                    accentColor: .accentGreen,
-                                    fixedHeight: 150,
-                                    content: { EarningsSummaryContent(earnings: weeklyEarnings) }
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity)
-                        }
-                        .padding(.horizontal)
+                            .padding(.horizontal)
 
-                        // "Students Overview" card
-                        Button { activeSheet = .studentsList } label: {
-                            DashboardCard(title: "Students Overview", systemIcon: "person.3.fill", accentColor: .orange, content: { StudentsOverviewContent(progress: avgStudentProgress) })
-                        }.buttonStyle(.plain).padding(.horizontal)
-                        
-                        // Quick Actions
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Quick Actions").font(.headline).padding(.horizontal)
-                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
-                                
-                                // 1. Lessons
-                                QuickActionButton(title: "Lessons", icon: "list.bullet.clipboard.fill", color: .primaryBlue, action: { activeSheet = .allLessons })
-                                
-                                // 2. Track Exam
-                                QuickActionButton(title: "Track Exam", icon: "flag.checkered", color: .indigo, action: { activeSheet = .trackExam })
-                                
-                                // 3. Track Income
-                                QuickActionButton(title: "Track Income", icon: "chart.line.uptrend.xyaxis", color: .orange, action: { activeSheet = .trackIncome })
-                                
-                                // 4. Track Expense
-                                QuickActionButton(title: "Track Expense", icon: "chart.line.downtrend.xyaxis", color: .warningRed, action: { activeSheet = .trackExpense })
-                                
-                                // 5. Overall Analytics
-                                QuickActionButton(title: "Analytics", icon: "chart.bar.xaxis", color: .accentGreen, action: { activeSheet = .analytics })
-                                
-                                // 6. Record Payment
-                                QuickActionButton(title: "Record Payment", icon: "creditcard.fill", color: .purple, action: { activeSheet = .recordPayment })
-                                
-                                // 7. Live Map
-                                QuickActionButton(title: "Live Map", icon: "map.fill", color: .teal, action: { activeSheet = .liveMap })
-                                
-                                // 8. Service Book
-                                QuickActionButton(title: "Service Book", icon: "wrench.and.screwdriver.fill", color: .yellow, action: { activeSheet = .serviceBook })
-                                
-                                // 9. My Vehicles
-                                QuickActionButton(title: "My Vehicles", icon: "car.circle.fill", color: .primaryBlue, action: { activeSheet = .myVehicles })
-                                
-                                // 10. Mileage Log (NEW)
-                                QuickActionButton(title: "Mileage Log", icon: "speedometer", color: .cyan, action: { activeSheet = .mileageLog })
-                                
-                                // 11. Digital Vault
-                                QuickActionButton(title: "Digital Vault", icon: "lock.shield.fill", color: .gray, action: { activeSheet = .digitalVault })
-                                
-                                // 12. Notes
-                                QuickActionButton(title: "Notes", icon: "note.text", color: .pink, action: { activeSheet = .notes })
-                                
-                                // 13. Contacts
-                                QuickActionButton(title: "Contacts", icon: "phone.circle.fill", color: .indigo, action: { activeSheet = .contacts })
-                                
-                            }.padding(.horizontal)
-                        }.padding(.top, 15)
+                            // "Students Overview" card
+                            Button { activeSheet = .studentsList } label: {
+                                DashboardCard(title: "Students Overview", systemIcon: "person.3.fill", accentColor: .orange, content: { StudentsOverviewContent(progress: avgStudentProgress) })
+                            }.buttonStyle(.plain).padding(.horizontal)
+                            
+                            // Quick Actions
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Quick Actions").font(.headline).padding(.horizontal)
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
+                                    
+                                    // 1. Lessons
+                                    QuickActionButton(title: "Lessons", icon: "list.bullet.clipboard.fill", color: .primaryBlue, action: { activeSheet = .allLessons })
+                                    
+                                    // 2. Track Exam
+                                    QuickActionButton(title: "Track Exam", icon: "flag.checkered", color: .indigo, action: { activeSheet = .trackExam })
+                                    
+                                    // 3. Track Income
+                                    QuickActionButton(title: "Track Income", icon: "chart.line.uptrend.xyaxis", color: .orange, action: { activeSheet = .trackIncome })
+                                    
+                                    // 4. Track Expense
+                                    QuickActionButton(title: "Track Expense", icon: "chart.line.downtrend.xyaxis", color: .warningRed, action: { activeSheet = .trackExpense })
+                                    
+                                    // 5. Overall Analytics
+                                    QuickActionButton(title: "Analytics", icon: "chart.bar.xaxis", color: .accentGreen, action: { activeSheet = .analytics })
+                                    
+                                    // 6. Record Payment
+                                    QuickActionButton(title: "Record Payment", icon: "creditcard.fill", color: .purple, action: { activeSheet = .recordPayment })
+                                    
+                                    // 7. Live Map
+                                    QuickActionButton(title: "Live Map", icon: "map.fill", color: .teal, action: { activeSheet = .liveMap })
+                                    
+                                    // 8. Service Book
+                                    QuickActionButton(title: "Service Book", icon: "wrench.and.screwdriver.fill", color: .yellow, action: { activeSheet = .serviceBook })
+                                    
+                                    // 9. My Vehicles
+                                    QuickActionButton(title: "My Vehicles", icon: "car.circle.fill", color: .primaryBlue, action: { activeSheet = .myVehicles })
+                                    
+                                    // 10. Mileage Log (NEW)
+                                    QuickActionButton(title: "Mileage Log", icon: "speedometer", color: .cyan, action: { activeSheet = .mileageLog })
+                                    
+                                    // 11. Digital Vault
+                                    QuickActionButton(title: "Digital Vault", icon: "lock.shield.fill", color: .gray, action: { activeSheet = .digitalVault })
+                                    
+                                    // 12. Notes
+                                    QuickActionButton(title: "Notes", icon: "note.text", color: .pink, action: { activeSheet = .notes })
+                                    
+                                    // 13. Contacts
+                                    QuickActionButton(title: "Contacts", icon: "phone.circle.fill", color: .indigo, action: { activeSheet = .contacts })
+                                    
+                                }.padding(.horizontal)
+                            }.padding(.top, 15)
+                        }
+                        Spacer()
                     }
-                    Spacer()
                 }
             }
             .navigationTitle("Dashboard").navigationBarHidden(true)

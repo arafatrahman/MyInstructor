@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/DataService.swift
-// --- UPDATED: Added Vault Methods ---
+// --- UPDATED: Added fetchStudent(withID:) to support unified student fetching ---
 
 import Foundation
 import Combine
@@ -247,6 +247,21 @@ class DataService: ObservableObject {
         }
         // If neither found, assume deleted
         return "Deleted Account"
+    }
+    
+    // --- NEW: Unified Fetch (Online or Offline) ---
+    func fetchStudent(withID id: String) async -> Student? {
+        // 1. Try Online User
+        if let user = try? await fetchUser(withId: id) {
+            return Student(id: user.id, userID: user.id ?? "", name: user.name ?? "Unknown", photoURL: user.photoURL, email: user.email, phone: user.phone, address: user.address)
+        }
+        
+        // 2. Try Offline Student
+        if let doc = try? await offlineStudentsCollection.document(id).getDocument(), let off = try? doc.data(as: OfflineStudent.self) {
+             return Student(id: off.id, userID: off.id ?? UUID().uuidString, name: off.name, photoURL: nil, email: off.email ?? "", phone: off.phone, address: off.address, isOffline: true, averageProgress: off.progress ?? 0.0)
+        }
+        
+        return nil
     }
     
     func getStudentName(for studentID: String) -> String { return "Loading..." }

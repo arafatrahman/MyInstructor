@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Lessons/LessonDetailsView.swift
-// --- UPDATED: FinishLessonSheet now saves payment with a "Lesson: Topic" note ---
+// --- UPDATED: Displays Student Name correctly & links to StudentProfileView ---
 
 import SwiftUI
 
@@ -13,19 +13,21 @@ struct LessonDetailsView: View {
     
     @State var lesson: Lesson
     
-    @State private var student: AppUser? = nil
+    // Changed to Student model to support both Online and Offline students
+    @State private var student: Student? = nil
+    
     @State private var isShowingEditSheet = false
     @State private var isShowingCancelAlert = false
     @State private var isShowingFinishSheet = false
     
     // --- Computed Properties ---
     private var studentName: String {
-        student?.name ?? "Student"
+        student?.name ?? "Loading..."
     }
     
     private var studentInitials: String {
-        guard let student = student, let name = student.name else { return "S" }
-        let components = name.split(separator: " ").map { String($0) }
+        guard let student = student else { return "S" }
+        let components = student.name.split(separator: " ").map { String($0) }
         if components.count >= 2 {
             return "\(components[0].first ?? " ")\(components[1].first ?? " ")"
         } else if let first = components.first {
@@ -54,24 +56,41 @@ struct LessonDetailsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 
-                // --- Header Section ---
+                // --- Header Section (Now Clickable) ---
                 HStack(spacing: 12) {
-                    AsyncImage(url: studentPhotoURL) { phase in
-                        switch phase {
-                        case .success(let image): image.resizable().scaledToFill()
-                        case .failure, .empty:
-                            Text(studentInitials.uppercased()).font(.title3).bold().foregroundColor(.textDark)
-                        @unknown default: ProgressView()
+                    if let student = student {
+                        NavigationLink(destination: StudentProfileView(student: student)) {
+                            HStack(spacing: 12) {
+                                AsyncImage(url: studentPhotoURL) { phase in
+                                    switch phase {
+                                    case .success(let image): image.resizable().scaledToFill()
+                                    case .failure, .empty:
+                                        Text(studentInitials.uppercased()).font(.title3).bold().foregroundColor(.textDark)
+                                    @unknown default: ProgressView()
+                                    }
+                                }
+                                .frame(width: 50, height: 50)
+                                .background(Color.secondaryGray)
+                                .clipShape(Circle())
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(studentName).font(.title2).bold().foregroundColor(.textDark)
+                                    LessonStatusBadge(status: lesson.status)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain) // Keeps standard text colors inside link
+                    } else {
+                        // Loading State
+                        HStack(spacing: 12) {
+                            Circle().fill(Color.secondaryGray).frame(width: 50, height: 50)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Loading...").font(.title2).bold().foregroundColor(.textDark)
+                                LessonStatusBadge(status: lesson.status)
+                            }
                         }
                     }
-                    .frame(width: 50, height: 50)
-                    .background(Color.secondaryGray)
-                    .clipShape(Circle())
                     
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(studentName).font(.title2).bold().foregroundColor(.textDark)
-                        LessonStatusBadge(status: lesson.status)
-                    }
                     Spacer()
                     
                     Button(action: callStudent) {
@@ -153,9 +172,9 @@ struct LessonDetailsView: View {
             FinishLessonSheet(lesson: lesson, onComplete: { self.lesson.status = .completed; isShowingFinishSheet = false; dismiss() })
         }
         .task {
+            // Fetch unified Student object
             if self.student == nil {
-                do { self.student = try await dataService.fetchUser(withId: lesson.studentID) }
-                catch { print("Failed to fetch student: \(error)") }
+                self.student = await dataService.fetchStudent(withID: lesson.studentID)
             }
         }
     }
@@ -285,7 +304,7 @@ struct FinishLessonSheet: View {
                     date: Date(),
                     isPaid: isPaymentReceived,
                     paymentMethod: isPaymentReceived ? convertMethod(paymentMethod) : nil,
-                    note: "Lesson: \(lesson.topic)" // <--- THIS ENSURES IT SHOWS CORRECTLY
+                    note: "Lesson: \(lesson.topic)"
                 )
                 
                 try await paymentManager.recordPayment(newPayment: paymentRecord)

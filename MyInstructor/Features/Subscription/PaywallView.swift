@@ -106,11 +106,6 @@ struct PaywallView: View {
                                     Text("Recurring billing. Cancel anytime.")
                                         .font(.caption)
                                         .foregroundColor(.gray)
-                                    
-                                    HStack(spacing: 15) {
-                                        Link("Terms", destination: URL(string: "https://your-terms.com")!)
-                                        Link("Privacy", destination: URL(string: "https://your-privacy.com")!)
-                                    }
                                     .font(.caption2)
                                     .foregroundColor(.gray)
                                 }

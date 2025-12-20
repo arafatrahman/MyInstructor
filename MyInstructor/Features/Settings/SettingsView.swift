@@ -1,6 +1,3 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Settings/SettingsView.swift
-// --- UPDATED: Fixed filename generation to avoid slashes (directory errors) ---
-
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -32,6 +29,10 @@ struct SettingsView: View {
     @State private var showImportPicker = false
     @State private var alertMessage: String?
     @State private var showAlert = false
+    
+    // Dummy Data State
+    @State private var showDummyConfirmation = false
+    @State private var isGeneratingDummyData = false
     
     var isInstructor: Bool {
         authManager.role == .instructor
@@ -100,6 +101,23 @@ struct SettingsView: View {
                     .disabled(isImporting)
                 }
                 
+                // MARK: - Developer Tools (Instructors Only)
+                if isInstructor {
+                    Section("Developer Tools") {
+                        Button {
+                            showDummyConfirmation = true
+                        } label: {
+                            HStack {
+                                Label("Generate Dummy Data", systemImage: "wand.and.stars")
+                                Spacer()
+                                if isGeneratingDummyData { ProgressView() }
+                            }
+                        }
+                        .foregroundColor(.primaryBlue)
+                        .disabled(isGeneratingDummyData)
+                    }
+                }
+                
                 // MARK: - Account Actions (Bottom)
                 Section {
                     Button(role: .destructive) {
@@ -153,6 +171,7 @@ struct SettingsView: View {
                     self.hideEmail = user.hideEmail ?? false
                 }
             }
+            // Account Deletion Alert
             .alert("Delete Account", isPresented: $showDeleteConfirmation) {
                 SecureField("Enter Password", text: $password)
                 Button("Cancel", role: .cancel) { }
@@ -162,10 +181,41 @@ struct SettingsView: View {
             } message: {
                 Text("Please enter your password to confirm. This action will permanently delete your profile and community posts.")
             }
+            // Dummy Data Confirmation Alert
+            .alert("Generate Dummy Data?", isPresented: $showDummyConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Generate", role: .destructive) {
+                    performDummyDataGeneration()
+                }
+            } message: {
+                Text("This will add sample students, lessons, expenses, and vehicles to your account. This cannot be easily undone.")
+            }
         }
     }
     
     // MARK: - Actions
+    
+    private func performDummyDataGeneration() {
+        guard let userID = authManager.user?.id else { return }
+        isGeneratingDummyData = true
+        
+        Task {
+            do {
+                try await DummyDataManager.shared.generateDummyData(for: userID)
+                await MainActor.run {
+                    self.isGeneratingDummyData = false
+                    self.alertMessage = "Dummy data generated successfully! Pull to refresh your dashboards."
+                    self.showAlert = true
+                }
+            } catch {
+                await MainActor.run {
+                    self.isGeneratingDummyData = false
+                    self.alertMessage = "Failed to generate data: \(error.localizedDescription)"
+                    self.showAlert = true
+                }
+            }
+        }
+    }
     
     private func performExport() {
         guard let userID = authManager.user?.id else { return }

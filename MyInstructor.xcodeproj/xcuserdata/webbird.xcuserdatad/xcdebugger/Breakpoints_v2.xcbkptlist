@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Bucket
+   uuid = "B4569206-616C-4960-B2A2-4F28A38FA2CA"
+   type = "1"
+   version = "2.0">
+   <Breakpoints>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "DA5088E6-6A92-4315-8286-685953A10BAC"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "MyInstructor/Core/Managers/DummyDataManager.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "2"
+            endingLineNumber = "2"
+            landmarkName = "DummyDataManager"
+            landmarkType = "3">
+            <Locations>
+               <Location
+                  uuid = "DA5088E6-6A92-4315-8286-685953A10BAC - 1bc5c04d3aa3d563"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "MyInstructor.DummyDataManager.deinit"
+                  moduleName = "MyInstructor.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/webbird/Desktop/app-dev/MyInstructor/MyInstructor/Core/Managers/DummyDataManager.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "0"
+                  endingLineNumber = "0">
+               </Location>
+               <Location
+                  uuid = "DA5088E6-6A92-4315-8286-685953A10BAC - 7a9bc4955d39223"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "MyInstructor.DummyDataManager.__isolated_deallocating_deinit"
+                  moduleName = "MyInstructor.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/webbird/Desktop/app-dev/MyInstructor/MyInstructor/Core/Managers/DummyDataManager.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "0"
+                  endingLineNumber = "0">
+               </Location>
+               <Location
+                  uuid = "DA5088E6-6A92-4315-8286-685953A10BAC - 82ac3777abfbe866"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "MyInstructor.DummyDataManager.__deallocating_deinit"
+                  moduleName = "MyInstructor.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/webbird/Desktop/app-dev/MyInstructor/MyInstructor/Core/Managers/DummyDataManager.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "0"
+                  endingLineNumber = "0">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+   </Breakpoints>
+</Bucket>

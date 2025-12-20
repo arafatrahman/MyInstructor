@@ -13,7 +13,7 @@ struct AuthenticationView: View {
             
             // Clean, simplified header
             VStack(spacing: 5) {
-                Text(selection == 0 ? "Welcome Back" : "Join My LessonPilot")
+                Text(selection == 0 ? "Welcome Back" : "Join LessonPilot")
                     .font(.largeTitle).bold()
                     .foregroundColor(.textDark)
                 Text(selection == 0 ? "Sign in to your account." : "Create your new account.")

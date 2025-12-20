@@ -1,6 +1,6 @@
 import SwiftUI
 import FirebaseAuth
-import PhotosUI // Import for PhotosPicker
+import PhotosUI
 
 // --- Helper View for Modern Role Selection Card ---
 struct RoleSelectionCard: View {
@@ -15,33 +15,67 @@ struct RoleSelectionCard: View {
     }
     
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.largeTitle)
+                .font(.system(size: 30))
                 .foregroundColor(isSelected ? .white : color)
             
             Text(title)
-                .font(.headline).bold()
+                .font(.subheadline).bold()
                 .foregroundColor(isSelected ? .white : .textDark)
         }
-        .padding(.vertical, 25)
         .frame(maxWidth: .infinity)
-        .background(isSelected ? color : Color.secondaryGray)
-        .cornerRadius(10)
+        .padding(.vertical, 20)
+        .background(isSelected ? color : Color.white)
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(isSelected ? 0.15 : 0.05), radius: 8, x: 0, y: 4)
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? color : Color.clear, lineWidth: 3)
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(isSelected ? color : Color.secondaryGray, lineWidth: isSelected ? 0 : 1)
         )
-        .shadow(color: isSelected ? color.opacity(0.4) : Color.textDark.opacity(0.05), radius: 5, x: 0, y: 3)
+        .scaleEffect(isSelected ? 1.02 : 1.0)
         .onTapGesture {
-            withAnimation { // <-- Add animation
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 selectedRole = role
             }
         }
     }
 }
-// ---------------------------------------------
 
+// --- Helper View for Input Rows with Icons ---
+struct ModernInputRow: View {
+    var icon: String
+    var placeholder: String
+    @Binding var text: String
+    var isSecure: Bool = false
+    var keyboardType: UIKeyboardType = .default
+    var autoCapitalization: UITextAutocapitalizationType = .sentences
+    
+    var body: some View {
+        HStack(spacing: 15) {
+            Image(systemName: icon)
+                .foregroundColor(.textLight)
+                .frame(width: 24)
+            
+            if isSecure {
+                SecureField(placeholder, text: $text)
+                    .textContentType(.newPassword)
+            } else {
+                TextField(placeholder, text: $text)
+                    .keyboardType(keyboardType)
+                    .autocapitalization(autoCapitalization)
+            }
+        }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondaryGray, lineWidth: 1)
+        )
+    }
+}
 
 struct RegisterForm: View {
     @EnvironmentObject var authManager: AuthManager
@@ -65,28 +99,42 @@ struct RegisterForm: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 25) {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 30) {
                 
-                // --- PHOTO PICKER ---
-                VStack {
+                // --- SECTION 1: IDENTITY (Photo & Role) ---
+                VStack(spacing: 20) {
+                    // Photo Picker
                     PhotosPicker(
                         selection: $selectedPhotoItem,
                         matching: .images,
                         photoLibrary: .shared()
                     ) {
-                        if let photoData = selectedPhotoData, let uiImage = UIImage(data: photoData) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 100, height: 100)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 2))
-                        } else {
-                            Image(systemName: "person.circle.fill")
-                                .resizable()
-                                .frame(width: 100, height: 100)
-                                .foregroundColor(.secondaryGray)
+                        ZStack(alignment: .bottomTrailing) {
+                            if let photoData = selectedPhotoData, let uiImage = UIImage(data: photoData) {
+                                Image(uiImage: uiImage)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 110, height: 110)
+                                    .clipShape(Circle())
+                                    .overlay(Circle().stroke(Color.primaryBlue, lineWidth: 3))
+                            } else {
+                                Circle()
+                                    .fill(Color.secondaryGray)
+                                    .frame(width: 110, height: 110)
+                                    .overlay(
+                                        Image(systemName: "camera.fill")
+                                            .font(.title)
+                                            .foregroundColor(.textLight)
+                                    )
+                            }
+                            
+                            // Edit Badge
+                            Image(systemName: "pencil.circle.fill")
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, Color.primaryBlue)
+                                .font(.system(size: 32))
+                                .offset(x: 4, y: 4)
                         }
                     }
                     .onChange(of: selectedPhotoItem) { newItem in
@@ -97,52 +145,57 @@ struct RegisterForm: View {
                         }
                     }
                     
-                    Text("Tap to add a profile photo")
-                        .font(.caption)
-                        .foregroundColor(.textLight)
-                }
-                .padding(.top, 10)
-
-                // --- ROLE SELECTION ---
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Select your role")
-                        .font(.subheadline).bold()
-                        .foregroundColor(.textDark)
-                        .padding(.leading, 5)
-
-                    HStack {
-                        RoleSelectionCard(role: .student, selectedRole: $selectedRole, title: "Student", icon: "car.fill", color: .primaryBlue)
+                    // Role Selection
+                    HStack(spacing: 15) {
+                        RoleSelectionCard(
+                            role: .student,
+                            selectedRole: $selectedRole,
+                            title: "Student",
+                            icon: "car.fill",
+                            color: .primaryBlue
+                        )
                         
-                        RoleSelectionCard(role: .instructor, selectedRole: $selectedRole, title: "Instructor", icon: "person.fill.viewfinder", color: .accentGreen)
+                        RoleSelectionCard(
+                            role: .instructor,
+                            selectedRole: $selectedRole,
+                            title: "Instructor",
+                            icon: "person.fill.viewfinder",
+                            color: .accentGreen
+                        )
                     }
                 }
-                .padding(.horizontal, 30)
+                .padding(.horizontal, 25)
                 
-                // --- COMMON FORM FIELDS ---
-                VStack(spacing: 15) {
-                    TextField("Full Name", text: $name)
-                        .textContentType(.name)
-                        .formTextFieldStyle()
+                // --- SECTION 2: PERSONAL INFO ---
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Personal Details")
+                        .font(.caption).bold()
+                        .foregroundColor(.textLight)
+                        .padding(.leading, 5)
                     
-                    TextField("Email Address", text: $email)
-                        .textContentType(.emailAddress)
-                        .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                        .formTextFieldStyle()
+                    ModernInputRow(
+                        icon: "person",
+                        placeholder: "Full Name",
+                        text: $name,
+                        autoCapitalization: .words
+                    )
                     
-                    SecureField("Create Password (min 6 chars)", text: $password)
-                        .textContentType(.newPassword)
-                        .formTextFieldStyle()
-
-                    TextField("Phone (Optional)", text: $phone)
-                        .textContentType(.telephoneNumber)
-                        .keyboardType(.phonePad)
-                        .formTextFieldStyle()
+                    ModernInputRow(
+                        icon: "phone",
+                        placeholder: "Phone Number (Optional)",
+                        text: $phone,
+                        keyboardType: .phonePad
+                    )
                     
+                    // Address Selector
                     Button {
                         isShowingAddressSearch = true
                     } label: {
-                        HStack {
+                        HStack(spacing: 15) {
+                            Image(systemName: "mappin.and.ellipse")
+                                .foregroundColor(.textLight)
+                                .frame(width: 24)
+                            
                             if let address = selectedAddress, !address.isEmpty {
                                 Text(address)
                                     .foregroundColor(.textDark)
@@ -153,72 +206,139 @@ struct RegisterForm: View {
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
+                                .font(.caption)
                                 .foregroundColor(.textLight)
                         }
                         .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondaryGray)
-                        .cornerRadius(10)
+                        .background(Color.white)
+                        .cornerRadius(12)
+                        .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.secondaryGray, lineWidth: 1)
+                        )
                     }
                 }
-                .padding(.horizontal, 30)
+                .padding(.horizontal, 25)
                 
-                // --- INSTRUCTOR-ONLY FIELDS (THIS IS THE FIX) ---
+                // --- SECTION 3: INSTRUCTOR SPECIFIC ---
                 if selectedRole == .instructor {
-                    VStack(spacing: 15) {
-                         TextField("Driving School (Optional)", text: $drivingSchool)
-                            .formTextFieldStyle()
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("Professional Info")
+                            .font(.caption).bold()
+                            .foregroundColor(.textLight)
+                            .padding(.leading, 5)
                         
-                        HStack {
-                            Text("Hourly Rate (£)")
+                        ModernInputRow(
+                            icon: "building.2",
+                            placeholder: "Driving School (Optional)",
+                            text: $drivingSchool,
+                            autoCapitalization: .words
+                        )
+                        
+                        HStack(spacing: 15) {
+                            Image(systemName: "sterlingsign.circle")
+                                .foregroundColor(.textLight)
+                                .frame(width: 24)
+                            
+                            Text("Hourly Rate")
+                                .foregroundColor(.textDark)
+                            
                             Spacer()
-                            TextField("Rate", text: $hourlyRate)
+                            
+                            TextField("0.00", text: $hourlyRate)
                                 .keyboardType(.decimalPad)
                                 .multilineTextAlignment(.trailing)
+                                .frame(width: 100)
                         }
                         .padding()
-                        .background(Color.secondaryGray)
-                        .cornerRadius(10)
+                        .background(Color.white)
+                        .cornerRadius(12)
+                        .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.secondaryGray, lineWidth: 1)
+                        )
                     }
-                    .padding(.horizontal, 30)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .padding(.horizontal, 25)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 
+                // --- SECTION 4: SECURITY ---
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("Account Security")
+                        .font(.caption).bold()
+                        .foregroundColor(.textLight)
+                        .padding(.leading, 5)
+                    
+                    ModernInputRow(
+                        icon: "envelope",
+                        placeholder: "Email Address",
+                        text: $email,
+                        keyboardType: .emailAddress,
+                        autoCapitalization: .none
+                    )
+                    
+                    ModernInputRow(
+                        icon: "lock",
+                        placeholder: "Create Password (min 6 chars)",
+                        text: $password,
+                        isSecure: true
+                    )
+                }
+                .padding(.horizontal, 25)
+
                 // Error Message
                 if let error = errorMessage {
-                    Text(error)
-                        .foregroundColor(.warningRed)
-                        .font(.caption)
-                        .padding(.horizontal, 30)
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                        Text(error)
+                    }
+                    .foregroundColor(.warningRed)
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 30)
                 }
                 
-                // Create Account Button
-                Button {
-                    registerAction()
-                } label: {
-                    HStack {
-                        if isLoading {
-                            ProgressView().tint(.white)
-                        } else {
-                            Text("Create Account")
+                // Action Buttons
+                VStack(spacing: 20) {
+                    Button {
+                        registerAction()
+                    } label: {
+                        HStack {
+                            if isLoading {
+                                ProgressView().tint(.white)
+                            } else {
+                                Text("Create Account")
+                                Image(systemName: "arrow.right")
+                            }
                         }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.primaryDrivingApp)
-                .disabled(!isFormValid || isLoading)
-                .padding(.horizontal, 30)
-
-                // Login link
-                Button("Already have an account? Sign In") {
-                    withAnimation {
-                        selection = 0 // Switch to Login tab
+                    .buttonStyle(.primaryDrivingApp)
+                    .disabled(!isFormValid || isLoading)
+                    .opacity(!isFormValid ? 0.6 : 1.0)
+                    
+                    // Login link
+                    Button {
+                        withAnimation {
+                            selection = 0 // Switch to Login tab
+                        }
+                    } label: {
+                        HStack {
+                            Text("Already have an account?")
+                                .foregroundColor(.textLight)
+                            Text("Sign In")
+                                .bold()
+                                .foregroundColor(.primaryBlue)
+                        }
+                        .font(.subheadline)
                     }
                 }
-                .font(.subheadline).bold()
-                .foregroundColor(.textLight)
+                .padding(.horizontal, 25)
+                .padding(.top, 10)
             }
-            .padding(.bottom, 40)
+            .padding(.bottom, 50)
             .animation(.easeInOut(duration: 0.3), value: selectedRole)
             .sheet(isPresented: $isShowingAddressSearch) {
                 AddressSearchView { selectedAddressString in
@@ -226,6 +346,7 @@ struct RegisterForm: View {
                 }
             }
         }
+        .background(Color(.systemGroupedBackground)) // Subtle light gray background for the whole form
     }
     
     // MARK: - Computed Properties and Actions
@@ -254,12 +375,10 @@ struct RegisterForm: View {
                 // On success, the AuthManager's listener will handle the navigation
                 
             } catch {
-                // If signUp throws an error, show it
                 print("!!! SignUp FAILED: \(error.localizedDescription)")
                 errorMessage = error.localizedDescription
                 isLoading = false
             }
-            // Don't set isLoading = false here, as success is handled by the listener
         }
     }
 }

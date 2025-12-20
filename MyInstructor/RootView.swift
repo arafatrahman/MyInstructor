@@ -86,13 +86,12 @@ struct SplashScreenView: View {
         ZStack {
             Color.primaryBlue.ignoresSafeArea()
             VStack(spacing: 20) {
-                Image(systemName: "steeringwheel")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 100)
-                    .foregroundColor(.white)
-                    .symbolEffect(.variableColor.iterative.reversing, options: .repeating, value: progress)
-                
+                Image("AppLogo")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 120, height: 120) // Slightly larger for better impact
+                                    .clipShape(RoundedRectangle(cornerRadius: 24)) // Modern rounded corners
+                                    .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
                 Text("Smart Lessons. Safe Driving.")
                     .font(.title2).bold()
                     .foregroundColor(.white)

@@ -7,6 +7,7 @@ struct RootView: View {
     @EnvironmentObject var subscriptionManager: SubscriptionManager
     
     @State private var showSplash = true
+    // Load initial state from UserDefaults
     @State private var hasSeenOnboarding: Bool = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
     
     var body: some View {
@@ -19,9 +20,15 @@ struct RootView: View {
                 })
             } else if !hasSeenOnboarding {
                 OnboardingView(onComplete: {
+                    // --- FIX START ---
+                    // 1. Save to UserDefaults so it persists
+                    UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
+                    
+                    // 2. Update State to trigger transition
                     withAnimation {
                         self.hasSeenOnboarding = true
                     }
+                    // --- FIX END ---
                 })
             } else if !authManager.isAuthenticated {
                 AuthenticationView()
@@ -35,8 +42,10 @@ struct RootView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-            if self.hasSeenOnboarding != UserDefaults.standard.bool(forKey: "hasSeenOnboarding") {
-                self.hasSeenOnboarding = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
+            // Keep state in sync with UserDefaults
+            let storedValue = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
+            if self.hasSeenOnboarding != storedValue {
+                self.hasSeenOnboarding = storedValue
             }
         }
         .task {
@@ -55,11 +64,9 @@ struct RootView: View {
         else if authManager.role == .instructor {
             // PRODUCTION LOGIC:
             // Only allow access if 'isPro' is true.
-            // 'isPro' becomes true if they buy a subscription OR start an Apple Free Trial.
             if subscriptionManager.isPro {
                 MainTabView()
             } else {
-                // If they haven't paid or started a trial via Apple, show Paywall immediately.
                 PaywallView()
             }
         }
@@ -68,9 +75,6 @@ struct RootView: View {
              MainTabView()
         }
     }
-    
-    // REMOVED: isWithinGracePeriod()
-    // Reason: In production, you rely on Apple's 'Introductory Offer' (Free Trial) configured in App Store Connect.
 }
 
 // ----------------------------------------------------------------------
@@ -85,23 +89,24 @@ struct SplashScreenView: View {
     var body: some View {
         ZStack {
             Color.primaryBlue.ignoresSafeArea()
+            
             VStack(spacing: 20) {
-                Image("AppLogo")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 120, height: 120) // Slightly larger for better impact
-                                    .clipShape(RoundedRectangle(cornerRadius: 24)) // Modern rounded corners
-                                    .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
-                Text("Smart Lessons. Safe Driving.")
-                    .font(.title2).bold()
-                    .foregroundColor(.white)
-                
-                ProgressView(value: progress)
-                    .progressViewStyle(LinearProgressViewStyle(tint: .white))
-                    .frame(width: 150)
-            }
+                           Image("AppLogo")
+                                               .resizable()
+                                               .scaledToFit()
+                                               .frame(width: 120, height: 120) // Slightly larger for better impact
+                                               .clipShape(RoundedRectangle(cornerRadius: 24)) // Modern rounded corners
+                                               .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+                           Text("Smart Lessons. Safe Driving.")
+                               .font(.title2).bold()
+                               .foregroundColor(.white)
+                           
+                           ProgressView(value: progress)
+                               .progressViewStyle(LinearProgressViewStyle(tint: .white))
+                               .frame(width: 150)
+             }
             .onAppear {
-                withAnimation(.linear(duration: 1.5)) {
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
                     progress = 1.0
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
@@ -120,47 +125,35 @@ struct MainTabView: View {
         TabView {
             if authManager.role == .instructor {
                 // Instructor Tabs
-                
-                // 1. Dashboard
                 InstructorDashboardView()
                     .tabItem { Label("Dashboard", systemImage: "house.fill") }
                 
-                // 2. Calendar
                 InstructorCalendarView()
                     .tabItem { Label("Calendar", systemImage: "calendar") }
                 
-                // 3. Broadcast
                 CommunityFeedView()
                     .tabItem { Label("Broadcast", systemImage: "megaphone.fill") }
                 
-                // 4. Students
                 StudentsListView()
                     .tabItem { Label("Students", systemImage: "person.2.fill") }
                 
-                // 5. Settings
                 SettingsView()
                     .tabItem { Label("Settings", systemImage: "gearshape.fill") }
                 
             } else if authManager.role == .student {
                 // Student Tabs
-                
-                // 1. Dashboard
                 StudentDashboardView()
                     .tabItem { Label("Dashboard", systemImage: "house.fill") }
                 
-                // 2. Schedule
                 StudentCalendarView()
                     .tabItem { Label("Schedule", systemImage: "calendar") }
                 
-                // 3. Broadcast
                 CommunityFeedView()
                     .tabItem { Label("Broadcast", systemImage: "megaphone.fill") }
                 
-                // 4. Instructors
                 MyInstructorsView()
                     .tabItem { Label("Instructors", systemImage: "person.2.fill") }
 
-                // 5. Settings
                 SettingsView()
                     .tabItem { Label("Settings", systemImage: "gearshape.fill") }
             

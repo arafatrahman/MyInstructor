@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/NotificationManager.swift
-// --- UPDATED: Added logic to mark notifications read by relatedID ---
+// --- UPDATED: Added student name to lesson reminders ---
 
 import Foundation
 import UserNotifications
@@ -110,7 +110,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
 
     // MARK: - Lesson Reminders
     
-    func scheduleLessonReminders(lesson: Lesson) {
+    // --- UPDATED: Added studentName parameter ---
+    func scheduleLessonReminders(lesson: Lesson, studentName: String) {
         guard let lessonID = lesson.id else { return }
         cancelReminders(for: lessonID)
         
@@ -121,7 +122,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         if date1HrBefore > Date() {
             let content = UNMutableNotificationContent()
             content.title = "Upcoming Lesson"
-            content.body = "Lesson '\(lesson.topic)' starts in 1 hour."
+            // --- UPDATED: Include student name ---
+            content.body = "Lesson with \(studentName): '\(lesson.topic)' starts in 1 hour."
             content.sound = .default
             content.userInfo = userInfo
             let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date1HrBefore), repeats: false)
@@ -132,7 +134,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         if lesson.startTime > Date() {
             let content = UNMutableNotificationContent()
             content.title = "Lesson Starting Now"
-            content.body = "Lesson '\(lesson.topic)' is starting."
+            // --- UPDATED: Include student name ---
+            content.body = "Lesson with \(studentName): '\(lesson.topic)' is starting."
             content.sound = .default
             content.userInfo = userInfo
             let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: lesson.startTime), repeats: false)

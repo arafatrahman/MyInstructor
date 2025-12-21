@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/StudentDashboardView.swift
-// --- UPDATED: Reordered Quick Actions (Track Exam -> Live Map pos, Live Map -> Payment History pos, Payment History -> Track Exam pos) ---
+// --- UPDATED: Fixed Missing argument for parameter 'studentName' in scheduleLessonReminders ---
 
 import SwiftUI
 
@@ -178,7 +178,11 @@ struct StudentDashboardView: View {
             self.latestFeedback = data.latestFeedback
             self.paymentDue = data.paymentDue
             self.completedLessonsCount = data.completedLessonsCount
-            if let lesson = self.upcomingLesson { notificationManager.scheduleLessonReminders(lesson: lesson) }
+            
+            // --- FIX: Passed studentName to NotificationManager ---
+            if let lesson = self.upcomingLesson {
+                notificationManager.scheduleLessonReminders(lesson: lesson, studentName: authManager.user?.name ?? "You")
+            }
         } catch { print("Failed: \(error)") }
         isLoading = false
     }

@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Core/Managers/LessonManager.swift
-// --- UPDATED: Sends notifications for Exam Schedule, Edit, and Delete ---
+// --- UPDATED: Fetches student name for notifications and uses updated NotificationManager signature ---
 
 import Foundation
 import FirebaseFirestore
@@ -50,6 +50,23 @@ class LessonManager: ObservableObject {
         let document = try await lessonsCollection.document(id).getDocument()
         return try? document.data(as: Lesson.self)
     }
+    
+    // MARK: - Helper
+    private func fetchStudentName(studentID: String) async -> String {
+        // Try Offline Student
+        if let doc = try? await db.collection("offline_students").document(studentID).getDocument(),
+           let student = try? doc.data(as: OfflineStudent.self) {
+            return student.name
+        }
+        
+        // Try App User (Real Student)
+        if let doc = try? await db.collection("users").document(studentID).getDocument(),
+           let user = try? doc.data(as: AppUser.self) {
+            return user.name ?? "Student"
+        }
+        
+        return "Student"
+    }
 
     // MARK: - Lesson CRUD
     func addLesson(newLesson: Lesson) async throws {
@@ -60,7 +77,10 @@ class LessonManager: ObservableObject {
         
         var lessonWithID = newLesson
         lessonWithID.id = ref.documentID
-        NotificationManager.shared.scheduleLessonReminders(lesson: lessonWithID)
+        
+        // --- UPDATED: Fetch name and pass to scheduler ---
+        let studentName = await fetchStudentName(studentID: newLesson.studentID)
+        NotificationManager.shared.scheduleLessonReminders(lesson: lessonWithID, studentName: studentName)
         
         let dateString = newLesson.startTime.formatted(date: .abbreviated, time: .shortened)
         NotificationManager.shared.sendNotification(
@@ -77,7 +97,10 @@ class LessonManager: ObservableObject {
         var lessonToSave = lesson
         lessonToSave.id = nil
         try lessonsCollection.document(lessonID).setData(from: lessonToSave)
-        NotificationManager.shared.scheduleLessonReminders(lesson: lesson)
+        
+        // --- UPDATED: Fetch name and pass to scheduler ---
+        let studentName = await fetchStudentName(studentID: lesson.studentID)
+        NotificationManager.shared.scheduleLessonReminders(lesson: lesson, studentName: studentName)
         
         let dateString = lesson.startTime.formatted(date: .abbreviated, time: .shortened)
         NotificationManager.shared.sendNotification(
@@ -115,7 +138,9 @@ class LessonManager: ObservableObject {
                     } else if initiatorID == lesson.studentID {
                         // Student cancelled -> Notify Instructor
                         recipientID = lesson.instructorID
-                        message = "The student has cancelled the lesson on \(dateStr)."
+                        // --- UPDATED: Use actual student name ---
+                        let studentName = await fetchStudentName(studentID: lesson.studentID)
+                        message = "\(studentName) has cancelled the lesson on \(dateStr)."
                     }
                     
                     // Send the notification

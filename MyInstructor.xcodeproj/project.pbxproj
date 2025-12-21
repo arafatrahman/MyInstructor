@@ -447,6 +447,7 @@
 				INFOPLIST_FILE = MyInstructor/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LessonPilot;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Needed to take photos of receipts or profile pictures.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "We use Face ID to securely access your Digital Vault documents.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "We track your location in the background to log lesson routes even when the phone is locked.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We need your location to track driving lessons and routes.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Needed to upload documents or profile pictures.";
@@ -486,6 +487,7 @@
 				INFOPLIST_FILE = MyInstructor/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LessonPilot;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Needed to take photos of receipts or profile pictures.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "We use Face ID to securely access your Digital Vault documents.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "We track your location in the background to log lesson routes even when the phone is locked.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We need your location to track driving lessons and routes.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Needed to upload documents or profile pictures.";

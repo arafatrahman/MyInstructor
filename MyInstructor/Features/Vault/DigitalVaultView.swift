@@ -1,10 +1,8 @@
-// File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Vault/DigitalVaultView.swift
-// --- UPDATED FILE: Added PDF Support & Viewer ---
-
 import SwiftUI
 import UIKit
 import PDFKit
 import UniformTypeIdentifiers
+import LocalAuthentication
 
 struct DigitalVaultView: View {
     @EnvironmentObject var authManager: AuthManager
@@ -12,7 +10,11 @@ struct DigitalVaultView: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var documents: [VaultDocument] = []
-    @State private var isLoading = true
+    @State private var isLoading = false
+    
+    // Security States
+    @State private var isUnlocked = false
+    @State private var authError: String? = nil
     
     // Picker States
     @State private var showActionSheet = false
@@ -36,52 +38,106 @@ struct DigitalVaultView: View {
             ZStack {
                 Color(.systemGroupedBackground).ignoresSafeArea()
                 
-                VStack {
-                    if isLoading {
-                        Spacer()
-                        ProgressView("Accessing Vault...")
-                        Spacer()
-                    } else if documents.isEmpty {
-                        Spacer()
-                        EmptyStateView(
-                            icon: "lock.shield",
-                            message: "Your Vault is Empty.",
-                            actionTitle: "Upload Document",
-                            action: { showActionSheet = true }
-                        )
-                        Spacer()
-                    } else {
-                        List {
-                            ForEach(documents) { doc in
-                                Button {
-                                    selectedDocument = doc
-                                } label: {
-                                    VaultDocumentRow(doc: doc)
-                                }
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                                .buttonStyle(.plain)
-                                .swipeActions(edge: .trailing) {
-                                    Button(role: .destructive) {
-                                        Task { await deleteDocument(doc) }
+                if isUnlocked {
+                    // --- Unlocked Content ---
+                    VStack {
+                        if isLoading {
+                            Spacer()
+                            ProgressView("Accessing Vault...")
+                            Spacer()
+                        } else if documents.isEmpty {
+                            Spacer()
+                            EmptyStateView(
+                                icon: "lock.shield",
+                                message: "Your Vault is Empty.",
+                                actionTitle: "Upload Document",
+                                action: { showActionSheet = true }
+                            )
+                            Spacer()
+                        } else {
+                            List {
+                                ForEach(documents) { doc in
+                                    Button {
+                                        selectedDocument = doc
                                     } label: {
-                                        Label("Destroy", systemImage: "trash.fill")
+                                        VaultDocumentRow(doc: doc)
+                                    }
+                                    .listRowSeparator(.hidden)
+                                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                                    .buttonStyle(.plain)
+                                    .swipeActions(edge: .trailing) {
+                                        Button(role: .destructive) {
+                                            Task { await deleteDocument(doc) }
+                                        } label: {
+                                            Label("Destroy", systemImage: "trash.fill")
+                                        }
                                     }
                                 }
                             }
+                            .listStyle(.plain)
                         }
-                        .listStyle(.plain)
+                        
+                        if isUploading {
+                            HStack {
+                                ProgressView()
+                                Text("Encrypting & Uploading...").font(.caption)
+                            }
+                            .padding()
+                            .background(Material.regular)
+                            .cornerRadius(20)
+                            .padding(.bottom)
+                        }
                     }
-                    
-                    if isUploading {
-                        HStack {
-                            ProgressView()
-                            Text("Encrypting & Uploading...").font(.caption)
+                } else {
+                    // --- Locked View ---
+                    VStack(spacing: 25) {
+                        Spacer()
+                        
+                        ZStack {
+                            Circle()
+                                .fill(Color.primaryBlue.opacity(0.1))
+                                .frame(width: 120, height: 120)
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 50))
+                                .foregroundColor(.primaryBlue)
                         }
-                        .padding()
-                        .background(Material.regular)
-                        .cornerRadius(20)
-                        .padding(.bottom)
+                        
+                        VStack(spacing: 8) {
+                            Text("Vault Locked")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            Text("Your documents are secured.\nAuthenticate to access them.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        
+                        Button {
+                            authenticate()
+                        } label: {
+                            HStack {
+                                Image(systemName: "faceid")
+                                Text("Unlock Vault")
+                            }
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 54)
+                            .background(Color.primaryBlue)
+                            .cornerRadius(14)
+                            .padding(.horizontal, 40)
+                        }
+                        .padding(.top, 10)
+                        
+                        if let error = authError {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                                .padding(.horizontal)
+                                .multilineTextAlignment(.center)
+                        }
+                        
+                        Spacer()
                     }
                 }
             }
@@ -92,17 +148,20 @@ struct DigitalVaultView: View {
                     Button("Back") { dismiss() }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showActionSheet = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.headline)
-                            .foregroundColor(.primaryBlue)
+                    // Only show Add button if unlocked
+                    if isUnlocked {
+                        Button {
+                            showActionSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.headline)
+                                .foregroundColor(.primaryBlue)
+                        }
                     }
                 }
             }
-            .task {
-                await fetchData()
+            .onAppear {
+                authenticate()
             }
             // --- Selection Menu ---
             .confirmationDialog("Upload Document", isPresented: $showActionSheet) {
@@ -178,7 +237,7 @@ struct DigitalVaultView: View {
                         }
                         
                         // Metadata Footer
-                        if doc.fileType != "pdf" { // For PDF, we might want full screen, so hide this or overlay it
+                        if doc.fileType != "pdf" {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text(doc.title).font(.headline)
                                 Text("Added: \(doc.date.formatted())").font(.caption).foregroundColor(.secondary)
@@ -207,6 +266,32 @@ struct DigitalVaultView: View {
         }
     }
     
+    // MARK: - Authentication
+    private func authenticate() {
+        let context = LAContext()
+        var error: NSError?
+        
+        // deviceOwnerAuthentication allows both Biometrics (FaceID/TouchID) and Passcode
+        if context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) {
+            let reason = "Unlock your Digital Vault"
+            
+            context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, authenticationError in
+                DispatchQueue.main.async {
+                    if success {
+                        self.isUnlocked = true
+                        self.authError = nil
+                        Task { await fetchData() }
+                    } else {
+                        self.isUnlocked = false
+                        self.authError = authenticationError?.localizedDescription ?? "Authentication failed."
+                    }
+                }
+            }
+        } else {
+            self.authError = "Please enable Face ID or Passcode in your device settings to use the Vault."
+        }
+    }
+    
     private func fetchData() async {
         guard let id = authManager.user?.id else { return }
         isLoading = true
@@ -218,16 +303,12 @@ struct DigitalVaultView: View {
         isLoading = false
     }
     
-    // Updated to handle generic file data
     private func uploadFile(data: Data, mimeType: String, title: String) async {
         guard let id = authManager.user?.id else { return }
         
         isUploading = true
         do {
-            // 1. Upload to Storage
             let url = try await StorageManager.shared.uploadVaultDocument(fileData: data, userID: id, contentType: mimeType)
-            
-            // 2. Create Metadata Record
             let fileType = mimeType == "application/pdf" ? "pdf" : "image"
             
             let newDoc = VaultDocument(
@@ -240,15 +321,12 @@ struct DigitalVaultView: View {
                 isEncrypted: true
             )
             
-            // 3. Save to Firestore
             try await dataService.addVaultDocument(newDoc)
-            
             await fetchData()
         } catch {
             print("Upload failed: \(error)")
         }
         isUploading = false
-        // Cleanup
         tempFileData = nil
     }
     
@@ -264,7 +342,7 @@ struct DigitalVaultView: View {
     }
 }
 
-// MARK: - Row View
+// MARK: - Row View (Updated with Thumbnail)
 struct VaultDocumentRow: View {
     let doc: VaultDocument
     
@@ -272,13 +350,31 @@ struct VaultDocumentRow: View {
     
     var body: some View {
         HStack(spacing: 15) {
+            // Thumbnail Container
             ZStack {
-                Rectangle().fill(Color(.systemGray6)).frame(width: 50, height: 60).cornerRadius(8)
-                // Different Icon for PDF
-                Image(systemName: isPdf ? "doc.text.fill" : "doc.text.image.fill")
-                    .foregroundColor(isPdf ? .red : .secondary)
-                    .font(.title2)
+                if !isPdf, let url = URL(string: doc.url) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 50, height: 60)
+                                .cornerRadius(8)
+                                .clipped()
+                        case .empty:
+                            ProgressView().frame(width: 50, height: 60)
+                        case .failure:
+                            fallbackIcon
+                        @unknown default:
+                            fallbackIcon
+                        }
+                    }
+                } else {
+                    fallbackIcon
+                }
             }
+            .frame(width: 50, height: 60)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(doc.title)
@@ -301,6 +397,15 @@ struct VaultDocumentRow: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 2)
+    }
+    
+    var fallbackIcon: some View {
+        ZStack {
+            Rectangle().fill(Color(.systemGray6)).frame(width: 50, height: 60).cornerRadius(8)
+            Image(systemName: isPdf ? "doc.text.fill" : "doc.text.image.fill")
+                .foregroundColor(isPdf ? .red : .secondary)
+                .font(.title2)
+        }
     }
 }
 

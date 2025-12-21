@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Dashboard/InstructorDashboardView.swift
-// --- FULLY UPDATED: Added Time Period Filters to All Lessons List ---
+// --- FULLY UPDATED: Added Sheet Navigation Wrapper for Quick Actions ---
 
 import SwiftUI
 
@@ -24,17 +24,19 @@ struct InstructorDashboardView: View {
     @EnvironmentObject var notificationManager: NotificationManager
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var locationManager: LocationManager
-    // Ensure VehicleManager is available in the environment for MileageLogView
     @EnvironmentObject var vehicleManager: VehicleManager
-    // Added PaymentManager for accurate earnings calculation
     @EnvironmentObject var paymentManager: PaymentManager
+    
+    // --- PERSISTED GOAL SETTING ---
+    @AppStorage("weeklyEarningsGoal") private var weeklyEarningsGoal: Double = 500.0
     
     @State private var activeSheet: DashboardSheet?
     @State private var nextLesson: Lesson?
-    @State private var nextLessonStudentName: String = "Loading..." // Store resolved student name
+    @State private var nextLessonStudentName: String = "Loading..."
     @State private var weeklyEarnings: Double = 0
     @State private var avgStudentProgress: Double = 0
     @State private var isLoading = true
+    @State private var showGoalAlert = false
     
     var notificationCount: Int {
         let unreadAlerts = notificationManager.notifications.filter { !$0.isRead }.count
@@ -47,9 +49,8 @@ struct InstructorDashboardView: View {
         NavigationView {
             VStack(spacing: 0) {
                 // MARK: - Fixed Header
-                // Placed outside the ScrollView to remain stationary
                 DashboardHeader(notificationCount: notificationCount)
-                    .padding(.bottom, 10) // Small spacing between header and scrollable content
+                    .padding(.bottom, 10)
                 
                 // MARK: - Scrollable Content
                 ScrollView {
@@ -60,7 +61,7 @@ struct InstructorDashboardView: View {
                         } else {
                             // Main Cards
                             HStack(spacing: 15) {
-                                // 1. Next Lesson Card (Redesigned)
+                                // 1. Next Lesson Card
                                 if let lesson = nextLesson {
                                     NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
                                         DashboardCard(
@@ -81,14 +82,30 @@ struct InstructorDashboardView: View {
                                     ).frame(maxWidth: .infinity)
                                 }
                                 
-                                // 2. Weekly Earnings Card (Clickable & Accurate)
+                                // 2. Weekly Earnings Card (Dynamic, No Decimals, Edit Icon)
                                 NavigationLink(destination: PaymentsView()) {
                                     DashboardCard(
-                                        title: "Weekly Earnings",
+                                        title: "Weekly Goal",
                                         systemIcon: "dollarsign.circle.fill",
                                         accentColor: .accentGreen,
                                         fixedHeight: 150,
-                                        content: { EarningsSummaryContent(earnings: weeklyEarnings) }
+                                        headerAction: {
+                                            // --- Edit Icon Button ---
+                                            Button {
+                                                showGoalAlert = true
+                                            } label: {
+                                                Image(systemName: "pencil")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                                    .padding(6)
+                                                    .background(Color(.systemGray6))
+                                                    .clipShape(Circle())
+                                            }
+                                            .buttonStyle(.borderless) // Important to prevent triggering NavigationLink
+                                        },
+                                        content: {
+                                            EarningsSummaryContent(earnings: weeklyEarnings, goal: weeklyEarningsGoal)
+                                        }
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -129,7 +146,7 @@ struct InstructorDashboardView: View {
                                     // 8. Service Book
                                     QuickActionButton(title: "Service Book", icon: "wrench.and.screwdriver.fill", color: .yellow, action: { activeSheet = .serviceBook })
                                     
-                                    // 9. Mileage Log (NEW)
+                                    // 9. Mileage Log
                                     QuickActionButton(title: "Mileage Log", icon: "speedometer", color: .cyan, action: { activeSheet = .mileageLog })
                                     
                                     // 10. Digital Vault
@@ -175,7 +192,18 @@ struct InstructorDashboardView: View {
                 case .contacts: ContactsView()
                 case .recordPayment: AddPaymentFormView(onPaymentAdded: { Task { await fetchData() } })
                 case .quickOverview: StudentQuickOverviewSheet()
-                case .trackIncome: PaymentsView()
+                
+                // UPDATED: Wrap in NavigationView so we can add a Close button (since we removed the back button)
+                case .trackIncome:
+                    NavigationView {
+                        PaymentsView()
+                            .toolbar {
+                                ToolbarItem(placement: .navigationBarLeading) {
+                                    Button("Close") { activeSheet = nil }
+                                }
+                            }
+                    }
+                    
                 case .trackExpense: ExpensesView()
                 case .serviceBook: ServiceBookView()
                 case .myVehicles: MyVehiclesView()
@@ -186,6 +214,15 @@ struct InstructorDashboardView: View {
                 case .allLessons: InstructorLessonsListView()
                 case .mileageLog: MileageLogView()
                 }
+            }
+            // --- ALERT TO SET GOAL ---
+            .alert("Set Weekly Goal", isPresented: $showGoalAlert) {
+                TextField("Amount", value: $weeklyEarningsGoal, format: .currency(code: "GBP"))
+                    .keyboardType(.decimalPad)
+                Button("Save") { }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Enter your target earnings for the week.")
             }
         }
     }
@@ -466,7 +503,7 @@ struct InstructorAnalyticsView: View {
     @EnvironmentObject var expenseManager: ExpenseManager
     @EnvironmentObject var lessonManager: LessonManager
     @EnvironmentObject var authManager: AuthManager
-    // --- NEW: Inject VehicleManager for Mileage ---
+    // --- Inject VehicleManager for Mileage ---
     @EnvironmentObject var vehicleManager: VehicleManager
     
     // --- Filters ---
@@ -486,7 +523,7 @@ struct InstructorAnalyticsView: View {
     @State private var totalExams: Int = 0
     @State private var passedExams: Int = 0
     
-    // --- NEW: Mileage Stats ---
+    // --- Mileage Stats ---
     @State private var totalMiles: Int = 0
     @State private var businessMiles: Int = 0
     
@@ -531,7 +568,7 @@ struct InstructorAnalyticsView: View {
                         VStack(spacing: 24) {
                             financialOverview
                             
-                            // --- NEW: Mileage Stats Card ---
+                            // --- Mileage Stats Card ---
                             mileageStats
                             
                             performanceStats
@@ -613,7 +650,7 @@ struct InstructorAnalyticsView: View {
         .padding(.horizontal)
     }
     
-    // --- NEW: Mileage Stats View ---
+    // --- Mileage Stats View ---
     private var mileageStats: some View {
         HStack(spacing: 15) {
             VStack(alignment: .leading, spacing: 15) {
@@ -847,7 +884,7 @@ struct InstructorAnalyticsView: View {
             self.passedExams = completedExams.filter { $0.isPass == true }.count
             self.passRate = totalExams > 0 ? (Double(passedExams) / Double(totalExams)) * 100.0 : 0.0
             
-            // --- NEW: Calculate Mileage Stats ---
+            // --- Calculate Mileage Stats ---
             self.totalMiles = rangeMileage.reduce(0) { $0 + $1.distance }
             self.businessMiles = rangeMileage
                 .filter { $0.purpose == "Lesson" || $0.purpose == "Commute" || $0.purpose == "Fuel Run" }
@@ -1068,7 +1105,95 @@ struct NextLessonContent: View {
     }
 }
 
-struct EarningsSummaryContent: View { let earnings: Double; var body: some View { VStack(alignment: .leading, spacing: 4) { Text("£\(earnings, specifier: "%.2f")").font(.title2).bold().foregroundColor(.accentGreen); Text("This Week").font(.subheadline).foregroundColor(.secondary); Rectangle().fill(Color.accentGreen.opacity(0.3)).frame(height: 10).cornerRadius(5) } } }
+// MARK: - UPDATED Earnings Content (Dynamic)
+struct EarningsSummaryContent: View {
+    let earnings: Double
+    let goal: Double
+    
+    var progress: Double {
+        guard goal > 0 else { return 0 }
+        return min(earnings / goal, 1.0)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .lastTextBaseline) {
+                // UPDATED: Added .precision(.fractionLength(0)) to remove decimals
+                Text(earnings, format: .currency(code: "GBP").precision(.fractionLength(0)))
+                    .font(.title2).bold()
+                    .foregroundColor(.accentGreen)
+                
+                Spacer()
+                
+                // UPDATED: Added .precision(.fractionLength(0)) to remove decimals
+                Text("/ \(goal.formatted(.currency(code: "GBP").precision(.fractionLength(0))))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Text("This Week Earnings").font(.subheadline).foregroundColor(.secondary)
+            
+            // Dynamic Progress Bar
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color(.systemGray5))
+                        .frame(height: 8)
+                    
+                    Capsule()
+                        .fill(Color.accentGreen)
+                        .frame(width: max(0, CGFloat(progress) * geometry.size.width), height: 8)
+                        .animation(.spring(), value: progress)
+                }
+            }
+            .frame(height: 8)
+        }
+    }
+}
+
 struct StudentsOverviewContent: View { let progress: Double; var body: some View { HStack { CircularProgressView(progress: progress, color: .orange, size: 60).padding(.trailing, 10); VStack(alignment: .leading) { Text("Average Student Progress").font(.subheadline).foregroundColor(.secondary); Text("\(Int(progress * 100))% Mastery").font(.headline) }; Spacer(); Image(systemName: "chevron.right").foregroundColor(.secondary) } } }
-struct DashboardCard<Content: View>: View { let title: String; let systemIcon: String; var accentColor: Color = .primaryBlue; var fixedHeight: CGFloat? = nil; @ViewBuilder let content: Content; var body: some View { VStack(alignment: .leading, spacing: 10) { HStack { Label(title, systemImage: systemIcon).font(.subheadline).bold().foregroundColor(accentColor); Spacer() }; Divider().opacity(0.5); content.frame(maxWidth: .infinity, alignment: .leading); if fixedHeight != nil { Spacer(minLength: 0) } }.padding(15).frame(height: fixedHeight).background(Color(.systemBackground)).cornerRadius(15).shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4) } }
+
+// UPDATED: DashboardCard with optional headerAction
+struct DashboardCard<Content: View, HeaderAction: View>: View {
+    let title: String
+    let systemIcon: String
+    var accentColor: Color = .primaryBlue
+    var fixedHeight: CGFloat? = nil
+    @ViewBuilder let headerAction: HeaderAction
+    @ViewBuilder let content: Content
+    
+    // Custom Init to allow optional headerAction
+    init(title: String, systemIcon: String, accentColor: Color = .primaryBlue, fixedHeight: CGFloat? = nil, @ViewBuilder headerAction: () -> HeaderAction = { EmptyView() }, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.systemIcon = systemIcon
+        self.accentColor = accentColor
+        self.fixedHeight = fixedHeight
+        self.headerAction = headerAction()
+        self.content = content()
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(title, systemImage: systemIcon)
+                    .font(.subheadline).bold()
+                    .foregroundColor(accentColor)
+                Spacer()
+                headerAction // Insert header action here (e.g., Edit Button)
+            }
+            Divider().opacity(0.5)
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if fixedHeight != nil {
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(15)
+        .frame(height: fixedHeight)
+        .background(Color(.systemBackground))
+        .cornerRadius(15)
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
+    }
+}
+
 struct QuickActionButton: View { let title: String; let icon: String; let color: Color; let action: () -> Void; var body: some View { Button(action: action) { VStack(spacing: 5) { Image(systemName: icon).font(.title2); Text(title).font(.caption).bold().lineLimit(1) }.frame(maxWidth: .infinity).padding(.vertical, 15).background(color.opacity(0.15)).foregroundColor(color).cornerRadius(12) } } }

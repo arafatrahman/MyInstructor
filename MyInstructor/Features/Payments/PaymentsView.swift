@@ -1,5 +1,5 @@
 // File: arafatrahman/myinstructor/MyInstructor-main/MyInstructor/Features/Payments/PaymentsView.swift
-// --- UPDATED: Pending payments are now editable and deletable ---
+// --- FULLY UPDATED: Removed manual Back button to fix "Double Back Button" issue ---
 
 import SwiftUI
 
@@ -40,7 +40,6 @@ struct PaymentsView: View {
     @EnvironmentObject var dataService: DataService
     @EnvironmentObject var authManager: AuthManager
     
-    // --- NEW: Dismiss environment for Back button ---
     @Environment(\.dismiss) var dismiss
     
     @State private var payments: [Payment] = []
@@ -58,7 +57,7 @@ struct PaymentsView: View {
     @State private var isAddPaymentModalPresented = false
     @State private var paymentToEdit: Payment? = nil
     
-    // Read-only state for pending payments (Kept but unused for tap now)
+    // Read-only state for pending payments
     @State private var paymentToView: Payment? = nil
     
     @State private var isLoading = true
@@ -142,197 +141,187 @@ struct PaymentsView: View {
     }
 
     var body: some View {
-        NavigationView {
-            VStack(spacing: 15) {
-                
-                // MARK: - Time Filter Bar
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(TimeFilter.allCases) { filter in
-                            Button {
-                                withAnimation { timeFilter = filter }
-                            } label: {
-                                Text(filter.rawValue)
-                                    .font(.subheadline).bold()
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 16)
-                                    .background(timeFilter == filter ? Color.primaryBlue : Color(.systemGray6))
-                                    .foregroundColor(timeFilter == filter ? .white : .secondary)
-                                    .cornerRadius(20)
-                            }
+        VStack(spacing: 15) {
+            
+            // MARK: - Time Filter Bar
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(TimeFilter.allCases) { filter in
+                        Button {
+                            withAnimation { timeFilter = filter }
+                        } label: {
+                            Text(filter.rawValue)
+                                .font(.subheadline).bold()
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background(timeFilter == filter ? Color.primaryBlue : Color(.systemGray6))
+                                .foregroundColor(timeFilter == filter ? .white : .secondary)
+                                .cornerRadius(20)
                         }
                     }
-                    .padding(.horizontal)
-                }
-                .padding(.top, 10)
-                
-                if timeFilter == .custom {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("From").font(.caption).foregroundColor(.secondary)
-                            DatePicker("", selection: $customStartDate, displayedComponents: .date).labelsHidden()
-                        }
-                        Spacer()
-                        VStack(alignment: .leading) {
-                            Text("To").font(.caption).foregroundColor(.secondary)
-                            DatePicker("", selection: $customEndDate, displayedComponents: .date).labelsHidden()
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                
-                // MARK: - Summary Cards
-                HStack(spacing: 15) {
-                    SummaryCard(
-                        title: "Pending",
-                        amount: totalPending,
-                        icon: "clock.arrow.circlepath",
-                        color: .orange,
-                        isSelected: selectedTab == .pending
-                    )
-                    .onTapGesture { withAnimation { selectedTab = .pending } }
-                    
-                    SummaryCard(
-                        title: "Received",
-                        amount: totalReceived,
-                        icon: "banknote.fill",
-                        color: .accentGreen,
-                        isSelected: selectedTab == .received
-                    )
-                    .onTapGesture { withAnimation { selectedTab = .received } }
                 }
                 .padding(.horizontal)
-                
-                // MARK: - Transactions List
-                if isLoading {
-                    Spacer()
-                    ProgressView("Loading Records...")
-                    Spacer()
-                } else if listDisplayItems.isEmpty {
-                    Spacer()
-                    EmptyStateView(
-                        icon: selectedTab == .pending ? "checkmark.seal" : "tray",
-                        message: selectedTab == .pending
-                            ? "No pending payments or upcoming lessons."
-                            : "No income recorded for this period."
-                    )
-                    Spacer()
-                } else {
-                    List {
-                        ForEach(listDisplayItems) { item in
-                            
-                            // 1. RECEIVED (Editable)
-                            if selectedTab == .received, item.type == .paymentRecord, let payment = item.originalPayment {
-                                Button {
-                                    paymentToEdit = payment // Edit Mode
-                                } label: {
-                                    IncomeItemCard(item: item)
-                                }
-                                .buttonStyle(.plain)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                                .swipeActions(edge: .trailing) {
-                                    Button(role: .destructive) {
-                                        Task { await deletePayment(payment.id!) }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
-                            }
-                            
-                            // 2. UPCOMING LESSON (Navigate to Details)
-                            else if item.type == .upcomingLesson, let lesson = item.originalLesson {
-                                NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
-                                    IncomeItemCard(item: item)
-                                }
-                                .buttonStyle(.plain)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                            }
-                            
-                            // 3. PENDING RECORD (Editable & Mark Paid)
-                            else if item.type == .paymentRecord, let payment = item.originalPayment {
-                                Button {
-                                    paymentToEdit = payment // Edit Mode
-                                } label: {
-                                    IncomeItemCard(item: item)
-                                }
-                                .buttonStyle(.plain)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                                .swipeActions(edge: .leading) {
-                                    // Mark Paid (Leading Swipe)
-                                    Button("Mark Paid") {
-                                        Task { await markPaymentAsPaid(payment.id!) }
-                                    }
-                                    .tint(.accentGreen)
-                                }
-                                .swipeActions(edge: .trailing) {
-                                    // Delete Action
-                                    Button(role: .destructive) {
-                                        Task { await deletePayment(payment.id!) }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                    
-                                    // Edit Action (Backup for tap)
-                                    Button {
-                                        paymentToEdit = payment
-                                    } label: {
-                                        Label("Edit", systemImage: "pencil")
-                                    }
-                                    .tint(.orange)
-                                }
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                }
             }
-            .navigationTitle("Track Income")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                // --- Back Button ---
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { dismiss() }) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "chevron.left")
-                            Text("Back")
-                        }
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        isAddPaymentModalPresented = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.headline).bold()
-                    }
-                }
-            }
-            .task { await fetchData() }
-            .refreshable { await fetchData() }
+            .padding(.top, 10)
             
-            // Sheet for Adding
-            .sheet(isPresented: $isAddPaymentModalPresented) {
-                AddPaymentFormView(onPaymentAdded: { Task { await fetchData() } })
+            if timeFilter == .custom {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("From").font(.caption).foregroundColor(.secondary)
+                        DatePicker("", selection: $customStartDate, displayedComponents: .date).labelsHidden()
+                    }
+                    Spacer()
+                    VStack(alignment: .leading) {
+                        Text("To").font(.caption).foregroundColor(.secondary)
+                        DatePicker("", selection: $customEndDate, displayedComponents: .date).labelsHidden()
+                    }
+                }
+                .padding(.horizontal)
             }
-            // Sheet for Editing (Received & Pending)
-            .sheet(item: $paymentToEdit) { payment in
-                AddPaymentFormView(paymentToEdit: payment, onPaymentAdded: {
-                    paymentToEdit = nil
-                    Task { await fetchData() }
-                })
-            }
-            // Sheet for Viewing (Legacy/Cleanup) - Read Only
-            .sheet(item: $paymentToView) { payment in
-                AddPaymentFormView(
-                    paymentToEdit: payment,
-                    onPaymentAdded: { }, // No action needed
-                    isReadOnly: true // --- Enable Read Only Mode ---
+            
+            // MARK: - Summary Cards
+            HStack(spacing: 15) {
+                SummaryCard(
+                    title: "Pending",
+                    amount: totalPending,
+                    icon: "clock.arrow.circlepath",
+                    color: .orange,
+                    isSelected: selectedTab == .pending
                 )
+                .onTapGesture { withAnimation { selectedTab = .pending } }
+                
+                SummaryCard(
+                    title: "Received",
+                    amount: totalReceived,
+                    icon: "banknote.fill",
+                    color: .accentGreen,
+                    isSelected: selectedTab == .received
+                )
+                .onTapGesture { withAnimation { selectedTab = .received } }
             }
+            .padding(.horizontal)
+            
+            // MARK: - Transactions List
+            if isLoading {
+                Spacer()
+                ProgressView("Loading Records...")
+                Spacer()
+            } else if listDisplayItems.isEmpty {
+                Spacer()
+                EmptyStateView(
+                    icon: selectedTab == .pending ? "checkmark.seal" : "tray",
+                    message: selectedTab == .pending
+                        ? "No pending payments or upcoming lessons."
+                        : "No income recorded for this period."
+                )
+                Spacer()
+            } else {
+                List {
+                    ForEach(listDisplayItems) { item in
+                        
+                        // 1. RECEIVED (Editable)
+                        if selectedTab == .received, item.type == .paymentRecord, let payment = item.originalPayment {
+                            Button {
+                                paymentToEdit = payment // Edit Mode
+                            } label: {
+                                IncomeItemCard(item: item)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    Task { await deletePayment(payment.id!) }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        }
+                        
+                        // 2. UPCOMING LESSON (Navigate to Details)
+                        else if item.type == .upcomingLesson, let lesson = item.originalLesson {
+                            NavigationLink(destination: LessonDetailsView(lesson: lesson)) {
+                                IncomeItemCard(item: item)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        }
+                        
+                        // 3. PENDING RECORD (Editable & Mark Paid)
+                        else if item.type == .paymentRecord, let payment = item.originalPayment {
+                            Button {
+                                paymentToEdit = payment // Edit Mode
+                            } label: {
+                                IncomeItemCard(item: item)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .swipeActions(edge: .leading) {
+                                // Mark Paid (Leading Swipe)
+                                Button("Mark Paid") {
+                                    Task { await markPaymentAsPaid(payment.id!) }
+                                }
+                                .tint(.accentGreen)
+                            }
+                            .swipeActions(edge: .trailing) {
+                                // Delete Action
+                                Button(role: .destructive) {
+                                    Task { await deletePayment(payment.id!) }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                
+                                // Edit Action (Backup for tap)
+                                Button {
+                                    paymentToEdit = payment
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(.orange)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+        .navigationTitle("Track Income")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // REMOVED MANUAL BACK BUTTON HERE TO USE SYSTEM DEFAULT
+            
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    isAddPaymentModalPresented = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.headline).bold()
+                }
+            }
+        }
+        .task { await fetchData() }
+        .refreshable { await fetchData() }
+        
+        // Sheet for Adding
+        .sheet(isPresented: $isAddPaymentModalPresented) {
+            AddPaymentFormView(onPaymentAdded: { Task { await fetchData() } })
+        }
+        // Sheet for Editing (Received & Pending)
+        .sheet(item: $paymentToEdit) { payment in
+            AddPaymentFormView(paymentToEdit: payment, onPaymentAdded: {
+                paymentToEdit = nil
+                Task { await fetchData() }
+            })
+        }
+        // Sheet for Viewing (Legacy/Cleanup) - Read Only
+        .sheet(item: $paymentToView) { payment in
+            AddPaymentFormView(
+                paymentToEdit: payment,
+                onPaymentAdded: { }, // No action needed
+                isReadOnly: true // --- Enable Read Only Mode ---
+            )
         }
     }
     

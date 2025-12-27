@@ -5,6 +5,11 @@ struct PaywallView: View {
     @EnvironmentObject var subscriptionManager: SubscriptionManager
     @EnvironmentObject var authManager: AuthManager
     
+    // MARK: - CONFIGURATION
+    // Your actual legal URLs for Apple Review
+    let termsURL = URL(string: "https://webbird.co.uk/terms-of-service-driving-instructor-logbook/")!
+    let privacyURL = URL(string: "https://webbird.co.uk/privacy-policy-for-driving-instructor-logbook/")!
+    
     var body: some View {
         ZStack(alignment: .top) {
             // 1. Top Background (Blue Branding Area)
@@ -88,8 +93,8 @@ struct PaywallView: View {
                                 }
                             }
                             
-                            // 3. Footer / Restore
-                            VStack(spacing: 15) {
+                            // 3. Footer / Restore / Legal
+                            VStack(spacing: 20) {
                                 Button {
                                     Task { await subscriptionManager.restorePurchases() }
                                 } label: {
@@ -102,13 +107,18 @@ struct PaywallView: View {
                                         .cornerRadius(20)
                                 }
                                 
-                                VStack(spacing: 5) {
-                                    Text("Recurring billing. Cancel anytime.")
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-                                    .font(.caption2)
-                                    .foregroundColor(.gray)
+                                // MANDATORY LEGAL LINKS FOR APPLE REVIEW
+                                HStack(spacing: 20) {
+                                    Link("Terms of Use", destination: termsURL)
+                                    Link("Privacy Policy", destination: privacyURL)
                                 }
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .buttonStyle(.plain)
+                                
+                                Text("Recurring billing. Cancel anytime.")
+                                    .font(.caption2)
+                                    .foregroundColor(.gray.opacity(0.8))
                             }
                             .padding(.bottom, 40)
                         }
